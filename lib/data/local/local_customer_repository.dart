@@ -2,16 +2,39 @@ import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/mappers.dart';
+import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
 import 'package:arena_ops/domain/repositories/customer_repository.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 class LocalCustomerRepository implements CustomerRepository {
-  LocalCustomerRepository(this._db, [this._clock = const SystemClock()]);
+  LocalCustomerRepository(this._db,
+      [this._clock = const SystemClock(), this._sync]);
 
   final AppDatabase _db;
   final Clock _clock;
+
+  /// Cloud mode only (see SyncRecorder). Null in local-only mode.
+  final SyncRecorder? _sync;
+
+  Future<void> _insert(CustomerRow row) => _db.transaction(() async {
+        await _db.into(_db.customers).insert(row);
+        await _sync?.record(
+          kind: 'customer.create',
+          entityType: 'customer',
+          entityId: row.id,
+          payload: {
+            'id': row.id,
+            'name': row.name,
+            'phone': row.phone,
+            'notes': row.notes,
+            'is_guest': row.isGuest,
+            'last_visit_at': Wire.at(row.lastVisitAt),
+            'created_at': Wire.at(row.createdAt),
+          },
+        );
+      });
   static const _uuid = Uuid();
 
   @override
@@ -79,7 +102,7 @@ class LocalCustomerRepository implements CustomerRepository {
       createdAt: now,
       updatedAt: now,
     );
-    await _db.into(_db.customers).insert(row);
+    await _insert(row);
     return customerFromRow(row);
   }
 
@@ -98,20 +121,34 @@ class LocalCustomerRepository implements CustomerRepository {
       createdAt: now,
       updatedAt: now,
     );
-    await _db.into(_db.customers).insert(row);
+    await _insert(row);
     return customerFromRow(row);
   }
 
   @override
   Future<Customer> update(Customer customer) async {
     final now = _clock.now();
-    await (_db.update(_db.customers)..where((t) => t.id.equals(customer.id)))
-        .write(CustomersCompanion(
-      name: Value(customer.name),
-      phone: Value(customer.phone),
-      notes: Value(customer.notes),
-      updatedAt: Value(now),
-    ));
+    await _db.transaction(() async {
+      await (_db.update(_db.customers)..where((t) => t.id.equals(customer.id)))
+          .write(CustomersCompanion(
+        name: Value(customer.name),
+        phone: Value(customer.phone),
+        notes: Value(customer.notes),
+        updatedAt: Value(now),
+      ));
+      await _sync?.record(
+        kind: 'customer.update',
+        entityType: 'customer',
+        entityId: customer.id,
+        payload: {
+          'id': customer.id,
+          'name': customer.name,
+          'phone': customer.phone,
+          'notes': customer.notes,
+          'base_version': await _sync.baseVersion('customers', customer.id),
+        },
+      );
+    });
     return (await getById(customer.id))!;
   }
 

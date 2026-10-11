@@ -3,6 +3,7 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/data/local/controller_allocator.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/mappers.dart';
+import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
@@ -19,10 +20,34 @@ import 'package:uuid/uuid.dart';
 /// one authoritative time window and the no-double-occupancy rule hold even with
 /// concurrent writers (group feature §5–§9).
 class LocalGroupSessionRepository implements GroupSessionRepository {
-  LocalGroupSessionRepository(this._db, [this._clock = const SystemClock()]);
+  LocalGroupSessionRepository(this._db,
+      [this._clock = const SystemClock(), this._sync]);
 
   final AppDatabase _db;
   final Clock _clock;
+
+  /// Cloud mode only: records each change as a sync op in the same
+  /// transaction. Null in local-only mode.
+  final SyncRecorder? _sync;
+
+  /// One assignment as the server's group ops expect it.
+  static Map<String, Object?> _assignmentWire(
+    GroupAssignmentRow a,
+    List<ControllerAllocationRow> pads,
+    List<ControllerMoveRow> moves,
+  ) =>
+      {
+        'id': a.id,
+        'player_number': a.playerNumber,
+        'player_label': a.playerLabel,
+        'idx': a.index,
+        'resource_id': a.resourceId,
+        'activity_code': a.activityCode,
+        'game_id': a.gameId,
+        'controller_count': a.controllerCount,
+        'allocations': Wire.pads(pads),
+        'moves': Wire.moves(moves),
+      };
   static const _uuid = Uuid();
 
   /// Controller ports a PS5 can fill at once — a hardware ceiling, distinct
@@ -180,6 +205,7 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
 
         // Track the next index per player as we insert.
         final nextIndex = <int, int>{};
+        final wire = <Map<String, Object?>>[];
         for (final d in cmd.assignments) {
           await _ensureAssignable(
             groupId: group.id,
@@ -205,9 +231,10 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
             startedAt: cmd.startedAt.toUtc(),
             now: now,
           );
+          var moves = const <ControllerMoveRow>[];
           if (d.borrowControllerIds != null &&
               d.borrowControllerIds!.isNotEmpty) {
-            await _alloc.borrow(
+            moves = await _alloc.borrow(
               controllerIds: d.borrowControllerIds!,
               resourceId: d.resourceId,
               resourceName: d.resourceName,
@@ -216,8 +243,9 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
               now: now,
             );
           }
+          var pads = const <ControllerAllocationRow>[];
           if (d.controllerIds != null && d.controllerIds!.isNotEmpty) {
-            await _alloc.allocate(
+            pads = await _alloc.allocate(
               scope: 'group',
               groupId: group.id,
               assignmentId: assignment.id,
@@ -233,11 +261,28 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
               requestId: cmd.requestId,
             );
           }
+          wire.add(_assignmentWire(assignment, pads, moves));
           await _touchGame(d.gameId, cmd.startedAt.toUtc());
         }
         await (_db.update(_db.customers)
               ..where((t) => t.id.equals(cmd.primaryCustomerId)))
             .write(CustomersCompanion(lastVisitAt: Value(cmd.startedAt.toUtc())));
+        await _sync?.record(
+          kind: 'group.create',
+          entityType: 'group',
+          entityId: group.id,
+          payload: {
+            'id': group.id,
+            'primary_customer_id': group.primaryCustomerId,
+            'player_count': group.playerCount,
+            'purchased_controller_count': group.purchasedControllerCount,
+            'started_at': Wire.at(group.startedAt),
+            'scheduled_end_at': Wire.at(group.scheduledEndAt),
+            'pricing_snapshot': group.pricingSnapshot,
+            'billing_mode': group.billingMode,
+            'assignments': wire,
+          },
+        );
         return group;
       });
       return Ok(groupSessionFromRow(row));
@@ -304,9 +349,10 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
           startedAt: at,
           now: now,
         );
+        var moves = const <ControllerMoveRow>[];
         if (cmd.borrowControllerIds != null &&
             cmd.borrowControllerIds!.isNotEmpty) {
-          await _alloc.borrow(
+          moves = await _alloc.borrow(
             controllerIds: cmd.borrowControllerIds!,
             resourceId: cmd.resourceId,
             resourceName: cmd.resourceName,
@@ -315,8 +361,9 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
             now: now,
           );
         }
+        var pads = const <ControllerAllocationRow>[];
         if (cmd.controllerIds != null && cmd.controllerIds!.isNotEmpty) {
-          await _alloc.allocate(
+          pads = await _alloc.allocate(
             scope: 'group',
             groupId: cmd.groupId,
             assignmentId: row.id,
@@ -333,6 +380,16 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
         }
         await _touchGroup(cmd.groupId, now);
         await _touchGame(cmd.gameId, at);
+        await _sync?.record(
+          kind: 'group.add',
+          entityType: 'group',
+          entityId: cmd.groupId,
+          payload: {
+            'group_id': cmd.groupId,
+            'at': Wire.at(at),
+            'assignment': _assignmentWire(row, pads, moves),
+          },
+        );
         return row;
       });
       return Ok(groupAssignmentFromRow(seg));
@@ -419,9 +476,10 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
           startedAt: at,
           now: now,
         );
+        var moves = const <ControllerMoveRow>[];
         if (cmd.borrowControllerIds != null &&
             cmd.borrowControllerIds!.isNotEmpty) {
-          await _alloc.borrow(
+          moves = await _alloc.borrow(
             controllerIds: cmd.borrowControllerIds!,
             resourceId: cmd.resourceId,
             resourceName: cmd.resourceName,
@@ -430,8 +488,9 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
             now: now,
           );
         }
+        var pads = const <ControllerAllocationRow>[];
         if (cmd.controllerIds != null && cmd.controllerIds!.isNotEmpty) {
-          await _alloc.allocate(
+          pads = await _alloc.allocate(
             scope: 'group',
             groupId: cmd.groupId,
             assignmentId: row.id,
@@ -448,6 +507,18 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
         }
         await _touchGroup(cmd.groupId, now);
         await _touchGame(cmd.gameId, at);
+        await _sync?.record(
+          kind: 'group.switch',
+          entityType: 'group',
+          entityId: cmd.groupId,
+          payload: {
+            'group_id': cmd.groupId,
+            'at': Wire.at(at),
+            'player_number': cmd.playerNumber,
+            'expected_assignment_id': current.id,
+            'assignment': _assignmentWire(row, pads, moves),
+          },
+        );
         return row;
       });
       return Ok(groupAssignmentFromRow(newSeg));
@@ -482,6 +553,17 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
           .write(GroupAssignmentsCompanion(endedAt: Value(at)));
       await _alloc.closeForAssignment(open.first.id, at);
       await _touchGroup(cmd.groupId, _clock.now());
+      await _sync?.record(
+        kind: 'group.end_player',
+        entityType: 'group',
+        entityId: cmd.groupId,
+        payload: {
+          'group_id': cmd.groupId,
+          'player_number': cmd.playerNumber,
+          'at': Wire.at(at),
+          'expected_assignment_id': open.first.id,
+        },
+      );
     });
     return const Ok(null);
   }
@@ -501,21 +583,36 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
     }
     await _db.transaction(() async {
       final now = _clock.now();
-      await _db.into(_db.groupExtensions).insert(GroupExtensionRow(
-            id: _uuid.v4(),
-            groupId: cmd.groupId,
-            addedMinutes: cmd.addedMinutes,
-            oldEndAt: existing.scheduledEndAt,
-            newEndAt: cmd.newEndAt.toUtc(),
-            addedAmountPaise: cmd.addedAmountPaise,
-            reason: cmd.reason,
-            createdAt: now,
-          ));
+      final ext = GroupExtensionRow(
+        id: _uuid.v4(),
+        groupId: cmd.groupId,
+        addedMinutes: cmd.addedMinutes,
+        oldEndAt: existing.scheduledEndAt,
+        newEndAt: cmd.newEndAt.toUtc(),
+        addedAmountPaise: cmd.addedAmountPaise,
+        reason: cmd.reason,
+        createdAt: now,
+      );
+      await _db.into(_db.groupExtensions).insert(ext);
       await (_db.update(_db.groupSessions)..where((t) => t.id.equals(cmd.groupId)))
           .write(GroupSessionsCompanion(
         scheduledEndAt: Value(cmd.newEndAt.toUtc()),
         updatedAt: Value(now),
       ));
+      await _sync?.record(
+        kind: 'group.extend',
+        entityType: 'group',
+        entityId: cmd.groupId,
+        payload: {
+          'group_id': cmd.groupId,
+          'extension_id': ext.id,
+          'added_minutes': ext.addedMinutes,
+          'old_end_at': Wire.at(ext.oldEndAt),
+          'new_end_at': Wire.at(ext.newEndAt),
+          'added_amount_paise': ext.addedAmountPaise,
+          'reason': ext.reason,
+        },
+      );
     });
     return Ok((await getById(cmd.groupId))!);
   }
@@ -538,35 +635,38 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
 
     await _db.transaction(() async {
       final actualEnd = cmd.actualEndedAt.toUtc();
+      // What this bill was priced from (stale check on the server).
+      final pricedFrom = [
+        for (final a in await assignmentsFor(cmd.groupId)) a.id,
+      ];
       // Close every open assignment at the actual end (frees all systems).
       await (_db.update(_db.groupAssignments)
             ..where((t) => t.groupId.equals(cmd.groupId) & t.endedAt.isNull()))
           .write(GroupAssignmentsCompanion(endedAt: Value(actualEnd)));
       await _alloc.closeForGroup(cmd.groupId, actualEnd);
 
-      await _db.batch((b) {
-        b.insertAll(_db.groupCharges, [
-          for (final c in cmd.charges)
-            GroupChargesCompanion.insert(
-              id: _uuid.v4(),
-              groupId: cmd.groupId,
-              assignmentId: Value(c.assignmentId),
-              playerNumber: Value(c.playerNumber),
-              chargeIndex: c.chargeIndex,
-              bandCode: c.bandCode,
-              activityCode: c.activityCode,
-              resourceId: Value(c.resourceId),
-              controllerCount: Value(c.controllerCount),
-              segmentStart: c.segmentStart,
-              segmentEnd: c.segmentEnd,
-              playedMinutes: c.playedMinutes,
-              billedMinutes: c.billedMinutes,
-              unitMinutes: c.unitMinutes,
-              unitPricePaise: c.unitPricePaise,
-              amountPaise: c.amountPaise,
-            ),
-        ]);
-      });
+      final charges = [
+        for (final c in cmd.charges)
+          GroupChargeRow(
+            id: _uuid.v4(),
+            groupId: cmd.groupId,
+            assignmentId: c.assignmentId,
+            playerNumber: c.playerNumber,
+            chargeIndex: c.chargeIndex,
+            bandCode: c.bandCode,
+            activityCode: c.activityCode,
+            resourceId: c.resourceId,
+            controllerCount: c.controllerCount,
+            segmentStart: c.segmentStart,
+            segmentEnd: c.segmentEnd,
+            playedMinutes: c.playedMinutes,
+            billedMinutes: c.billedMinutes,
+            unitMinutes: c.unitMinutes,
+            unitPricePaise: c.unitPricePaise,
+            amountPaise: c.amountPaise,
+          ),
+      ];
+      await _db.batch((b) => b.insertAll(_db.groupCharges, charges));
 
       final paid = await _totalPaid(cmd.groupId);
       final status = cmd.markWaived
@@ -580,6 +680,39 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
         paymentStatus: Value(status.code),
         updatedAt: Value(_clock.now()),
       ));
+      await _sync?.record(
+        kind: 'group.end',
+        entityType: 'group',
+        entityId: cmd.groupId,
+        payload: {
+          'group_id': cmd.groupId,
+          'ended_at': Wire.at(actualEnd),
+          'billed_amount_paise': cmd.billedAmountPaise,
+          'mark_waived': cmd.markWaived,
+          'expected_assignment_ids': pricedFrom,
+          'expected_scheduled_end_at': Wire.at(existing.scheduledEndAt),
+          'charges': [
+            for (final c in charges)
+              {
+                'id': c.id,
+                'assignment_id': c.assignmentId,
+                'player_number': c.playerNumber,
+                'charge_index': c.chargeIndex,
+                'band_code': c.bandCode,
+                'activity_code': c.activityCode,
+                'resource_id': c.resourceId,
+                'controller_count': c.controllerCount,
+                'segment_start': Wire.at(c.segmentStart),
+                'segment_end': Wire.at(c.segmentEnd),
+                'played_minutes': c.playedMinutes,
+                'billed_minutes': c.billedMinutes,
+                'unit_minutes': c.unitMinutes,
+                'unit_price_paise': c.unitPricePaise,
+                'amount_paise': c.amountPaise,
+              },
+          ],
+        },
+      );
     });
     return Ok((await getById(cmd.groupId))!);
   }
@@ -602,6 +735,12 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
           voidReason: Value(reason),
           updatedAt: Value(now),
         ),
+      );
+      await _sync?.record(
+        kind: 'group.void',
+        entityType: 'group',
+        entityId: id,
+        payload: {'group_id': id, 'reason': reason, 'at': Wire.at(now)},
       );
     });
     return Ok((await getById(id))!);
@@ -674,6 +813,21 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
         createdAt: now,
       );
       await _db.into(_db.groupPayments).insert(payment);
+      await _sync?.record(
+        kind: 'payment.record',
+        entityType: 'group',
+        entityId: cmd.groupId,
+        payload: {
+          'scope': 'group',
+          'parent_id': cmd.groupId,
+          'payment_id': payment.id,
+          'amount_paise': payment.amountPaise,
+          'method': payment.method,
+          'is_refund': payment.isRefund,
+          'note': payment.note,
+          'reason': payment.reason,
+        },
+      );
       if (group.paymentStatus != PaymentStatus.waived) {
         final paid = await _totalPaid(cmd.groupId);
         final status =

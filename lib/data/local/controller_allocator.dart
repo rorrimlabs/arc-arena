@@ -37,8 +37,9 @@ class ControllerAllocator {
   /// allocation row per pad. Throws [ControllerAllocationException] on the first
   /// conflict (unknown / not-usable / not-at-this-station / already-in-use).
   /// Exactly one of ([sessionId]+[segmentId]) or ([groupId]+[assignmentId]) is
-  /// supplied, identifying what the pad is being used for.
-  Future<void> allocate({
+  /// supplied, identifying what the pad is being used for. Returns the rows it
+  /// inserted (their ids travel to the server with the operation).
+  Future<List<ControllerAllocationRow>> allocate({
     required String scope, // 'single' | 'group'
     String? sessionId,
     String? groupId,
@@ -113,9 +114,10 @@ class ControllerAllocator {
       }
     }
 
+    final inserted = <ControllerAllocationRow>[];
     for (final id in controllerIds) {
       try {
-        await _db.into(_db.controllerAllocations).insert(ControllerAllocationRow(
+        final row = ControllerAllocationRow(
               id: _uuid.v4(),
               controllerId: id,
               scope: scope,
@@ -132,7 +134,9 @@ class ControllerAllocator {
               endedAt: null,
               requestId: requestId,
               createdAt: now,
-            ));
+            );
+        await _db.into(_db.controllerAllocations).insert(row);
+        inserted.add(row);
       } on Exception {
         // The unique index rejected it: a racing writer took the pad between
         // the read above and this insert. Surface the same friendly conflict.
@@ -143,6 +147,7 @@ class ControllerAllocator {
         ));
       }
     }
+    return inserted;
   }
 
   /// Physically brings [controllerIds] to [resourceId] for a session that is
@@ -153,8 +158,8 @@ class ControllerAllocator {
   ///
   /// Refused (whole operation rolls back) when a pad is unknown, not usable,
   /// held by an open allocation, or sits at a station whose count-only session
-  /// may have it in a player's hands.
-  Future<void> borrow({
+  /// may have it in a player's hands. Returns the move rows it recorded.
+  Future<List<ControllerMoveRow>> borrow({
     required List<String> controllerIds,
     required String resourceId,
     required String resourceName,
@@ -162,6 +167,7 @@ class ControllerAllocator {
     required DateTime at,
     required DateTime now,
   }) async {
+    final moved = <ControllerMoveRow>[];
     for (final id in controllerIds) {
       final pad = await (_db.select(_db.controllers)
             ..where((t) => t.id.equals(id)))
@@ -205,7 +211,7 @@ class ControllerAllocator {
         loanSessionRef: Value(returning ? null : sessionRef),
         updatedAt: Value(now),
       ));
-      await recordMove(
+      moved.add(await recordMove(
         controllerId: id,
         from: pad.currentResourceId,
         to: resourceId,
@@ -213,12 +219,13 @@ class ControllerAllocator {
         sessionRef: returning ? null : sessionRef,
         at: at,
         now: now,
-      );
+      ));
     }
+    return moved;
   }
 
-  /// Appends one location-history row.
-  Future<void> recordMove({
+  /// Appends one location-history row and returns it.
+  Future<ControllerMoveRow> recordMove({
     required String controllerId,
     required String from,
     required String to,
@@ -226,17 +233,20 @@ class ControllerAllocator {
     String? sessionRef,
     required DateTime at,
     required DateTime now,
-  }) =>
-      _db.into(_db.controllerMoves).insert(ControllerMoveRow(
-            id: _uuid.v4(),
-            controllerId: controllerId,
-            fromResourceId: from,
-            toResourceId: to,
-            kind: kind.code,
-            sessionRef: sessionRef,
-            movedAt: at,
-            createdAt: now,
-          ));
+  }) async {
+    final row = ControllerMoveRow(
+      id: _uuid.v4(),
+      controllerId: controllerId,
+      fromResourceId: from,
+      toResourceId: to,
+      kind: kind.code,
+      sessionRef: sessionRef,
+      movedAt: at,
+      createdAt: now,
+    );
+    await _db.into(_db.controllerMoves).insert(row);
+    return row;
+  }
 
   /// True when [resourceId] hosts an open controller-using segment/assignment
   /// that holds NO tracked pad — its pads may be in players' hands.

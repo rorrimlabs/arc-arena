@@ -1,5 +1,6 @@
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/data/local/database.dart';
+import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/auth/pin_credential.dart';
@@ -7,10 +8,16 @@ import 'package:arena_ops/domain/repositories/user_repository.dart';
 import 'package:drift/drift.dart';
 
 class LocalUserRepository implements UserRepository {
-  LocalUserRepository(this._db, [this._clock = const SystemClock()]);
+  LocalUserRepository(this._db,
+      [this._clock = const SystemClock(), this._sync]);
 
   final AppDatabase _db;
   final Clock _clock;
+
+  /// Cloud mode only (see SyncRecorder). Null in local-only mode. In cloud
+  /// mode a member's name/permissions/active flag sync; the PIN never does —
+  /// it is a quick-unlock for this device, not a credential.
+  final SyncRecorder? _sync;
 
   /// Wrong PINs tolerated before the account locks. Five is enough for a
   /// mistyped PIN on a busy counter and far too few to walk 10 000 of them.
@@ -52,26 +59,53 @@ class LocalUserRepository implements UserRepository {
   @override
   Future<AppUser> upsert(AppUser user, {String? newPin}) async {
     final existing = await _row(user.id);
+    if (existing == null && _sync != null) {
+      // A cloud member is a real account the owner adds by email; a row made
+      // up on this device would have no account behind it.
+      throw UnsupportedError(
+          'In cloud mode, add staff by email from Settings → Staff.');
+    }
     final credential = newPin == null ? null : PinCredential.create(newPin);
-    await _db.into(_db.users).insertOnConflictUpdate(UsersCompanion(
-          id: Value(user.id),
-          name: Value(user.name),
-          perms: Value(Permission.codesOf(user.perms)),
-          active: Value(user.active),
-          // Omitting a PIN keeps the stored one; there is no way to read it
-          // back, so "unchanged" has to mean "write the same hash again".
-          pinSalt: Value(credential?.salt ?? existing?.pinSalt),
-          pinHash: Value(credential?.hash ?? existing?.pinHash),
-          pinIterations:
-              Value(credential?.iterations ?? existing?.pinIterations),
-          // A new PIN clears a lockout; so does reactivating an account.
-          failedAttempts:
-              credential == null ? Value(existing?.failedAttempts ?? 0) : const Value(0),
-          lockedUntilAt: credential == null
-              ? Value(existing?.lockedUntilAt)
-              : const Value(null),
-          sortOrder: Value(existing?.sortOrder ?? 0),
-        ));
+    final row = UsersCompanion(
+      id: Value(user.id),
+      name: Value(user.name),
+      perms: Value(Permission.codesOf(user.perms)),
+      active: Value(user.active),
+      // Omitting a PIN keeps the stored one; there is no way to read it
+      // back, so "unchanged" has to mean "write the same hash again".
+      pinSalt: Value(credential?.salt ?? existing?.pinSalt),
+      pinHash: Value(credential?.hash ?? existing?.pinHash),
+      pinIterations:
+          Value(credential?.iterations ?? existing?.pinIterations),
+      // A new PIN clears a lockout; so does reactivating an account.
+      failedAttempts:
+          credential == null ? Value(existing?.failedAttempts ?? 0) : const Value(0),
+      lockedUntilAt: credential == null
+          ? Value(existing?.lockedUntilAt)
+          : const Value(null),
+      sortOrder: Value(existing?.sortOrder ?? 0),
+    );
+    await _db.transaction(() async {
+      await _db.into(_db.users).insertOnConflictUpdate(row);
+      // Only the profile syncs; a PIN-only change stays on this device.
+      if (existing != null &&
+          (existing.name != user.name ||
+              existing.active != user.active ||
+              !_samePerms(existing.perms, Permission.codesOf(user.perms)))) {
+        await _sync?.record(
+          kind: 'staff.update',
+          entityType: 'staff',
+          entityId: user.id,
+          payload: {
+            'user_id': user.id,
+            'name': user.name,
+            'perms': Permission.codesOf(user.perms),
+            'active': user.active,
+            'sort_order': existing.sortOrder,
+          },
+        );
+      }
+    });
     return (await getById(user.id))!;
   }
 
@@ -162,4 +196,7 @@ class LocalUserRepository implements UserRepository {
 
   Future<UserRow?> _row(String id) =>
       (_db.select(_db.users)..where((t) => t.id.equals(id))).getSingleOrNull();
+
+  static bool _samePerms(List<String> a, List<String> b) =>
+      a.toSet().length == b.toSet().length && a.toSet().containsAll(b);
 }

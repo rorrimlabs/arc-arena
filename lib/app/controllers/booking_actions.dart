@@ -399,7 +399,9 @@ class BookingActions {
       bookingId: booking.id,
     ));
     if (started.isOk) {
-      await bookings.setStatus(booking.id, BookingStatus.checkedIn);
+      // The session start already checked the booking in, in the same
+      // transaction (and the server does the same), so there is no second
+      // write here that could succeed or fail on its own.
       // They arrived — the reminder is no longer needed.
       await reminders?.cancelFor(booking.id);
       await bookings.setReminderStatus(booking.id, ReminderStatus.done);

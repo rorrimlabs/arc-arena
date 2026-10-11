@@ -3,6 +3,7 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/data/local/controller_allocator.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/mappers.dart';
+import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/repositories/controller_allocation_reader.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
@@ -73,9 +74,13 @@ class ControllerDashboard {
 /// Allocation itself happens inside the session/group repositories via
 /// [ControllerAllocator]; this repository is the owner-facing view + inventory.
 class LocalControllerAllocationRepository implements ControllerAllocationReader {
-  LocalControllerAllocationRepository(this._db, [this._clock = const SystemClock()]);
+  LocalControllerAllocationRepository(this._db,
+      [this._clock = const SystemClock(), this._sync]);
   final AppDatabase _db;
   final Clock _clock;
+
+  /// Cloud mode only (see SyncRecorder). Null in local-only mode.
+  final SyncRecorder? _sync;
   static const _uuid = Uuid();
 
   ControllerAllocator get allocator => ControllerAllocator(_db, _uuid);
@@ -171,8 +176,9 @@ class LocalControllerAllocationRepository implements ControllerAllocationReader 
           .write(companion);
       // Location history: only a real move is recorded (same-place is a no-op
       // for the timeline, e.g. "return home" on a pad already home).
+      ControllerMoveRow? move;
       if (to != pad.currentResourceId) {
-        await allocator.recordMove(
+        move = await allocator.recordMove(
           controllerId: controllerId,
           from: pad.currentResourceId,
           to: to,
@@ -182,6 +188,19 @@ class LocalControllerAllocationRepository implements ControllerAllocationReader 
           now: now,
         );
       }
+      await _sync?.record(
+        kind: 'controller.move',
+        entityType: 'controller',
+        entityId: controllerId,
+        payload: {
+          'controller_id': controllerId,
+          'kind': kind.code,
+          'to_resource_id': to,
+          'session_ref': kind == ControllerMoveKind.loan ? loanSessionRef : null,
+          'at': Wire.at(now),
+          'move_id': move?.id,
+        },
+      );
     });
     return const Ok(null);
   }
@@ -210,8 +229,16 @@ class LocalControllerAllocationRepository implements ControllerAllocationReader 
         code: 'mode_switch_busy',
       ));
     }
-    await (_db.update(_db.resources)..where((t) => t.id.equals(resourceId)))
-        .write(ResourcesCompanion(currentMode: Value(mode)));
+    await _db.transaction(() async {
+      await (_db.update(_db.resources)..where((t) => t.id.equals(resourceId)))
+          .write(ResourcesCompanion(currentMode: Value(mode)));
+      await _sync?.record(
+        kind: 'resource.set_mode',
+        entityType: 'catalog',
+        entityId: resourceId,
+        payload: {'id': resourceId, 'mode': mode},
+      );
+    });
     return const Ok(null);
   }
 

@@ -3,6 +3,7 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/data/local/controller_allocator.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/mappers.dart';
+import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
@@ -15,10 +16,15 @@ import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
 
 class LocalSessionRepository implements SessionRepository {
-  LocalSessionRepository(this._db, [this._clock = const SystemClock()]);
+  LocalSessionRepository(this._db,
+      [this._clock = const SystemClock(), this._sync]);
 
   final AppDatabase _db;
   final Clock _clock;
+
+  /// Cloud mode only: records each change as a sync op in the same
+  /// transaction. Null in local-only mode.
+  final SyncRecorder? _sync;
   static const _uuid = Uuid();
 
   ControllerAllocator get _alloc => ControllerAllocator(_db, _uuid);
@@ -287,9 +293,10 @@ class LocalSessionRepository implements SessionRepository {
           startedAt: cmd.startedAt.toUtc(),
           now: now,
         );
+        var moves = const <ControllerMoveRow>[];
         if (cmd.borrowControllerIds != null &&
             cmd.borrowControllerIds!.isNotEmpty) {
-          await _alloc.borrow(
+          moves = await _alloc.borrow(
             controllerIds: cmd.borrowControllerIds!,
             resourceId: cmd.resourceId,
             resourceName: cmd.resourceName,
@@ -298,8 +305,9 @@ class LocalSessionRepository implements SessionRepository {
             now: now,
           );
         }
+        var pads = const <ControllerAllocationRow>[];
         if (cmd.controllerIds != null && cmd.controllerIds!.isNotEmpty) {
-          await _alloc.allocate(
+          pads = await _alloc.allocate(
             scope: 'single',
             sessionId: session.id,
             segmentId: seg.id,
@@ -313,9 +321,40 @@ class LocalSessionRepository implements SessionRepository {
             requestId: cmd.requestId,
           );
         }
+        // A check-in: the booking is checked in by the same transaction that
+        // starts its session, so neither can happen without the other (and
+        // the server does the same, refusing a booking already checked in).
+        if (cmd.bookingId != null) {
+          await (_db.update(_db.bookings)
+                ..where((t) => t.id.equals(cmd.bookingId!)))
+              .write(BookingsCompanion(
+            status: Value(BookingStatus.checkedIn.code),
+            updatedAt: Value(now),
+          ));
+        }
         await (_db.update(_db.customers)..where((t) => t.id.equals(cmd.customerId)))
             .write(CustomersCompanion(lastVisitAt: Value(cmd.startedAt.toUtc())));
         await _touchGame(cmd.gameId, cmd.startedAt.toUtc());
+        await _sync?.record(
+          kind: 'session.start',
+          entityType: 'session',
+          entityId: session.id,
+          payload: {
+            'id': session.id,
+            'segment_id': seg.id,
+            'customer_id': cmd.customerId,
+            'booking_id': cmd.bookingId,
+            'started_at': Wire.at(session.startedAt),
+            'scheduled_end_at': Wire.at(session.scheduledEndAt),
+            'pricing_snapshot': session.pricingSnapshot,
+            'resource_id': cmd.resourceId,
+            'activity_code': cmd.activityCode,
+            'game_id': cmd.gameId,
+            'controller_count': cmd.controllerCount,
+            'allocations': Wire.pads(pads),
+            'moves': Wire.moves(moves),
+          },
+        );
         return session;
       });
       return Ok(sessionFromRow(row));
@@ -398,9 +437,11 @@ class LocalSessionRepository implements SessionRepository {
         );
         // Pads from another station are carried over only now — after this
         // session's own pads were released — so nothing is double-held.
+        var moves = const <ControllerMoveRow>[];
+        var pads = const <ControllerAllocationRow>[];
         if (cmd.borrowControllerIds != null &&
             cmd.borrowControllerIds!.isNotEmpty) {
-          await _alloc.borrow(
+          moves = await _alloc.borrow(
             controllerIds: cmd.borrowControllerIds!,
             resourceId: cmd.resourceId,
             resourceName: cmd.resourceName,
@@ -410,7 +451,7 @@ class LocalSessionRepository implements SessionRepository {
           );
         }
         if (cmd.controllerIds != null && cmd.controllerIds!.isNotEmpty) {
-          await _alloc.allocate(
+          pads = await _alloc.allocate(
             scope: 'single',
             sessionId: cmd.sessionId,
             segmentId: seg.id,
@@ -426,6 +467,25 @@ class LocalSessionRepository implements SessionRepository {
         await (_db.update(_db.sessions)..where((t) => t.id.equals(cmd.sessionId)))
             .write(SessionsCompanion(updatedAt: Value(now)));
         await _touchGame(cmd.gameId, at);
+        await _sync?.record(
+          kind: 'session.reconfigure',
+          entityType: 'session',
+          entityId: cmd.sessionId,
+          payload: {
+            'session_id': cmd.sessionId,
+            'at': Wire.at(at),
+            // The segment this device changed: refused as stale if another
+            // device switched the session first.
+            'expected_segment_id': current.id,
+            'new_segment_id': seg.id,
+            'resource_id': cmd.resourceId,
+            'activity_code': cmd.activityCode,
+            'game_id': cmd.gameId,
+            'controller_count': cmd.controllerCount,
+            'allocations': Wire.pads(pads),
+            'moves': Wire.moves(moves),
+          },
+        );
         return seg;
       });
       return Ok(segmentFromRow(newSeg));
@@ -457,21 +517,38 @@ class LocalSessionRepository implements SessionRepository {
     }
     await _db.transaction(() async {
       final now = _clock.now();
-      await _db.into(_db.sessionExtensions).insert(SessionExtensionRow(
-            id: _uuid.v4(),
-            sessionId: cmd.sessionId,
-            addedMinutes: cmd.addedMinutes,
-            oldEndAt: existing.scheduledEndAt,
-            newEndAt: cmd.newEndAt.toUtc(),
-            addedAmountPaise: cmd.addedAmountPaise,
-            reason: cmd.reason,
-            createdAt: now,
-          ));
+      final ext = SessionExtensionRow(
+        id: _uuid.v4(),
+        sessionId: cmd.sessionId,
+        addedMinutes: cmd.addedMinutes,
+        oldEndAt: existing.scheduledEndAt,
+        newEndAt: cmd.newEndAt.toUtc(),
+        addedAmountPaise: cmd.addedAmountPaise,
+        reason: cmd.reason,
+        createdAt: now,
+      );
+      await _db.into(_db.sessionExtensions).insert(ext);
       await (_db.update(_db.sessions)..where((t) => t.id.equals(cmd.sessionId)))
           .write(SessionsCompanion(
         scheduledEndAt: Value(cmd.newEndAt.toUtc()),
         updatedAt: Value(now),
       ));
+      await _sync?.record(
+        kind: 'session.extend',
+        entityType: 'session',
+        entityId: cmd.sessionId,
+        payload: {
+          'session_id': cmd.sessionId,
+          'extension_id': ext.id,
+          'added_minutes': ext.addedMinutes,
+          // The end this extension builds on: two devices extending from the
+          // same end must not both stack on it.
+          'old_end_at': Wire.at(ext.oldEndAt),
+          'new_end_at': Wire.at(ext.newEndAt),
+          'added_amount_paise': ext.addedAmountPaise,
+          'reason': ext.reason,
+        },
+      );
     });
     return Ok((await getById(cmd.sessionId))!);
   }
@@ -495,6 +572,11 @@ class LocalSessionRepository implements SessionRepository {
 
     await _db.transaction(() async {
       final actualEnd = cmd.actualEndedAt.toUtc();
+      // What this bill was priced from — the server refuses the end as stale
+      // if another device switched or extended the session meanwhile.
+      final pricedFrom = [
+        for (final s in await segmentsFor(cmd.sessionId)) s.id,
+      ];
       // Close the open segment at the actual end.
       await (_db.update(_db.sessionSegments)
             ..where((t) => t.sessionId.equals(cmd.sessionId) & t.endedAt.isNull()))
@@ -502,28 +584,27 @@ class LocalSessionRepository implements SessionRepository {
       // Free every controller this session held.
       await _alloc.closeForSession(cmd.sessionId, actualEnd);
 
-      await _db.batch((b) {
-        b.insertAll(_db.sessionCharges, [
-          for (final c in cmd.charges)
-            SessionChargesCompanion.insert(
-              id: _uuid.v4(),
-              sessionId: cmd.sessionId,
-              segmentId: Value(c.segmentId),
-              segmentIndex: c.segmentIndex,
-              bandCode: c.bandCode,
-              activityCode: c.activityCode,
-              resourceId: Value(c.resourceId),
-              controllerCount: Value(c.controllerCount),
-              segmentStart: c.segmentStart,
-              segmentEnd: c.segmentEnd,
-              playedMinutes: c.playedMinutes,
-              billedMinutes: c.billedMinutes,
-              unitMinutes: c.unitMinutes,
-              unitPricePaise: c.unitPricePaise,
-              amountPaise: c.amountPaise,
-            ),
-        ]);
-      });
+      final charges = [
+        for (final c in cmd.charges)
+          SessionChargeRow(
+            id: _uuid.v4(),
+            sessionId: cmd.sessionId,
+            segmentId: c.segmentId,
+            segmentIndex: c.segmentIndex,
+            bandCode: c.bandCode,
+            activityCode: c.activityCode,
+            resourceId: c.resourceId,
+            controllerCount: c.controllerCount,
+            segmentStart: c.segmentStart,
+            segmentEnd: c.segmentEnd,
+            playedMinutes: c.playedMinutes,
+            billedMinutes: c.billedMinutes,
+            unitMinutes: c.unitMinutes,
+            unitPricePaise: c.unitPricePaise,
+            amountPaise: c.amountPaise,
+          ),
+      ];
+      await _db.batch((b) => b.insertAll(_db.sessionCharges, charges));
 
       final paid = await _totalPaid(cmd.sessionId);
       final status = cmd.markWaived
@@ -537,9 +618,41 @@ class LocalSessionRepository implements SessionRepository {
         paymentStatus: Value(status.code),
         updatedAt: Value(_clock.now()),
       ));
+      await _sync?.record(
+        kind: 'session.end',
+        entityType: 'session',
+        entityId: cmd.sessionId,
+        payload: {
+          'session_id': cmd.sessionId,
+          'ended_at': Wire.at(actualEnd),
+          'billed_amount_paise': cmd.billedAmountPaise,
+          'mark_waived': cmd.markWaived,
+          'expected_segment_ids': pricedFrom,
+          'expected_scheduled_end_at': Wire.at(existing.scheduledEndAt),
+          'charges': [for (final c in charges) chargeWire(c)],
+        },
+      );
     });
     return Ok((await getById(cmd.sessionId))!);
   }
+
+  /// A charge row as the server's session.end expects it.
+  static Map<String, Object?> chargeWire(SessionChargeRow c) => {
+        'id': c.id,
+        'segment_id': c.segmentId,
+        'segment_index': c.segmentIndex,
+        'band_code': c.bandCode,
+        'activity_code': c.activityCode,
+        'resource_id': c.resourceId,
+        'controller_count': c.controllerCount,
+        'segment_start': Wire.at(c.segmentStart),
+        'segment_end': Wire.at(c.segmentEnd),
+        'played_minutes': c.playedMinutes,
+        'billed_minutes': c.billedMinutes,
+        'unit_minutes': c.unitMinutes,
+        'unit_price_paise': c.unitPricePaise,
+        'amount_paise': c.amountPaise,
+      };
 
   @override
   Future<Result<Session>> voidSession(String id, String reason) async {
@@ -560,6 +673,12 @@ class LocalSessionRepository implements SessionRepository {
           voidReason: Value(reason),
           updatedAt: Value(now),
         ),
+      );
+      await _sync?.record(
+        kind: 'session.void',
+        entityType: 'session',
+        entityId: id,
+        payload: {'session_id': id, 'reason': reason, 'at': Wire.at(now)},
       );
     });
     return Ok((await getById(id))!);
@@ -628,6 +747,23 @@ class LocalSessionRepository implements SessionRepository {
         createdAt: now,
       );
       await _db.into(_db.payments).insert(payment);
+      // The payment id is this device's: a retried push can never charge
+      // twice (the server replays the op, and its primary key refuses a copy).
+      await _sync?.record(
+        kind: 'payment.record',
+        entityType: 'session',
+        entityId: cmd.sessionId,
+        payload: {
+          'scope': 'single',
+          'parent_id': cmd.sessionId,
+          'payment_id': payment.id,
+          'amount_paise': payment.amountPaise,
+          'method': payment.method,
+          'is_refund': payment.isRefund,
+          'note': payment.note,
+          'reason': payment.reason,
+        },
+      );
       if (session.paymentStatus != PaymentStatus.waived) {
         final paid = await _totalPaid(cmd.sessionId);
         final status = _paymentStatus(billed: session.billedAmountPaise, paid: paid);
