@@ -11,9 +11,10 @@ select has_function('public', 'move_controller',
 select ok(not has_function_privilege('anon',
     'public.move_controller(uuid,uuid,text,uuid,text,timestamptz)', 'EXECUTE'),
   'anon cannot execute move_controller');
-select ok(has_function_privilege('authenticated',
+-- Since 0012 clients move pads through the controller.move op (sync_push).
+select ok(not has_function_privilege('authenticated',
     'public.move_controller(uuid,uuid,text,uuid,text,timestamptz)', 'EXECUTE'),
-  'authenticated can execute move_controller');
+  'authenticated can NOT execute move_controller directly (0012)');
 select is((select prosecdef from pg_proc where oid =
     'public.move_controller(uuid,uuid,text,uuid,text,timestamptz)'::regprocedure),
   true, 'move_controller is SECURITY DEFINER');
@@ -35,7 +36,10 @@ insert into staff_profiles(arena_id,user_id,name,role,perms,active)
   select (select id from arenas limit 1),'22222222-2222-2222-2222-222222222222','Staff','staff',
     array['start','bill','discount','members'],true;
 
-set local role authenticated;
+-- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
+-- authenticated; clients go through sync_push). They are exercised here as the
+-- internal building blocks they now are: as the function owner, with the
+-- caller's JWT claims, so auth.uid() and every membership/role check still run.
 
 -- ===================== as STAFF =====================
 select set_config('request.jwt.claims','{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
@@ -196,7 +200,6 @@ select is((select count(*)::int from controller_moves m join controllers c on c.
             where c.label = 'HEX-2'),
   1, 'HEX-2 history is just the loan');
 
-reset role;
 select set_config('request.jwt.claims','', true);
 select * from finish();
 rollback;

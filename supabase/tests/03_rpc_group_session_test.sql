@@ -21,7 +21,10 @@ insert into controllers(arena_id,label,home_resource_id,current_resource_id,stat
     (select id from resources where name='HEX'), 'usable'
   from generate_series(1,4) g;
 
-set local role authenticated;
+-- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
+-- authenticated; clients go through sync_push). They are exercised here as the
+-- internal building blocks they now are: as the function owner, with the
+-- caller's JWT claims, so auth.uid() and every membership/role check still run.
 select set_config('request.jwt.claims','{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
 
 -- create_group with two players on two different stations.
@@ -129,7 +132,6 @@ select is((select status from group_sessions where id='11110000-0000-0000-0000-0
 select lives_ok($$ select void_group('11110000-0000-0000-0000-000000000003','again') $$,
   'void_group is idempotent');
 
-reset role;
 select set_config('request.jwt.claims','', true);
 select * from finish();
 rollback;

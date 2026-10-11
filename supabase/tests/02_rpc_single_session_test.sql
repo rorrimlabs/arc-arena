@@ -14,7 +14,10 @@ insert into staff_profiles(arena_id,user_id,name,role,perms,active)
 insert into customers(id,arena_id,name) values
   ('cccccccc-0000-0000-0000-000000000001',(select id from arenas limit 1),'Test Walk-in');
 
-set local role authenticated;
+-- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
+-- authenticated; clients go through sync_push). They are exercised here as the
+-- internal building blocks they now are: as the function owner, with the
+-- caller's JWT claims, so auth.uid() and every membership/role check still run.
 select set_config('request.jwt.claims','{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
 
 -- start_session uses the client-supplied id and opens segment 0.
@@ -119,7 +122,6 @@ select lives_ok($$ select void_session('aaaaaaaa-0000-0000-0000-000000000004','a
 select is((select count(*)::int from audit_log where entity_id='aaaaaaaa-0000-0000-0000-000000000004'), 1,
   'void wrote exactly one audit row');
 
-reset role;
 select set_config('request.jwt.claims','', true);
 select * from finish();
 rollback;

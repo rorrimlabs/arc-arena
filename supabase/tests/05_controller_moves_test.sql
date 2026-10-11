@@ -9,8 +9,8 @@ select * from no_plan();
 select has_table('public', 'controller_moves', 'controller_moves exists');
 select columns_are('public', 'controller_moves', array[
   'id','arena_id','controller_id','from_resource_id','to_resource_id','kind',
-  'session_ref','moved_at','created_by','created_at'],
-  'controller_moves = Drift ControllerMoves + arena_id/created_by');
+  'session_ref','moved_at','created_by','created_at','sync_xid'],
+  'controller_moves = Drift ControllerMoves + arena_id/created_by/sync_xid');
 select col_type_is('public','controller_moves','moved_at','timestamp with time zone',
   'moved_at is timestamptz');
 select col_not_null('public','controller_moves', c, c || ' is not null')
@@ -54,10 +54,12 @@ select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.
 select ok(not has_function_privilege('anon',
     'public.borrow_controllers(uuid,uuid[],uuid,text,timestamptz)', 'EXECUTE'),
   'anon cannot execute borrow_controllers');
-select ok(has_function_privilege('authenticated',
+-- Since 0012 the pad RPCs are internal: clients borrow/allocate through
+-- sync_push ops, which also tie the pads to a real session atomically.
+select ok(not has_function_privilege('authenticated',
     'public.allocate_controllers(uuid,text,uuid[],uuid,text,timestamptz,uuid,uuid,uuid,uuid,int,text,uuid,text,boolean,text)',
     'EXECUTE'),
-  'authenticated can execute allocate_controllers (with p_borrow)');
+  'authenticated can NOT execute allocate_controllers directly (0012)');
 
 -- ===================== fixture (as db owner) =====================
 -- One staff member (Drift default staff perms) — borrowing is a floor action.
@@ -84,16 +86,16 @@ insert into session_segments(arena_id,session_id,idx,resource_id,activity_code,c
   values ((select id from arenas limit 1),'55555555-0000-0000-0000-000000000001',0,
     (select id from resources where name='VOID'),'PS5',2,now());
 
-set local role authenticated;
+-- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
+-- authenticated; clients go through sync_push). They are exercised here as the
+-- internal building blocks they now are: as the function owner, with the
+-- caller's JWT claims, so auth.uid() and every membership/role check still run.
 select set_config('request.jwt.claims','{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
 
 -- ===================== as STAFF =====================
--- History is RPC-only.
-select throws_ok($$
-  insert into controller_moves(arena_id, controller_id, from_resource_id, to_resource_id, kind, moved_at)
-  select c.arena_id, c.id, c.current_resource_id, c.home_resource_id, 'loan', now()
-  from controllers c where c.label = 'HEX-1' $$,
-  '42501', null, 'staff cannot write controller_moves directly');
+-- History is RPC-only (a table privilege, so asserted on the grant).
+select ok(not has_table_privilege('authenticated', 'public.controller_moves', 'INSERT'),
+  'staff cannot write controller_moves directly');
 
 -- Without p_borrow, a pad elsewhere is still refused (0007 behaviour unchanged).
 select throws_ok($$
@@ -220,7 +222,6 @@ select throws_ok($$
     (select id from resources where name='GHOST'), null, now()) $$,
   '42501', null, 'borrowing in an arena you are not a member of is forbidden');
 
-reset role;
 select set_config('request.jwt.claims','', true);
 select * from finish();
 rollback;

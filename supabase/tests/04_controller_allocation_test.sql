@@ -43,7 +43,10 @@ insert into staff_profiles(arena_id,user_id,name,role,perms,active)
   select (select id from arenas limit 1),'11111111-1111-1111-1111-111111111111','Owner','owner',
     array['start','bill','discount','members','stations','money','reports','settings'],true;
 
-set local role authenticated;
+-- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
+-- authenticated; clients go through sync_push). They are exercised here as the
+-- internal building blocks they now are: as the function owner, with the
+-- caller's JWT claims, so auth.uid() and every membership/role check still run.
 select set_config('request.jwt.claims','{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
 
 -- Allocate a specific pad physically at HEX.
@@ -90,7 +93,6 @@ select is(jsonb_array_length(
       (select id from resources where name='HEX'), 'PS5', now())),
   1, 'a released pad can be allocated again');
 
-reset role;
 select set_config('request.jwt.claims','', true);
 select * from finish();
 rollback;
