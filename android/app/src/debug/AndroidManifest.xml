@@ -4,4 +4,9 @@
          to allow setting breakpoints, to provide hot reload, etc.
     -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- DEBUG ONLY: lets an emulator reach the local Supabase dev stack over
+         plain http (http://10.0.2.2:54431, tool/dev_run.sh with ANDROID=1).
+         Release builds keep Android's https-only default, and the app itself
+         refuses a non-https backend in a release build. -->
+    <application android:usesCleartextTraffic="true"/>
 </manifest>

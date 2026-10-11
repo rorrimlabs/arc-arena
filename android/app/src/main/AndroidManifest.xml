@@ -7,6 +7,9 @@
     <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM"/>
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
     <uses-permission android:name="android.permission.VIBRATE"/>
+    <!-- Cloud sync (Supabase). Only the debug/profile manifests had this, so a
+         release build could not reach the server at all. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
     <application
         android:label="arena_ops"
         android:name="${applicationName}"
