@@ -95,11 +95,45 @@ back through the op's savepoint.
 * `early_exit` / `late_arrival = planned` are stored but not used by the app's
   billing. Both sides bill actual time.
 
-**What is still trusted.** Times come from the device, which is required for
-offline-first. The server bounds them, but cannot prove that an end time was
-not set early. Server receipt times (`sync_ops.created_at`, `sessions.created_at`)
-are kept for audit. In pooled group mode, the purchased controller count is
-staff's declaration.
+**What is still trusted — session times.** Start, switch, extend and end times
+come from the device; that is what lets a device work offline. The server
+checks that the money matches the bill *for the times it was given*, and that
+times are in order, but it cannot tell whether those times are true. So
+server-side amount validation is **not** protection against forged or wrong
+timestamps: a member with `bill` and direct API access could, for example,
+send an end time earlier than the real one and the correctly-priced, smaller
+bill for it. The evidence for an audit is the server's own receipt time on
+every op (`sync_ops.created_at`, `sessions.created_at`) and who sent it
+(`created_by`, `sync_ops.user_id`). In pooled group mode the purchased
+controller count is also staff's declaration.
+
+### Changing pricing (rule)
+
+The server's `_pr_*` functions are a hand port of the Dart engine. **Any change
+to how the app prices** — `lib/domain/pricing/`, `lib/domain/services/
+segment_billing.dart`, `group_billing.dart`, `session_planner.dart` (extension
+cost), `lib/core/money/`, the IST/business calendar in `lib/core/time/`, or the
+`BillingPolicy` knobs — **must ship together with**:
+
+1. a NEW migration that changes the matching `_pr_*` function (never edit an
+   applied migration);
+2. a green `bash tool/pricing_parity.sh` run (parity at 0 mismatches and both
+   self-tests caught), with the new rule added to the boundary corpus in
+   `tool/pricing_parity/generate.dart` if random sampling would rarely hit it.
+
+Otherwise devices start receiving `price_mismatch` for correct bills (the
+session stays open on the device and shows under Sync → Needs attention). The
+same applies in reverse to any change in `_pr_*`.
+
+`tool/pricing_parity.sh` prices a fixed boundary corpus (every billing unit ×
+rounding × cash-rounding step and direction at block edges; grace and minimum
+charge edges; happy-hour start/end ±1 s; holidays; IST midnight; VR unit
+rounding; lounge; multi-segment and group bills, waived and not; extensions)
+plus seeded random cases with the app's code, then re-prices them on the local
+database at the function level and through the real `sync_push` end/extend ops
+(exact money applied, one paisa off refused). It runs in a rolled-back
+transaction and finishes by proving it can fail (a one-paisa error on either
+side must be reported).
 
 ## Read path
 

@@ -11,6 +11,11 @@
 ///   6. Compute amounts in integer paise (never floating point).
 ///   7. Round per rounding-scope, then apply final cash rounding.
 ///
+/// SERVER PARITY: the server re-prices every bill with a plpgsql port of this
+/// code (migration 0013, `_pr_*`) and refuses any difference. Changing how
+/// money is computed here needs a matching new migration and a green
+/// `bash tool/pricing_parity.sh` — see docs/SYNC.md "Changing pricing".
+///
 /// Late arrival (§8) and early exit (§5) are decided by the *caller* choosing
 /// which interval to price; the engine stays pure over `[start, end]`.
 library;

@@ -17,6 +17,11 @@
 ///
 /// Subtotals are summed in paise and cash rounding is applied ONCE to the group
 /// total, exactly like [SegmentBilling] for a single session.
+///
+/// SERVER PARITY: the server re-prices every bill with a plpgsql port of this
+/// code (migration 0013, `_pr_*`) and refuses any difference. Changing how
+/// money is computed here needs a matching new migration and a green
+/// `bash tool/pricing_parity.sh` — see docs/SYNC.md "Changing pricing".
 library;
 
 import 'package:arena_ops/core/money/paise.dart';
