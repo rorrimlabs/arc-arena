@@ -10,6 +10,13 @@ begin;
 create extension if not exists pgtap;
 select * from no_plan();
 
+-- Isolated fixture: this file works in its OWN arena (the same starter catalog
+-- seed.sql uses), so whatever else is in the database — the dev seed, arenas
+-- left by the two-device suite, a half-finished run — cannot change what it
+-- sees. Created inside this transaction and rolled back with it.
+insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000007'::uuid, 'pgtap 07');
+select _seed_arena_catalog('e0000000-0000-4000-8000-000000000007'::uuid);
+
 -- ---------------------------------------------------------------- fixture
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
     created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_sso_user,is_anonymous)
@@ -22,23 +29,23 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_co
    'authenticated','nobill@test.local','',now(),now(),now(),'{}','{}',false,false)
   on conflict (id) do nothing;
 insert into staff_profiles(arena_id,user_id,name,role,perms,active) values
-  ((select id from arenas limit 1),'11111111-1111-1111-1111-111111111111','Owner','owner',
+  ('e0000000-0000-4000-8000-000000000007'::uuid,'11111111-1111-1111-1111-111111111111','Owner','owner',
     array['start','bill','discount','members','stations','money','reports','settings'],true),
-  ((select id from arenas limit 1),'22222222-2222-2222-2222-222222222222','Staff','staff',
+  ('e0000000-0000-4000-8000-000000000007'::uuid,'22222222-2222-2222-2222-222222222222','Staff','staff',
     array['start','bill','discount','members'],true),
-  ((select id from arenas limit 1),'33333333-3333-3333-3333-333333333333','Starter','staff',
+  ('e0000000-0000-4000-8000-000000000007'::uuid,'33333333-3333-3333-3333-333333333333','Starter','staff',
     array['start'],true);
 
-create function pg_temp.r(n text) returns uuid as $$ select id from resources where name = n $$ language sql;
-create function pg_temp.c(l text) returns uuid as $$ select id from controllers where label = l $$ language sql;
-create function pg_temp.g(n text) returns uuid as $$ select id from games where name = n $$ language sql;
+create function pg_temp.r(n text) returns uuid as $$ select id from resources where name = n and arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid $$ language sql;
+create function pg_temp.c(l text) returns uuid as $$ select id from controllers where label = l and arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid $$ language sql;
+create function pg_temp.g(n text) returns uuid as $$ select id from games where name = n and arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid $$ language sql;
 create function pg_temp.pad(p_id text, p_label text) returns jsonb as $$
   select jsonb_build_object('id', p_id::uuid, 'controller_id', pg_temp.c(p_label)) $$ language sql;
 create function pg_temp.as_user(p_uid text) returns void as $$
   select set_config('request.jwt.claims',
     jsonb_build_object('sub', p_uid, 'role', 'authenticated')::text, true) $$ language sql;
 create function pg_temp.push(p_kind text, p jsonb, p_op uuid default gen_random_uuid()) returns jsonb as $$
-  select sync_push((select id from arenas limit 1),
+  select sync_push('e0000000-0000-4000-8000-000000000007'::uuid,
     jsonb_build_array(jsonb_build_object('op_id', p_op, 'kind', p_kind, 'payload', p)), 'pgtap')
     -> 'results' -> 0 $$ language sql;
 create function pg_temp.start(p_id text, p_seg text, p_res text, p_cc int, p_allocs jsonb,
@@ -49,7 +56,7 @@ returns jsonb as $$
     'booking_id', p_booking,
     'started_at', '2026-10-01T09:00:00Z', 'scheduled_end_at', '2026-10-01T10:00:00Z',
     -- The arena's own price list, as an in-sync device would freeze it (0013).
-    'pricing_snapshot', _pricing_snapshot((select id from arenas limit 1)),
+    'pricing_snapshot', _pricing_snapshot('e0000000-0000-4000-8000-000000000007'::uuid),
     'resource_id', pg_temp.r(p_res), 'activity_code', 'PS5', 'game_id', pg_temp.g(p_game),
     'controller_count', p_cc, 'allocations', p_allocs, 'moves', p_moves) $$ language sql;
 
@@ -73,7 +80,7 @@ select is((select count(*)::int from controller_allocations
   4, 'four open allocations for the HEX session, with the device ids');
 select ok(exists(select 1 from controller_allocations where id = 'a1000000-0000-0000-0000-000000000003'),
   'server uses the allocation id the device generated');
-select is((select current_resource_id from controllers where label = 'VOID-1'), pg_temp.r('HEX'),
+select is((select current_resource_id from controllers where label = 'VOID-1' and arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid), pg_temp.r('HEX'),
   'VOID-1 is physically at HEX after the borrow');
 select is((select count(*)::int from controller_moves where session_ref = 's:aaaaaaaa-0000-0000-0000-000000000001'),
   2, 'two loan moves recorded with the device move ids');
@@ -106,7 +113,7 @@ select is(pg_temp.push('session.start', pg_temp.start(
                       pg_temp.pad('dd200000-0000-0000-0000-000000000004','GHOST-2'))))
     ->>'status', 'applied', 'VOID starts with GHOST-1/2 borrowed in the same op');
 select is((select count(*)::int from controller_allocations a join controllers c on c.id = a.controller_id
-            where a.ended_at is null and c.label in ('VOID-1','VOID-2')), 2,
+            where c.arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid and a.ended_at is null and c.label in ('VOID-1','VOID-2')), 2,
   'VOID-1/2 are each still held exactly once (by HEX)');
 
 -- ------------------------------------------- 4. venue short → clear refusal
@@ -136,7 +143,7 @@ select is(pg_temp.push('session.void', jsonb_build_object(
 select is(pg_temp.push('rate.upsert', jsonb_build_object('activity_code','PS5','band','standard',
     'controller_count',1,'unit_minutes',60,'price_paise',1))->>'error', 'forbidden',
   'staff cannot change pricing');
-select is((select price_paise from sync_v_rates where activity_code='PS5' and band='standard'
+select is((select price_paise from sync_v_rates where arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid and activity_code='PS5' and band='standard'
             and controller_count = 1), 15000::bigint, 'price unchanged');
 
 -- ------------------------------------------- 6. idempotency + payments never duplicate
@@ -194,7 +201,7 @@ select is(pg_temp.push('controller.move', jsonb_build_object('controller_id', pg
     ->>'status', 'applied', 'GHOST-1 returned home');
 select is((select count(*)::int from controller_moves where controller_id = pg_temp.c('GHOST-1')), 2,
   'GHOST-1 history: loan out + return home');
-select is((select current_resource_id from controllers where label='GHOST-1'), pg_temp.r('GHOST'),
+select is((select current_resource_id from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid), pg_temp.r('GHOST'),
   'GHOST-1 is home');
 select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
     'ended_at','2026-10-01T10:40:00Z', 'billed_amount_paise', 42000,
@@ -244,7 +251,7 @@ select is(pg_temp.push('session.start', pg_temp.start(
 select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-0000-0000-000000000001',
     'primary_customer_id','cccccccc-0000-0000-0000-000000000001','player_count',2,
     'purchased_controller_count',2,'started_at','2026-10-01T11:00:00Z',
-    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot((select id from arenas limit 1)),'billing_mode','per_system',
+    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot('e0000000-0000-4000-8000-000000000007'::uuid),'billing_mode','per_system',
     'assignments', jsonb_build_array(jsonb_build_object('id','98000000-0000-0000-0000-000000000001',
       'player_number',1,'idx',0,'resource_id', pg_temp.r('HEX'),'activity_code','PS5',
       'game_id', pg_temp.g('EA SPORTS FC 25'),'controller_count',1,'allocations','[]'::jsonb,
@@ -252,7 +259,7 @@ select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-00
 select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-0000-0000-000000000001',
     'primary_customer_id','cccccccc-0000-0000-0000-000000000001','player_count',2,
     'purchased_controller_count',2,'started_at','2026-10-01T11:00:00Z',
-    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot((select id from arenas limit 1)),'billing_mode','per_system',
+    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot('e0000000-0000-4000-8000-000000000007'::uuid),'billing_mode','per_system',
     'assignments', jsonb_build_array(
       jsonb_build_object('id','98000000-0000-0000-0000-000000000001','player_number',1,'idx',0,
         'resource_id', pg_temp.r('VOID'),'activity_code','PS5','game_id', pg_temp.g('EA SPORTS FC 25'),
@@ -263,11 +270,11 @@ select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-00
         'controller_count',1,'allocations', jsonb_build_array(pg_temp.pad('a9000000-0000-0000-0000-000000000002','HEX-1')),
         'moves', jsonb_build_array(pg_temp.pad('dd900000-0000-0000-0000-000000000002','HEX-1'))))))
     ->>'error', 'controller_taken', 'a group player cannot borrow HEX-1 (held by HEX)');
-select is((select count(*)::int from group_sessions), 0, 'refused group left nothing behind');
+select is((select count(*)::int from group_sessions where arena_id = 'e0000000-0000-4000-8000-000000000007'::uuid), 0, 'refused group left nothing behind');
 select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-0000-0000-000000000001',
     'primary_customer_id','cccccccc-0000-0000-0000-000000000001','player_count',1,
     'purchased_controller_count',1,'started_at','2026-10-01T11:00:00Z',
-    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot((select id from arenas limit 1)),'billing_mode','per_system',
+    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot('e0000000-0000-4000-8000-000000000007'::uuid),'billing_mode','per_system',
     'assignments', jsonb_build_array(
       jsonb_build_object('id','98000000-0000-0000-0000-000000000001','player_number',1,'idx',0,
         'resource_id', pg_temp.r('VOID'),'activity_code','PS5','game_id', pg_temp.g('EA SPORTS FC 25'),
@@ -303,29 +310,29 @@ select is(pg_temp.push('staff.update', jsonb_build_object('user_id','11111111-11
   'the last person with Settings cannot be switched off');
 
 -- ------------------------------------------- 13. the feed
-select ok((select jsonb_array_length(sync_pull((select id from arenas limit 1), '0', 100000)->'changes')) > 100,
-  'sync_pull returns the arena''s rows');
--- Everything above ran in THIS (still open) transaction, so the commit-safe
--- window must hold it back: another device may only see committed rows. (The
--- end-to-end feed across committed transactions is proven by the two-device
--- Flutter integration test.)
-select ok(not exists(select 1 from jsonb_array_elements(
-    sync_pull((select id from arenas limit 1), '0', 100000)->'changes') e
-    where e->>'t' = 'controller_allocations'),
-  'rows written by a still-open transaction are not in the feed yet (commit-safe window)');
+-- This file's arena and everything above were written in THIS (still open)
+-- transaction, so the commit-safe window must hold all of it back: another
+-- device may only ever see committed rows. (The end-to-end feed across
+-- committed transactions is proven by the two-device suite, tool/sync_it.sh.)
+select is(jsonb_array_length(
+    sync_pull('e0000000-0000-4000-8000-000000000007'::uuid, '0', 100000)->'changes'), 0,
+  'nothing written by a still-open transaction is in the feed (commit-safe window)');
+select ok((select (r->>'has_more')::boolean = false
+             from (select sync_pull('e0000000-0000-4000-8000-000000000007'::uuid, '0', 100000) r) q),
+  'and the empty window is complete, not a cut page');
 select is(pg_temp.push('rate.delete', jsonb_build_object('activity_code','LOUNGE','band','standard'))->>'status',
   'applied', 'owner deletes a rate');
 select ok(exists(select 1 from sync_tombstones where table_name = 'rates'
     and row_key->>'controller_count' is null and row_key->>'price_paise' = '200000'),
   'the delete leaves a tombstone for the feed');
-select is(jsonb_array_length(sync_fetch_entity((select id from arenas limit 1),
+select is(jsonb_array_length(sync_fetch_entity('e0000000-0000-4000-8000-000000000007'::uuid,
     '[{"type":"session","id":"aaaaaaaa-0000-0000-0000-000000000099"}]')->0->'rows'), 0,
   'fetching a session the server never had returns no rows (device drops its copy)');
 
 select pg_temp.as_user('99999999-9999-9999-9999-999999999999');
-select throws_ok($$ select sync_push((select id from arenas limit 1), '[]'::jsonb) $$, '42501', null,
+select throws_ok($$ select sync_push('e0000000-0000-4000-8000-000000000007'::uuid, '[]'::jsonb) $$, '42501', null,
   'a non-member cannot push');
-select throws_ok($$ select sync_pull((select id from arenas limit 1)) $$, '42501', null,
+select throws_ok($$ select sync_pull('e0000000-0000-4000-8000-000000000007'::uuid) $$, '42501', null,
   'a non-member cannot pull');
 
 select * from finish();

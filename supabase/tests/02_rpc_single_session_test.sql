@@ -3,16 +3,23 @@ begin;
 create extension if not exists pgtap;
 select * from no_plan();
 
+-- Isolated fixture: this file works in its OWN arena (the same starter catalog
+-- seed.sql uses), so whatever else is in the database — the dev seed, arenas
+-- left by the two-device suite, a half-finished run — cannot change what it
+-- sees. Created inside this transaction and rolled back with it.
+insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000002'::uuid, 'pgtap 02');
+select _seed_arena_catalog('e0000000-0000-4000-8000-000000000002'::uuid);
+
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,
     email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_sso_user,is_anonymous)
   values ('00000000-0000-0000-0000-000000000000','11111111-1111-1111-1111-111111111111',
       'authenticated','authenticated','owner@test.local','',now(),now(),now(),'{}','{}',false,false)
   on conflict (id) do nothing;
 insert into staff_profiles(arena_id,user_id,name,role,perms,active)
-  select (select id from arenas limit 1),'11111111-1111-1111-1111-111111111111','Owner','owner',
+  select 'e0000000-0000-4000-8000-000000000002'::uuid,'11111111-1111-1111-1111-111111111111','Owner','owner',
     array['start','bill','discount','members','stations','money','reports','settings'],true;
 insert into customers(id,arena_id,name) values
-  ('cccccccc-0000-0000-0000-000000000001',(select id from arenas limit 1),'Test Walk-in');
+  ('cccccccc-0000-0000-0000-000000000001','e0000000-0000-4000-8000-000000000002'::uuid,'Test Walk-in');
 
 -- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
 -- authenticated; clients go through sync_push). They are exercised here as the
@@ -22,13 +29,13 @@ select set_config('request.jwt.claims','{"sub":"11111111-1111-1111-1111-11111111
 
 -- start_session uses the client-supplied id and opens segment 0.
 select is(
-  start_session((select id from arenas limit 1), jsonb_build_object(
+  start_session('e0000000-0000-4000-8000-000000000002'::uuid, jsonb_build_object(
     'id','aaaaaaaa-0000-0000-0000-000000000001',
     'segment_id','bbbbbbbb-0000-0000-0000-000000000001',
     'customer_id','cccccccc-0000-0000-0000-000000000001',
     'started_at','2026-10-01T09:00:00Z','scheduled_end_at','2026-10-01T10:00:00Z',
     'pricing_snapshot', jsonb_build_object('policy', jsonb_build_object('name','Default')),
-    'resource_id',(select id from resources where name='HEX'),'activity_code','PS5','controller_count',2),
+    'resource_id',(select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000002'::uuid),'activity_code','PS5','controller_count',2),
     'req-start-1')::text,
   'aaaaaaaa-0000-0000-0000-000000000001', 'start_session returns the client id');
 select is((select count(*)::int from session_segments
@@ -39,31 +46,31 @@ select is((select policy_snapshot->>'name' from sessions where id='aaaaaaaa-0000
 
 -- Idempotent: same request_id returns the first session, no second row.
 select is(
-  start_session((select id from arenas limit 1), jsonb_build_object(
+  start_session('e0000000-0000-4000-8000-000000000002'::uuid, jsonb_build_object(
     'id','aaaaaaaa-0000-0000-0000-000000000099','customer_id','cccccccc-0000-0000-0000-000000000001',
     'started_at','2026-10-01T09:00:00Z','scheduled_end_at','2026-10-01T10:00:00Z',
-    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='HEX'),'activity_code','PS5'),
+    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000002'::uuid),'activity_code','PS5'),
     'req-start-1')::text,
   'aaaaaaaa-0000-0000-0000-000000000001', 'duplicate request_id returns the same session');
-select is((select count(*)::int from sessions where arena_id=(select id from arenas limit 1)), 1,
+select is((select count(*)::int from sessions where arena_id='e0000000-0000-4000-8000-000000000002'::uuid), 1,
   'no duplicate session row was created');
 
 -- One open segment per resource: a second start on HEX fails.
 select throws_ok($$
-  select start_session((select id from arenas limit 1), jsonb_build_object(
+  select start_session('e0000000-0000-4000-8000-000000000002'::uuid, jsonb_build_object(
     'id','aaaaaaaa-0000-0000-0000-000000000002','customer_id','cccccccc-0000-0000-0000-000000000001',
     'started_at','2026-10-01T09:05:00Z','scheduled_end_at','2026-10-01T10:00:00Z',
-    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='HEX'),'activity_code','PS5'),
+    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000002'::uuid),'activity_code','PS5'),
     'req-start-2') $$,
   'resource_busy', 'a second start on a busy resource raises resource_busy');
 
 -- not_playable: Tekken 8 is explicitly not_playable on RIFT (seed override).
 select throws_ok($$
-  select start_session((select id from arenas limit 1), jsonb_build_object(
+  select start_session('e0000000-0000-4000-8000-000000000002'::uuid, jsonb_build_object(
     'id','aaaaaaaa-0000-0000-0000-000000000003','customer_id','cccccccc-0000-0000-0000-000000000001',
     'started_at','2026-10-01T09:00:00Z','scheduled_end_at','2026-10-01T10:00:00Z',
-    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='RIFT'),
-    'activity_code','PS5','game_id',(select id from games where name='Tekken 8')), 'req-np') $$,
+    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='RIFT' and arena_id = 'e0000000-0000-4000-8000-000000000002'::uuid),
+    'activity_code','PS5','game_id',(select id from games where name='Tekken 8' and arena_id = 'e0000000-0000-4000-8000-000000000002'::uuid)), 'req-np') $$,
   'not_playable', 'starting a game marked not_playable on that station raises not_playable');
 
 -- Payment status transitions: partial -> paid, and idempotent payment.
@@ -107,10 +114,10 @@ select throws_ok($$ select record_payment('aaaaaaaa-0000-0000-0000-000000000001'
   'amount_zero', 'a zero payment is rejected');
 
 -- The resource is free again after end: a new session can start on HEX.
-select isnt(start_session((select id from arenas limit 1), jsonb_build_object(
+select isnt(start_session('e0000000-0000-4000-8000-000000000002'::uuid, jsonb_build_object(
     'id','aaaaaaaa-0000-0000-0000-000000000004','customer_id','cccccccc-0000-0000-0000-000000000001',
     'started_at','2026-10-01T11:00:00Z','scheduled_end_at','2026-10-01T12:00:00Z',
-    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='HEX'),'activity_code','PS5'),
+    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000002'::uuid),'activity_code','PS5'),
     'req-start-4')::text, null, 'resource is free after end; a new session starts');
 
 -- void_session (owner) flips status and is idempotent.

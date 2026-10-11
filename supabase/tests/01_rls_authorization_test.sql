@@ -15,6 +15,13 @@ begin;
 create extension if not exists pgtap;
 select * from no_plan();
 
+-- Isolated fixture: this file works in its OWN arena (the same starter catalog
+-- seed.sql uses), so whatever else is in the database — the dev seed, arenas
+-- left by the two-device suite, a half-finished run — cannot change what it
+-- sees. Created inside this transaction and rolled back with it.
+insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000001'::uuid, 'pgtap 01');
+select _seed_arena_catalog('e0000000-0000-4000-8000-000000000001'::uuid);
+
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,
     email_confirmed_at,created_at,updated_at,raw_app_meta_data,raw_user_meta_data,
     is_sso_user,is_anonymous)
@@ -26,9 +33,9 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,
       'authenticated','authenticated','x3@test.local','',now(),now(),now(),'{}','{}',false,false)
   on conflict (id) do nothing;
 insert into staff_profiles(arena_id,user_id,name,role,perms,active) values
-  ((select id from arenas limit 1),'11111111-1111-1111-1111-111111111111'::uuid,'Owner','owner',
+  ('e0000000-0000-4000-8000-000000000001'::uuid,'11111111-1111-1111-1111-111111111111'::uuid,'Owner','owner',
     array['start','bill','discount','members','stations','money','reports','settings'],true),
-  ((select id from arenas limit 1),'22222222-2222-2222-2222-222222222222'::uuid,'Staff','staff',
+  ('e0000000-0000-4000-8000-000000000001'::uuid,'22222222-2222-2222-2222-222222222222'::uuid,'Staff','staff',
     array['start','bill','discount','members'],true);
 
 -- ===================== grants (no role switch needed) =====================
@@ -67,7 +74,7 @@ set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
 select is((select count(*)::int from rates), 12, 'staff can READ config (rates)');
 select is((select count(*)::int from staff_profiles), 2, 'staff can READ the roster');
-select throws_ok($$ insert into customers(arena_id,name) values ((select id from arenas limit 1),'x') $$,
+select throws_ok($$ insert into customers(arena_id,name) values ('e0000000-0000-4000-8000-000000000001'::uuid,'x') $$,
   '42501', NULL, 'staff CANNOT insert a customer directly (sync_push only)');
 reset role;
 select set_config('request.jwt.claims','', true);
@@ -77,15 +84,15 @@ set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"11111111-1111-1111-1111-111111111111","role":"authenticated"}', true);
 select throws_ok($$
   insert into rates(arena_id,rate_card_id,activity_id,band_id,unit_minutes,price_paise)
-    select (select id from arenas limit 1), rc.id, a.id, b.id, 60, 9900
+    select 'e0000000-0000-4000-8000-000000000001'::uuid, rc.id, a.id, b.id, 60, 9900
     from rate_cards rc, activities a, rate_bands b
     where a.code='LOUNGE' and b.code='happy' limit 1 $$,
   '42501', NULL, 'even an owner CANNOT write config directly (sync_push only)');
 select throws_ok($$
   insert into staff_profiles(arena_id,user_id,name,role,perms)
-    values ((select id from arenas limit 1),'33333333-3333-3333-3333-333333333333','X','staff','{}') $$,
+    values ('e0000000-0000-4000-8000-000000000001'::uuid,'33333333-3333-3333-3333-333333333333','X','staff','{}') $$,
   '42501', NULL, 'even an owner CANNOT insert staff_profiles directly');
-select throws_ok($$ delete from sessions where arena_id=(select id from arenas limit 1) $$,
+select throws_ok($$ delete from sessions where arena_id='e0000000-0000-4000-8000-000000000001'::uuid $$,
   '42501', NULL, 'nobody can delete sessions (append-only)');
 reset role;
 select set_config('request.jwt.claims','', true);

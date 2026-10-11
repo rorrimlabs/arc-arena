@@ -4,6 +4,13 @@ begin;
 create extension if not exists pgtap;
 select * from no_plan();
 
+-- Isolated fixture: this file works in its OWN arena (the same starter catalog
+-- seed.sql uses), so whatever else is in the database — the dev seed, arenas
+-- left by the two-device suite, a half-finished run — cannot change what it
+-- sees. Created inside this transaction and rolled back with it.
+insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000000'::uuid, 'pgtap 00');
+select _seed_arena_catalog('e0000000-0000-4000-8000-000000000000'::uuid);
+
 -- Tables that must exist (incl. the ones 0004 adds and the previously-missing
 -- controllers table).
 select has_table('public', t, 'table ' || t || ' exists')

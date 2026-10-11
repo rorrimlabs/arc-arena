@@ -183,18 +183,40 @@ ops are unacknowledged.
 ## Running it locally
 
 ```bash
-supabase start            # project arena_ops, ports 5443x (Zitemonk keeps 5432x)
-supabase db reset --local # dev stack only
-supabase test db          # pgTAP
-bash supabase/concurrency_tests/run.sh
-bash supabase/concurrency_tests/run_pads.sh
-bash tool/sync_it.sh      # two-device integration tests (skipped by plain flutter test)
+supabase start              # project arena_ops, ports 5443x (Zitemonk keeps 5432x)
+bash tool/verify_all.sh     # everything, in order, each step reported separately
 bash tool/dev_run.sh -d "iPhone 17"   # the app in cloud mode against the local stack
 ```
 
-`tool/dev_run.sh` and `tool/sync_it.sh` read only the local API URL and anon key
-from `supabase status`. They never print them, and they refuse anything that is
-not a localhost URL. A release build refuses a non-https or loopback backend.
+`tool/verify_all.sh` runs, in this order: `flutter analyze`, `flutter test`,
+`supabase test db`, the two race scripts, the two-device suite
+(`tool/sync_it.sh`), the pricing parity check (`tool/pricing_parity.sh`), then
+`supabase test db` again to prove order does not matter. Each piece can also be
+run on its own, in any order.
+
+**No reset is needed between suites, or before them.** Each one isolates its
+own data:
+
+| Suite | Isolation | Leaves behind |
+|---|---|---|
+| pgTAP (`supabase/tests`) | each file creates its own arena (the seed catalog, fixed id) inside its transaction; every lookup is pinned to it | nothing (rolled back) |
+| `concurrency_tests/run.sh`, `run_pads.sh` | a dedicated arena + owner per script (`fixture.sh`), created on start | nothing (deleted on exit, even on failure) |
+| `tool/sync_it.sh` | fresh `it-*@arena.test` accounts and an `IT …` arena per run | nothing (deleted on exit, even on failure) |
+| `tool/pricing_parity.sh` | a throwaway arena inside one transaction | nothing (rolled back) |
+
+`verify_all.sh` also plants an *isolation canary* for the whole run: a second
+arena with the same station and controller names. A test that falls back to
+"the only arena" or "the station called HEX" therefore fails instead of
+passing by luck. At the end it checks that the database holds exactly what it
+held before.
+
+`supabase db reset --local` is still the way to apply edited migrations to the
+dev stack. Use `--local` explicitly; never `--linked`.
+
+`tool/dev_run.sh`, `tool/sync_it.sh` and `tool/verify_all.sh` read only the
+local API URL and anon key from `supabase status`. They never print them, and
+they refuse anything that is not a localhost URL. A release build refuses a
+non-https or loopback backend.
 
 ## Not done / known limits
 

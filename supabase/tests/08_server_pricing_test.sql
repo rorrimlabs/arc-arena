@@ -11,6 +11,13 @@ begin;
 create extension if not exists pgtap;
 select * from no_plan();
 
+-- Isolated fixture: this file works in its OWN arena (the same starter catalog
+-- seed.sql uses), so whatever else is in the database — the dev seed, arenas
+-- left by the two-device suite, a half-finished run — cannot change what it
+-- sees. Created inside this transaction and rolled back with it.
+insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000008'::uuid, 'pgtap 08');
+select _seed_arena_catalog('e0000000-0000-4000-8000-000000000008'::uuid);
+
 -- ---------------------------------------------------------------- fixture
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
     created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_sso_user,is_anonymous)
@@ -21,13 +28,13 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_co
    'authenticated','staff@test.local','',now(),now(),now(),'{}','{}',false,false)
   on conflict (id) do nothing;
 insert into staff_profiles(arena_id,user_id,name,role,perms,active) values
-  ((select id from arenas limit 1),'11111111-1111-1111-1111-111111111111','Owner','owner',
+  ('e0000000-0000-4000-8000-000000000008'::uuid,'11111111-1111-1111-1111-111111111111','Owner','owner',
     array['start','bill','discount','members','stations','money','reports','settings'],true),
-  ((select id from arenas limit 1),'22222222-2222-2222-2222-222222222222','Staff','staff',
+  ('e0000000-0000-4000-8000-000000000008'::uuid,'22222222-2222-2222-2222-222222222222','Staff','staff',
     array['start','bill','discount','members'],true);
 
-create function pg_temp.arena() returns uuid as $$ select id from arenas limit 1 $$ language sql;
-create function pg_temp.r(n text) returns uuid as $$ select id from resources where name = n $$ language sql;
+create function pg_temp.arena() returns uuid as $$ select 'e0000000-0000-4000-8000-000000000008'::uuid $$ language sql;
+create function pg_temp.r(n text) returns uuid as $$ select id from resources where name = n and arena_id = 'e0000000-0000-4000-8000-000000000008'::uuid $$ language sql;
 create function pg_temp.as_user(p_uid text) returns void as $$
   select set_config('request.jwt.claims',
     jsonb_build_object('sub', p_uid, 'role', 'authenticated')::text, true) $$ language sql;

@@ -5,6 +5,13 @@ begin;
 create extension if not exists pgtap;
 select * from no_plan();
 
+-- Isolated fixture: this file works in its OWN arena (the same starter catalog
+-- seed.sql uses), so whatever else is in the database — the dev seed, arenas
+-- left by the two-device suite, a half-finished run — cannot change what it
+-- sees. Created inside this transaction and rolled back with it.
+insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000005'::uuid, 'pgtap 05');
+select _seed_arena_catalog('e0000000-0000-4000-8000-000000000005'::uuid);
+
 -- ===================== schema parity (as db owner) =====================
 select has_table('public', 'controller_moves', 'controller_moves exists');
 select columns_are('public', 'controller_moves', array[
@@ -26,7 +33,7 @@ select ok(
 select throws_ok($$
   insert into controller_moves(arena_id, controller_id, from_resource_id, to_resource_id, kind, moved_at)
   select c.arena_id, c.id, c.current_resource_id, c.home_resource_id, 'teleport', now()
-  from controllers c where c.label = 'HEX-1' $$,
+  from controllers c where c.label = 'HEX-1' and c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid $$,
   '23514', null, 'an unknown move kind is rejected');
 
 -- RLS + privileges: members read, writes only through the RPCs.
@@ -69,7 +76,7 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_co
     'authenticated','authenticated','staff@test.local','',now(),now(),now(),'{}','{}',false,false)
   on conflict (id) do nothing;
 insert into staff_profiles(arena_id,user_id,name,role,perms,active)
-  select (select id from arenas limit 1),'22222222-2222-2222-2222-222222222222','Staff','staff',
+  select 'e0000000-0000-4000-8000-000000000005'::uuid,'22222222-2222-2222-2222-222222222222','Staff','staff',
     array['start','bill','discount','members'],true;
 
 -- RIFT-2 is out of service.
@@ -78,13 +85,13 @@ update controllers set status = 'faulty' where label = 'RIFT-2';
 -- VOID runs a count-only PS5 session (open segment, no tracked pad): its pads
 -- may be in players' hands.
 insert into customers(id,arena_id,name) values
-  ('cccccccc-0000-0000-0000-000000000005',(select id from arenas limit 1),'Count-only walk-in');
+  ('cccccccc-0000-0000-0000-000000000005','e0000000-0000-4000-8000-000000000005'::uuid,'Count-only walk-in');
 insert into sessions(id,arena_id,customer_id,started_at,scheduled_end_at,pricing_snapshot,policy_snapshot)
-  values ('55555555-0000-0000-0000-000000000001',(select id from arenas limit 1),
+  values ('55555555-0000-0000-0000-000000000001','e0000000-0000-4000-8000-000000000005'::uuid,
     'cccccccc-0000-0000-0000-000000000005',now(),now() + interval '1 hour','{}','{}');
 insert into session_segments(arena_id,session_id,idx,resource_id,activity_code,controller_count,started_at)
-  values ((select id from arenas limit 1),'55555555-0000-0000-0000-000000000001',0,
-    (select id from resources where name='VOID'),'PS5',2,now());
+  values ('e0000000-0000-4000-8000-000000000005'::uuid,'55555555-0000-0000-0000-000000000001',0,
+    (select id from resources where name='VOID' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),'PS5',2,now());
 
 -- The legacy RPCs are no longer a client surface (0012 revoked EXECUTE from
 -- authenticated; clients go through sync_push). They are exercised here as the
@@ -99,127 +106,127 @@ select ok(not has_table_privilege('authenticated', 'public.controller_moves', 'I
 
 -- Without p_borrow, a pad elsewhere is still refused (0007 behaviour unchanged).
 select throws_ok($$
-  select allocate_controllers((select id from arenas limit 1), 'single',
-    array[(select id from controllers where label='GHOST-1')],
-    (select id from resources where name='HEX'), 'PS5', now()) $$,
+  select allocate_controllers('e0000000-0000-4000-8000-000000000005'::uuid, 'single',
+    array[(select id from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'PS5', now()) $$,
   'controller_elsewhere', 'without p_borrow a pad at another station is rejected');
 
 -- Borrow GHOST-1 into a HEX session: moved, owes its return, history row, held.
 select is(jsonb_array_length(
-    allocate_controllers((select id from arenas limit 1), 'single',
-      array[(select id from controllers where label='GHOST-1')],
-      (select id from resources where name='HEX'), 'PS5', now(),
+    allocate_controllers('e0000000-0000-4000-8000-000000000005'::uuid, 'single',
+      array[(select id from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+      (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'PS5', now(),
       p_borrow => true, p_session_ref => 's:hex-session')),
   1, 'allocate_controllers with p_borrow reserves the borrowed pad');
-select is((select current_resource_id from controllers where label='GHOST-1'),
-  (select id from resources where name='HEX'), 'the borrowed pad is now at HEX');
-select is((select loan_return_to from controllers where label='GHOST-1'),
-  (select id::text from resources where name='GHOST'), 'it owes a return to GHOST (its home)');
-select is((select loan_session_ref from controllers where label='GHOST-1'),
+select is((select current_resource_id from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
+  (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'the borrowed pad is now at HEX');
+select is((select loan_return_to from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
+  (select id::text from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'it owes a return to GHOST (its home)');
+select is((select loan_session_ref from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
   's:hex-session', 'the borrowing session owes the return');
 select results_eq($$
   select m.from_resource_id, m.to_resource_id, m.kind, m.session_ref, m.created_by
   from controller_moves m join controllers c on c.id = m.controller_id
-  where c.label = 'GHOST-1' $$,
-  $$ values ((select id from resources where name='GHOST'), (select id from resources where name='HEX'),
+  where c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid and c.label = 'GHOST-1' $$,
+  $$ values ((select id from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
              'loan'::text, 's:hex-session'::text, '22222222-2222-2222-2222-222222222222'::uuid) $$,
   'one loan move GHOST -> HEX is recorded, readable by staff, attributed to them');
 select is((select resource_id from controller_allocations a join controllers c on c.id = a.controller_id
-            where c.label = 'GHOST-1' and a.ended_at is null),
-  (select id from resources where name='HEX'), 'the open allocation is at HEX');
+            where c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid and c.label = 'GHOST-1' and a.ended_at is null),
+  (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'the open allocation is at HEX');
 
 -- A pad held by an open allocation cannot be borrowed away.
 select is(jsonb_array_length(
-    allocate_controllers((select id from arenas limit 1), 'single',
-      array[(select id from controllers where label='HEX-1')],
-      (select id from resources where name='HEX'), 'PS5', now())),
+    allocate_controllers('e0000000-0000-4000-8000-000000000005'::uuid, 'single',
+      array[(select id from controllers where label='HEX-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+      (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'PS5', now())),
   1, 'HEX-1 is in use at HEX');
 select throws_ok($$
-  select borrow_controllers((select id from arenas limit 1),
-    array[(select id from controllers where label='HEX-1')],
-    (select id from resources where name='GHOST'), 's:ghost-session', now()) $$,
+  select borrow_controllers('e0000000-0000-4000-8000-000000000005'::uuid,
+    array[(select id from controllers where label='HEX-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 's:ghost-session', now()) $$,
   'controller_taken', 'a pad in use cannot be borrowed');
 
 -- Atomic: a refused pad later in the list undoes the earlier borrow.
 select throws_ok($$
-  select allocate_controllers((select id from arenas limit 1), 'single',
-    array[(select id from controllers where label='GHOST-2'),
-          (select id from controllers where label='HEX-1')],
-    (select id from resources where name='RIFT'), 'PS5', now(),
+  select allocate_controllers('e0000000-0000-4000-8000-000000000005'::uuid, 'single',
+    array[(select id from controllers where label='GHOST-2' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
+          (select id from controllers where label='HEX-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='RIFT' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'PS5', now(),
     p_borrow => true, p_session_ref => 's:rift-session') $$,
   'controller_taken', 'a borrow that hits a busy pad is refused');
-select is((select current_resource_id from controllers where label='GHOST-2'),
-  (select id from resources where name='GHOST'), 'the earlier pad in the refused call stayed home');
+select is((select current_resource_id from controllers where label='GHOST-2' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
+  (select id from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'the earlier pad in the refused call stayed home');
 select is((select count(*)::int from controller_moves m join controllers c on c.id = m.controller_id
-            where c.label = 'GHOST-2'),
+            where c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid and c.label = 'GHOST-2'),
   0, 'the refused call left no move history');
 
 -- Unusable pads are refused.
 select throws_ok($$
-  select borrow_controllers((select id from arenas limit 1),
-    array[(select id from controllers where label='RIFT-2')],
-    (select id from resources where name='HEX'), 's:hex-session', now()) $$,
+  select borrow_controllers('e0000000-0000-4000-8000-000000000005'::uuid,
+    array[(select id from controllers where label='RIFT-2' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 's:hex-session', now()) $$,
   'controller_unusable', 'a faulty pad cannot be borrowed');
 
 -- A pad at a station running a count-only (untracked) session is refused.
 select throws_ok($$
-  select borrow_controllers((select id from arenas limit 1),
-    array[(select id from controllers where label='VOID-1')],
-    (select id from resources where name='HEX'), 's:hex-session', now()) $$,
+  select borrow_controllers('e0000000-0000-4000-8000-000000000005'::uuid,
+    array[(select id from controllers where label='VOID-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 's:hex-session', now()) $$,
   'controller_taken', 'a pad at a station with an untracked open session cannot be borrowed');
-select is((select current_resource_id from controllers where label='VOID-1'),
-  (select id from resources where name='VOID'), 'and it stays where it is');
+select is((select current_resource_id from controllers where label='VOID-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
+  (select id from resources where name='VOID' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'and it stays where it is');
 
 -- Idempotency: a repeated request_id neither re-borrows nor re-allocates.
 select is(
-  allocate_controllers((select id from arenas limit 1), 'single',
-    array[(select id from controllers where label='RIFT-1')],
-    (select id from resources where name='HEX'), 'PS5', now(), p_request_id => 'req-borrow',
+  allocate_controllers('e0000000-0000-4000-8000-000000000005'::uuid, 'single',
+    array[(select id from controllers where label='RIFT-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'PS5', now(), p_request_id => 'req-borrow',
     p_borrow => true, p_session_ref => 's:hex-session'),
-  allocate_controllers((select id from arenas limit 1), 'single',
-    array[(select id from controllers where label='RIFT-1')],
-    (select id from resources where name='HEX'), 'PS5', now(), p_request_id => 'req-borrow',
+  allocate_controllers('e0000000-0000-4000-8000-000000000005'::uuid, 'single',
+    array[(select id from controllers where label='RIFT-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 'PS5', now(), p_request_id => 'req-borrow',
     p_borrow => true, p_session_ref => 's:hex-session'),
   'a repeated borrow request_id returns the same allocation');
 select is((select count(*)::int from controller_moves m join controllers c on c.id = m.controller_id
-            where c.label = 'RIFT-1'),
+            where c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid and c.label = 'RIFT-1'),
   1, 'the idempotent retry recorded only one move');
 
 -- A pad already at the station is not "moved".
 select is(
-  borrow_controllers((select id from arenas limit 1),
-    array[(select id from controllers where label='HEX-2')],
-    (select id from resources where name='HEX'), 's:hex-session', now()),
+  borrow_controllers('e0000000-0000-4000-8000-000000000005'::uuid,
+    array[(select id from controllers where label='HEX-2' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='HEX' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 's:hex-session', now()),
   0, 'borrowing a pad already at the station is a no-op');
 select is((select count(*)::int from controller_moves m join controllers c on c.id = m.controller_id
-            where c.label = 'HEX-2'),
+            where c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid and c.label = 'HEX-2'),
   0, 'and records no move');
 
 -- Carrying a pad back to its home station clears the loan (kind returnHome).
-select is(release_controllers((select id from arenas limit 1),
-    array[(select id from controllers where label='GHOST-1')], now()),
+select is(release_controllers('e0000000-0000-4000-8000-000000000005'::uuid,
+    array[(select id from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)], now()),
   1, 'the HEX session releases GHOST-1');
 select is(
-  borrow_controllers((select id from arenas limit 1),
-    array[(select id from controllers where label='GHOST-1')],
-    (select id from resources where name='GHOST'), 's:ghost-session', now()),
+  borrow_controllers('e0000000-0000-4000-8000-000000000005'::uuid,
+    array[(select id from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), 's:ghost-session', now()),
   1, 'GHOST-1 is borrowed back to GHOST');
 select ok(
   (select loan_return_to is null and loan_session_ref is null
-     and current_resource_id = (select id from resources where name='GHOST')
-   from controllers where label='GHOST-1'),
+     and current_resource_id = (select id from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)
+   from controllers where label='GHOST-1' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid),
   'arriving home clears loan_return_to / loan_session_ref');
 select results_eq($$
   select m.kind, m.session_ref from controller_moves m join controllers c on c.id = m.controller_id
-  where c.label = 'GHOST-1' order by m.created_at, m.kind $$,
+  where c.arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid and c.label = 'GHOST-1' order by m.created_at, m.kind $$,
   $$ values ('loan'::text, 's:hex-session'::text), ('returnHome'::text, null::text) $$,
   'the timeline is loan then returnHome (append-only)');
 
 -- Another arena is forbidden.
 select throws_ok($$
   select borrow_controllers(gen_random_uuid(),
-    array[(select id from controllers where label='HEX-2')],
-    (select id from resources where name='GHOST'), null, now()) $$,
+    array[(select id from controllers where label='HEX-2' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid)],
+    (select id from resources where name='GHOST' and arena_id = 'e0000000-0000-4000-8000-000000000005'::uuid), null, now()) $$,
   '42501', null, 'borrowing in an arena you are not a member of is forbidden');
 
 select set_config('request.jwt.claims','', true);
