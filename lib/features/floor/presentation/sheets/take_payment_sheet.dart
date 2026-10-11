@@ -205,7 +205,17 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
 
   Future<void> _record() async {
     setState(() => _saving = true);
-    final amount = _enteredPaise;
+    // On a final bill only the balance is takings; anything above it is cash
+    // handed back as change, not money the arena collected.
+    final billed = widget.session.billedAmountPaise;
+    final collected = (ref.read(paymentsForSessionProvider(widget.session.id)).value ??
+            const <Payment>[])
+        .fold<int>(0, (sum, p) => sum + p.amountPaise);
+    final remaining = billed == null ? null : billed - collected;
+    final entered = _enteredPaise;
+    final amount =
+        remaining != null && remaining > 0 && entered > remaining ? remaining : entered;
+    final change = entered - amount;
     final note = _noteCtrl.text.trim();
     final result = await ref.read(sessionActionsProvider).recordPayment(
           RecordPaymentCommand(
@@ -227,7 +237,8 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${Paise(amount).display} recorded by ${_methodLabel(_method)}.',
+          '${Paise(amount).display} recorded by ${_methodLabel(_method)}.'
+          '${change > 0 ? ' Return ${Paise(change).display} change.' : ''}',
         ),
       ),
     );

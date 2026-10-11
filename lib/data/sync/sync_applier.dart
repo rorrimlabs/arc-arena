@@ -22,6 +22,7 @@ import 'dart:convert';
 
 import 'package:arena_ops/data/local/database.dart';
 import 'package:drift/drift.dart';
+import 'package:meta/meta.dart';
 
 /// One server row from the feed: its published table name and its columns.
 typedef ServerRow = ({String table, Map<String, dynamic> row});
@@ -47,6 +48,13 @@ class SyncApplier {
   /// Applies a page of feed changes ({t, r} maps). Closed segments,
   /// assignments and allocations go first, so a station or pad that changed
   /// hands within the page never trips the device's one-open-row indexes.
+  ///
+  /// A row in the feed is the server's CURRENT row (sync_pull reads the live
+  /// tables), so it outranks any tombstone for the same key in the page: that
+  /// tombstone is from a delete the same or an earlier transaction undid by
+  /// re-inserting (game.replace_controls re-inserts unchanged control ids; a
+  /// holiday or station link removed and added back). Applying it after the
+  /// upsert would wipe a row the server still has.
   Future<void> applyChanges(List<Map<String, dynamic>> changes) async {
     final rows = <ServerRow>[];
     final tombstones = <ServerRow>[];
@@ -62,11 +70,30 @@ class SyncApplier {
         rows.add((table: t, row: r));
       }
     }
+    final live = {
+      for (final x in rows) ?rowKey(x.table, x.row),
+    };
     await applyRows(rows);
     for (final t in tombstones) {
+      if (live.contains(rowKey(t.table, t.row))) continue;
       await _delete(t.table, t.row);
     }
   }
+
+  /// The identity [_delete] removes a row by, or null for tables whose
+  /// tombstones the device ignores.
+  @visibleForTesting
+  static String? rowKey(String table, Map<String, dynamic> r) =>
+      switch (table) {
+        'rates' || 'game_controls' => '$table:${r['id']}',
+        'holidays' => 'holidays:${r['day']}',
+        'game_resources' => 'game_resources:${r['game_id']}:${r['resource_id']}',
+        'resource_activities' =>
+          'resource_activities:${r['resource_id']}:${r['activity_id']}',
+        'settings' => 'settings:${r['key']}',
+        'staff_profiles' => 'staff_profiles:${r['user_id']}',
+        _ => null,
+      };
 
   /// Upserts server rows, closings first.
   Future<void> applyRows(List<ServerRow> rows) async {

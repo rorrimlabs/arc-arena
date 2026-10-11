@@ -16,10 +16,15 @@ Default backend is **local** (Drift/SQLite) — runs on-device with no server:
 flutter run
 ```
 
-`--dart-define=AO_BACKEND=supabase` is accepted but **does not yet sync
-anything** — there is no Supabase client, so the app still reads and writes the
-local database and the status strip says so. The flag exists as the seam for
-that work; see **Backend** below.
+Cloud mode (several devices sharing one arena through Supabase) needs the
+backend URL and publishable key at build time:
+
+```bash
+flutter run --dart-define-from-file=dart_define.hosted-dev.json
+```
+
+`bash tool/dev_run.sh -d "<device>"` runs it against the local Supabase stack.
+See **Backend** below.
 
 ## Verify
 
@@ -28,7 +33,9 @@ flutter analyze
 flutter test
 ```
 
-180 tests. The pricing engine, session/segment rules, availability, booking
+`bash tool/verify_all.sh` runs everything, including the database suites and
+the two-device sync tests against the local Supabase stack (docs/SYNC.md).
+The pricing engine, session/segment rules, availability, booking
 conflicts and the reporting engine are pure Dart and tested directly; the floor,
 payment queue and walk-in flow are covered by widget tests at phone and desktop
 sizes.
@@ -57,9 +64,12 @@ sessions, segments, payments and bookings survive a refresh, a restart and a tot
 loss of connectivity — there is no network in the write path to fail. Timers are
 derived from stored timestamps, never from a counter.
 
-It is **single-device**. There is no Supabase project (creating one needs the
-owner's login), no Dart client, no outbox and no sync, so the UI says "Local mode
-· saved on this device" rather than a fake Online/Offline indicator.
-`supabase/migrations/` holds the SQL to apply when a project exists; `0004` brings
-it up to the shipped schema but has never been applied or executed against a real
-Postgres. See `docs/WORKFLOW_AUDIT_2026-10-10.md` §4.
+Without the Supabase dart-defines it is single-device and the UI says "Local
+mode · saved on this device". In cloud mode each person signs in with their own
+login; every write goes into the device database and a sync outbox in one
+transaction, is pushed to Supabase (`sync_push`, which re-checks permissions,
+floor rules and prices), and other devices pull it (10 s polling, not
+Realtime). Conflicting offline work is refused and shown under Sync, never
+merged silently. Design, limits and how to run it: [`docs/SYNC.md`](docs/SYNC.md);
+hosted setup: [`docs/DEPLOY_SUPABASE.md`](docs/DEPLOY_SUPABASE.md). Schema
+changes are migrations in `supabase/migrations/` only.

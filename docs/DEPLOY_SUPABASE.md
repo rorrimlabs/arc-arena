@@ -1,6 +1,6 @@
 # Hosted Supabase — deployment checklist (new DEVELOPMENT project)
 
-Prepared 2026-10-11 from an audit of migrations 0001–0015, RLS, grants, the
+Prepared 2026-10-11 (updated 2026-10-12 for 0016) from an audit of migrations 0001–0016, RLS, grants, the
 auth design and the mobile configuration. **Nothing here has been run against a
 hosted project.** Every step that creates or changes anything hosted is
 yours to do (or to approve explicitly). Read [SYNC.md](SYNC.md) for how sync
@@ -33,7 +33,7 @@ loopback URL.
 
 | Area | Result |
 |---|---|
-| Migration order | `0001` … `0015`, applied in filename order by `supabase db push`. 0013 renames the 0011 op functions to `_v1` and wraps them, 0014 tightens grants, 0015 closes the app's route to arena ownership — order matters and is exactly the filename order. No step needs manual ordering. |
+| Migration order | `0001` … `0016`, applied in filename order by `supabase db push`. 0013 renames the 0011 op functions to `_v1` and wraps them, 0014 tightens grants, 0015 closes the app's route to arena ownership, 0016 wraps four ops again (payments, staff, pad moves, stations) and adds same-arena triggers — order matters and is exactly the filename order. No step needs manual ordering. |
 | Fresh-project compatibility | Applies cleanly on an empty database (verified by `supabase db reset --local` on the same Postgres 17 image). Extensions: `pgcrypto` (already present on hosted — `if not exists` is a no-op), `btree_gist` (unused; 0014 moves it to `extensions`). No migration touches `auth`, `storage` or `realtime`, inserts users, or needs superuser beyond what `postgres` has on hosted. |
 | `seed.sql` | **Do not apply to hosted.** It creates a dev arena with no owner. `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
@@ -88,7 +88,7 @@ Prompts for the database password from step 2.3. This writes `supabase/.temp/pro
 ```bash
 supabase db push --dry-run
 ```
-Must list exactly `0001` … `0015`, in that order, and nothing else.
+Must list exactly `0001` … `0016`, in that order, and nothing else.
 
 ```bash
 supabase db push
@@ -98,17 +98,53 @@ Applies them. Do NOT add `--include-seed`.
 ```bash
 supabase migration list --linked
 ```
-Local and Remote columns must both show `0001` … `0015`.
+Local and Remote columns must both show `0001` … `0016`.
 
 Rules while linked:
 * **Never** run `supabase db reset --linked` or `supabase test db --linked` (the pgTAP files insert users and fixtures).
 * Every repo script (`tool/verify_all.sh`, `tool/sync_it.sh`, `tool/pricing_parity.sh`, the race scripts) targets the local Docker container only and refuses anything else; keep using them locally.
 * Future schema changes: add a new migration, run `bash tool/verify_all.sh` locally, then `supabase db push --dry-run` / `db push`.
 
+## 4a. Bringing an already-deployed project up to date (0016)
+
+The hosted dev project was pushed with `0001` … `0015` on 2026-10-11. To add
+0016 (money integrity, owner protection, pad-move permission, same-arena
+triggers, pinned `search_path` — see SYNC.md "Money and permission rules"):
+
+```bash
+bash tool/verify_all.sh
+```
+Everything locally first; it must end `ALL PASS`.
+
+```bash
+supabase db push --dry-run
+```
+Must list exactly `0016_integrity_and_authz.sql` and nothing else.
+
+```bash
+supabase db push
+```
+
+```bash
+supabase migration list --linked
+```
+Both columns show `0001` … `0016`.
+
+Then re-run step 5 (audit: no `FAIL` row). `supabase db advisors --linked`
+should no longer list `function_search_path_mutable`; the nine
+`authenticated_security_definer_function_executable` rows are the intended
+client API.
+
+Safe on live data: 0016 adds checks to future writes only. Existing rows are
+not re-validated, nothing is deleted or rewritten, and an op that was already
+applied replays its stored answer. Devices on an older build keep working;
+the only difference they see is that an overpayment, an over-refund or an
+owner edit that would remove the owner is now refused or adjusted.
+
 ## 5. Verify the hosted database
 
 1. **SQL Editor** → paste `supabase/audit/security_audit.sql` → **Run**. Expect **no `FAIL` row**; the `REVIEW` rows must list exactly the nine client functions in section 1 and the extensions.
-2. **Advisors → Security Advisor**: review; there should be no RLS-disabled or exposed-view findings.
+2. **Advisors → Security Advisor**: review; there should be no RLS-disabled or exposed-view findings. On 2026-10-12 it also listed **Leaked password protection disabled** — turn it on under Authentication → Policies / Passwords if the plan offers it (step 3.3).
 3. **Database → Tables**: confirm there is no `Arena` row in `arenas` (the seed was not applied).
 
 ## 6. Point a build at it (your machine)

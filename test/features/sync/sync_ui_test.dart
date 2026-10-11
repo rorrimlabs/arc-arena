@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
@@ -118,6 +119,42 @@ void main() {
     await tester.pump();
     expect(find.text('Needs attention (1)'), findsOneWidget);
     await disposeApp(tester);
+  });
+
+  test('a station another device renamed reaches the cached station list',
+      () async {
+    final container = ProviderContainer(overrides: [
+      ...testOverrides(db, clock: clock),
+      cloudBindingProvider.overrideWithValue(binding),
+    ]);
+    addTearDown(container.dispose);
+    final sub = container.listen(resourcesProvider, (_, _) {});
+    addTearDown(sub.close);
+    final before = await container.read(resourcesProvider.future);
+    final hex = before.firstWhere((r) => r.name == 'HEX');
+
+    // The owner's device renamed HEX; this device's next pull brings it.
+    server.pages = [
+      PullPage(cursor: '10', hasMore: false, changes: [
+        {
+          't': 'resources',
+          'r': {
+            'id': hex.id,
+            'name': 'HEX Pro',
+            'kind': 'station',
+            'status': 'available',
+            'sort_order': 1,
+            'current_mode': null,
+          },
+        },
+      ]),
+    ];
+    final r = await engine.syncNow();
+    expect(r.pulledChanges, 1);
+    await Future<void>.delayed(const Duration(milliseconds: 50));
+    final after = await container.read(resourcesProvider.future);
+    expect(after.firstWhere((x) => x.id == hex.id).name, 'HEX Pro',
+        reason: 'the one-shot list re-read after the pull');
   });
 
   test('permissions follow the synced staff row; access off signs out',

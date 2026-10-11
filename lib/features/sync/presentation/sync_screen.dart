@@ -56,6 +56,20 @@ class SyncScreen extends ConsumerWidget {
                   icon: const Icon(Icons.sync),
                   label: const Text('Sync now'),
                 ),
+                if (status.state == SyncState.authProblem &&
+                    !status.accessRevoked) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  // Unsent changes stay in this person's database file and go
+                  // as soon as they sign in again on this device.
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      Navigator.of(context).popUntil((r) => r.isFirst);
+                      binding.signOut();
+                    },
+                    icon: const Icon(Icons.login),
+                    label: const Text('Sign in again'),
+                  ),
+                ],
                 const SizedBox(height: AppSpacing.xl),
                 Text('Needs attention (${refused.length})',
                     style: ArenaType.h3.copyWith(color: arena.text)),

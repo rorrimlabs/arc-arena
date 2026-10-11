@@ -7,7 +7,9 @@ import 'dart:convert';
 
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/data/local/database.dart';
+import 'package:arena_ops/data/local/local_booking_repository.dart';
 import 'package:arena_ops/data/local/local_catalog_repository.dart';
+import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/data/local/local_customer_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
 import 'package:arena_ops/data/sync/sync_applier.dart';
@@ -194,6 +196,34 @@ void main() {
       expect((await outbox()).single.status, OutboxStatus.pending);
     });
 
+    test('a change is pushed right after it is written (the nudge fires from '
+        'inside the write transaction)', () async {
+      final nudging = SyncRecorder(db, actor: () => 'u1', clock: clock,
+          onRecorded: engine.nudge);
+      await LocalCustomerRepository(db, clock, nudging).createGuest();
+      await engine.statusStream
+          .firstWhere((s) => s.state == SyncState.synced)
+          .timeout(const Duration(seconds: 3));
+      expect(server.pushed.single.kind, 'customer.create');
+      expect((await outbox()).single.status, OutboxStatus.applied);
+    });
+
+    test('after the sign-in expires, new changes are still counted as waiting '
+        '(the sign-out warning depends on it)', () async {
+      await customers.createGuest();
+      server.pushThrows = SyncAuthException('JWT expired');
+      expect((await engine.syncNow()).endedIn, SyncState.authProblem);
+      expect(engine.status.pending, 1);
+      final nudging = SyncRecorder(db, actor: () => 'u1', clock: clock,
+          onRecorded: engine.nudge);
+      await LocalCustomerRepository(db, clock, nudging).createGuest();
+      await engine.statusStream.firstWhere((s) => s.pending == 2)
+          .timeout(const Duration(seconds: 2));
+      expect(engine.status.state, SyncState.authProblem);
+      expect(engine.status.pending, 2);
+      expect(server.pushed, isEmpty, reason: 'nothing is sent while stopped');
+    });
+
     test('ops written before a restart are sent by the next engine', () async {
       await customers.createGuest();
       await engine.dispose();
@@ -260,7 +290,113 @@ void main() {
     });
   });
 
+  group('rolling back a refused check-in', () {
+    test('the booking returns to the server\'s status (not stuck checked in)',
+        () async {
+      final bookings = LocalBookingRepository(db, clock, recorder);
+      final who = await customers.create(name: 'Asha');
+      final start = clock.now().add(const Duration(minutes: 5));
+      final booking = await bookings.create(Booking(
+        id: '',
+        customerId: who.id,
+        activityCode: 'POOL',
+        resourceId: 'pool1',
+        scheduledStart: start,
+        scheduledEnd: start.add(const Duration(hours: 1)),
+        status: BookingStatus.booked,
+        createdAt: clock.now(),
+        updatedAt: clock.now(),
+      ));
+      final stored = (await db.select(db.bookings).get()).single;
+      final started = await sessions.start(StartSessionCommand(
+        customerId: who.id,
+        startedAt: clock.now(),
+        scheduledEndAt: clock.now().add(const Duration(hours: 1)),
+        snapshot: await LocalCatalogRepository(db).currentSnapshot(),
+        resourceId: 'pool1',
+        resourceName: 'Pool Table 1',
+        activityCode: 'POOL',
+        bookingId: booking.id,
+      ));
+      expect(started.isOk, isTrue, reason: '${started.failureOrNull?.message}');
+      expect((await bookings.getById(booking.id))!.status, BookingStatus.checkedIn);
+
+      // Another device took the table first: the server keeps the booking open.
+      server.onPush = (o) => o.kind == 'session.start'
+          ? OpResult(opId: o.opId, status: 'rejected', error: 'resource_busy')
+          : OpResult(opId: o.opId, status: 'applied');
+      server.entities = [
+        (
+          type: 'booking',
+          id: booking.id,
+          rows: [
+            {
+              't': 'bookings',
+              'r': {
+                'id': booking.id,
+                'customer_id': who.id,
+                'activity_code': 'POOL',
+                'game_id': null,
+                'resource_id': 'pool1',
+                'scheduled_start': stored.scheduledStart.toIso8601String(),
+                'scheduled_end': stored.scheduledEnd.toIso8601String(),
+                'players_required': null,
+                'controller_requirement': null,
+                'status': 'booked',
+                'party_name': null,
+                'phone': null,
+                'notes': null,
+                'reminder_status': 'none',
+                'created_at': stored.createdAt.toIso8601String(),
+                'updated_at': stored.updatedAt.toIso8601String(),
+              },
+            },
+          ],
+        ),
+      ];
+      final r = await engine.syncNow();
+      expect(r.rejected, 1);
+      expect(await sessions.getById(started.valueOrNull!.id), isNull);
+      expect((await bookings.getById(booking.id))!.status, BookingStatus.booked);
+    });
+  });
+
   group('applying server rows', () {
+    // game.replace_controls deletes a game's controls and re-inserts them,
+    // keeping the ids of unchanged ones, in ONE transaction: the page carries
+    // the live row and its tombstone, in no particular order.
+    test('a row the server still has survives its own tombstone in the page',
+        () async {
+      final game = (await db.select(db.games).get()).first.id;
+      final control = {
+        'id': 'ctl-row-1',
+        'game_id': game,
+        'section': 'Basics',
+        'action': 'Shoot',
+        'buttons': ['R2'],
+        'explanation': null,
+        'notes': null,
+        'image_url': null,
+        'sort_order': 0,
+      };
+      Map<String, dynamic> tomb(String table, Map<String, dynamic> row) =>
+          {'t': '_tombstone', 'r': {'table': table, 'row': row}};
+      await db.transaction(() => SyncApplier(db).applyChanges([
+            {'t': 'game_controls', 'r': control},
+            tomb('game_controls', {...control, 'action': 'Old'}),
+            tomb('holidays', {'day': '2026-12-25', 'name': 'Xmas', 'closed': true}),
+            {'t': 'holidays', 'r': {'day': '2026-12-25', 'name': 'Xmas', 'closed': true}},
+            tomb('holidays', {'day': '2026-12-31', 'name': 'NYE', 'closed': true}),
+          ]));
+      final controls = await (db.select(db.gameControls)
+            ..where((t) => t.id.equals('ctl-row-1')))
+          .get();
+      expect(controls.single.action, 'Shoot');
+      final days = {for (final h in await db.select(db.holidays).get()) h.day};
+      expect(days, contains('2026-12-25'), reason: 're-added: still there');
+      expect(days, isNot(contains('2026-12-31')), reason: 'a real delete applies');
+    });
+
     test('a server null overwrites the device value (re-opened segment)',
         () async {
       final id = await startAtVoidBorrowingGhost();

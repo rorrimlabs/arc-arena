@@ -268,6 +268,22 @@ void main() {
 
     test('someone holding discount can waive and refund', () async {
       final session = await liveSession();
+      // Nothing collected yet: there is nothing to give back.
+      final early = await actionsFor(everything).recordPayment(
+        RecordPaymentCommand(
+          sessionId: session.id,
+          amountPaise: 5000,
+          method: PaymentMethod.cash,
+          isRefund: true,
+          reason: 'double charge',
+        ),
+      );
+      expect(early.failureOrNull?.code, 'refund_exceeds_paid');
+      final paid = await actionsFor(everything).recordPayment(
+        RecordPaymentCommand(
+            sessionId: session.id, amountPaise: 5000, method: PaymentMethod.cash),
+      );
+      expect(paid.isOk, isTrue, reason: paid.failureOrNull?.display);
       final refund = await actionsFor(everything).recordPayment(
         RecordPaymentCommand(
           sessionId: session.id,

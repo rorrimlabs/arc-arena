@@ -1,3 +1,4 @@
+import 'package:arena_ops/core/widgets/connection_status.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
@@ -40,6 +41,7 @@ class ReportsScreen extends ConsumerWidget {
                 overline: range.label,
                 trailing: _ExportButton(report: async.value),
               ),
+              const ConnectionStatus(),
               const Padding(
                 padding: EdgeInsets.symmetric(horizontal: AppSpacing.x5),
                 child: _RangePicker(),

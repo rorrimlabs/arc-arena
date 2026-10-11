@@ -305,9 +305,16 @@ select is((select count(*)::int from controller_allocations a
 select is(pg_temp.push('rate.upsert', jsonb_build_object('activity_code','PS5','band','standard',
     'controller_count',1,'unit_minutes',60,'price_paise',16000))->>'status', 'applied',
   'owner changes a price');
+-- 0016: an owner profile always holds every permission and stays active, so
+-- the owner switching themselves off (the last Settings holder here) applies
+-- as a no-op on access, flagged adjusted so the device refetches.
 select is(pg_temp.push('staff.update', jsonb_build_object('user_id','11111111-1111-1111-1111-111111111111',
-    'name','Owner','perms','["start"]'::jsonb,'active',false))->>'error', 'last_settings_holder',
-  'the last person with Settings cannot be switched off');
+    'name','Owner','perms','["start"]'::jsonb,'active',false))->'result'->>'adjusted', 'true',
+  'an owner cannot switch themselves off or drop their permissions (adjusted)');
+select ok((select active and perms @> _known_perms() from staff_profiles
+            where arena_id = 'e0000000-0000-4000-8000-000000000007'
+              and user_id = '11111111-1111-1111-1111-111111111111'),
+  'the owner is still active with every permission');
 
 -- ------------------------------------------- 13. the feed
 -- This file's arena and everything above were written in THIS (still open)

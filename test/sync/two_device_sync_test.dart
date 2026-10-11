@@ -13,7 +13,10 @@ import 'dart:io';
 
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
+import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/domain/pricing/pricing_service.dart';
+import 'package:arena_ops/domain/reports/report_models.dart';
+import 'package:arena_ops/domain/reports/reports_service.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/services/group_billing.dart';
 import 'package:arena_ops/domain/services/segment_billing.dart';
@@ -30,6 +33,7 @@ import 'package:arena_ops/domain/repositories/group_commands.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'package:uuid/uuid.dart';
 
 import '../support/sim_device.dart';
 
@@ -501,6 +505,135 @@ void main() {
     await b.sync();
     expect(await a.openPadLabels(), await b.openPadLabels(),
         reason: 'both devices agree who holds which pad');
+  }, skip: skip);
+
+  // The shift as two people work it: the owner starts a session, staff extend
+  // it, end it, bill it and take the money on their own device; the owner's
+  // device ends up with the same session, bill, payment and day totals, and
+  // the server holds exactly one of each.
+  test('owner starts, staff extend + end + take payment, owner sees the same '
+      'bill, payment and day totals', () async {
+    await a.sync();
+    await b.sync();
+    final lounge = await a.station('Private Lounge');
+    final guest = (await a.customers.createGuest()).id;
+    final startedAt = DateTime.now().toUtc().subtract(const Duration(minutes: 20));
+    final started = await a.sessions.start(StartSessionCommand(
+      customerId: guest,
+      startedAt: startedAt,
+      scheduledEndAt: startedAt.add(const Duration(hours: 1)),
+      snapshot: await a.catalog.currentSnapshot(),
+      resourceId: lounge,
+      resourceName: 'Private Lounge',
+      activityCode: 'LOUNGE',
+    ));
+    expect(started.isOk, isTrue, reason: '${started.failureOrNull?.message}');
+    final id = started.valueOrNull!.id;
+    expect((await a.sync()).rejected, 0);
+
+    // Staff see it by pull alone: same id, same station, same planned end.
+    await b.sync();
+    final seen = (await b.sessions.getById(id))!;
+    expect(seen.isActive, isTrue);
+    expect(seen.scheduledEndAt, started.valueOrNull!.scheduledEndAt);
+    expect((await b.sessions.segmentsFor(id)).single.resourceId, lounge);
+
+    // Staff extend it (start permission) …
+    final newEnd = seen.scheduledEndAt.add(const Duration(minutes: 30));
+    final ext = await b.sessions.extend(ExtendSessionCommand(
+        sessionId: id,
+        addedMinutes: 30,
+        newEndAt: newEnd,
+        addedAmountPaise: await extensionCost(b, seen, newEnd)));
+    expect(ext.isOk, isTrue, reason: '${ext.failureOrNull?.message}');
+    expect((await b.sync()).rejected, 0);
+    // … and the owner's device follows.
+    await a.sync();
+    expect((await a.sessions.getById(id))!.scheduledEndAt, newEnd);
+    expect(await a.sessions.extensionsFor(id), hasLength(1));
+
+    // Staff end, bill (bill permission) and take the money in one go.
+    final endAt = startedAt.add(const Duration(minutes: 41, seconds: 7, milliseconds: 250));
+    final ended = await b.sessions.end(await pricedEnd(b, id, endAt));
+    expect(ended.isOk, isTrue, reason: '${ended.failureOrNull?.message}');
+    final bill = ended.valueOrNull!.billedAmountPaise!;
+    expect(bill, greaterThan(0));
+    final paid = await b.sessions.recordPayment(RecordPaymentCommand(
+        sessionId: id, amountPaise: bill, method: PaymentMethod.upi, requestId: 'pay-$id'));
+    expect(paid.isOk, isTrue, reason: '${paid.failureOrNull?.message}');
+    final pushed = await b.sync();
+    expect(pushed.rejected, 0, reason: 'the server re-priced the bill and agreed');
+    expect(await b.outbox(OutboxStatus.pending), isEmpty);
+
+    // Server: one session, billed exactly what the device billed; one payment.
+    final row = await a.client.from('sessions')
+        .select('status, billed_amount_paise, payment_status').eq('id', id).single();
+    expect(row['status'], 'completed');
+    expect(row['billed_amount_paise'], bill);
+    expect(row['payment_status'], 'paid');
+    expect(await serverCount('payments', 'session_id', id), 1);
+    expect(await serverCount('session_extensions', 'session_id', id), 1);
+
+    // Owner's device converges on the same facts.
+    await a.sync();
+    final onA = (await a.sessions.getById(id))!;
+    expect(onA.status, SessionStatus.completed);
+    expect(onA.billedAmountPaise, bill);
+    expect(onA.paymentStatus, PaymentStatus.paid);
+    expect((await a.sessions.paymentsFor(id)).map((p) => p.amountPaise), [bill]);
+    expect((await a.sessions.chargesFor(id)).fold<int>(0, (s, c) => s + c.amountPaise),
+        (await b.sessions.chargesFor(id)).fold<int>(0, (s, c) => s + c.amountPaise));
+    expect((await a.sessions.segmentsFor(id)).where((s) => s.isOpen), isEmpty,
+        reason: 'the lounge is free on the owner\'s floor too');
+
+    // Today's report is computed from each device's own database: equal.
+    Future<(int, int, int)> today(SimDevice d) async {
+      final range = ReportRange.today(IstDate.fromUtc(DateTime.now().toUtc()));
+      final from = range.startUtc, to = range.endUtc;
+      final r = const ReportsService().build(ReportInput(
+        range: range,
+        sessions: await d.sessions.inRange(from, to),
+        segments: await d.sessions.segmentsInRange(from, to),
+        charges: await d.sessions.chargesInRange(from, to),
+        payments: await d.sessions.paymentsInRange(from, to),
+        groups: await d.groups.inRange(from, to),
+        groupAssignments: await d.groups.assignmentsInRange(from, to),
+        groupCharges: await d.groups.chargesInRange(from, to),
+        groupPayments: await d.groups.paymentsInRange(from, to),
+        customers: await d.customers.all(),
+        resources: await d.catalog.resources(),
+        gameNames: const {},
+        activityNames: const {},
+        calendar: (await d.catalog.currentSnapshot()).calendar,
+      ));
+      return (r.billedPaise, r.collectedPaise, r.sessionCount);
+    }
+
+    expect(await today(a), await today(b));
+
+    // The bill is settled: a second collection is refused on the device …
+    final again = await b.sessions.recordPayment(RecordPaymentCommand(
+        sessionId: id, amountPaise: bill, method: PaymentMethod.upi));
+    expect(again.failureOrNull?.code, 'overpayment');
+    // … and by the server for a device that had not seen the first payment
+    // (the owner's phone before its pull): the server is the referee.
+    final stalePay = await a.transport.push(arenaId, [
+      (
+        opId: const Uuid().v4(),
+        kind: 'payment.record',
+        payload: {
+          'scope': 'single',
+          'parent_id': id,
+          'payment_id': const Uuid().v4(),
+          'amount_paise': bill,
+          'method': 'cash',
+          'is_refund': false,
+        },
+      ),
+    ], 'stale-device');
+    expect(stalePay.single.status, 'rejected');
+    expect(stalePay.single.error, 'overpayment');
+    expect(await serverCount('payments', 'session_id', id), 1);
   }, skip: skip);
 
   test('turning a member off stops their device syncing; their unsent work '

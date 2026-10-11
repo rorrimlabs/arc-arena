@@ -6,8 +6,8 @@
 #   bash tool/verify_all.sh
 #
 #   1 flutter analyze
-#   2 flutter test                         (424 unit/widget; two-device skipped)
-#   3 supabase test db                     (pgTAP, each file in its own arena)
+#   2 flutter test                         (unit/widget; two-device skipped)
+#   3 supabase test db --local             (pgTAP, each file in its own arena)
 #   4 concurrency: station race            (own arena, deleted on exit)
 #   5 concurrency: pad races + double op   (own arena, deleted on exit)
 #   6 two-device sync (tool/sync_it.sh)    (own accounts/arena, deleted on exit)
@@ -62,12 +62,12 @@ summary() {
 
 step "1 flutter analyze"                flutter analyze
 step "2 flutter test"                   flutter test
-step "3 supabase test db"               supabase test db
+step "3 supabase test db"               supabase test db --local
 step "4 concurrency: station race"      bash supabase/concurrency_tests/run.sh
 step "5 concurrency: pads + double op"  bash supabase/concurrency_tests/run_pads.sh
 step "6 two-device sync"                bash tool/sync_it.sh
 step "7 pricing parity"                 bash tool/pricing_parity.sh
-step "8 supabase test db (again)"       supabase test db
+step "8 supabase test db (again)"       supabase test db --local
 
 AFTER=$(census)
 echo "database before: $BEFORE"

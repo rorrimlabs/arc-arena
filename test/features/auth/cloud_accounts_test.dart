@@ -8,7 +8,8 @@ import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/features/auth/presentation/change_password_dialog.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show AuthException;
+import 'package:supabase_flutter/supabase_flutter.dart'
+    show AuthException, AuthRetryableFetchException;
 
 Widget _host(Widget child) =>
     MaterialApp(theme: AppTheme.dark(), home: child);
@@ -114,6 +115,22 @@ void main() {
   });
 
   group('change password', () {
+    test('server refusals are not reported as a connection problem', () {
+      String say(Object e) => ChangePasswordDialog.describeError(e);
+      expect(say(AuthRetryableFetchException()), contains('needs a connection'));
+      expect(say(AuthException('x', code: 'same_password')),
+          contains('already your password'));
+      expect(say(AuthException('x', code: 'weak_password')), contains('too weak'));
+      expect(say(AuthException('x', code: 'reauthentication_needed')),
+          contains('sign in again'));
+      for (final e in [
+        AuthException('x', code: 'same_password'),
+        AuthException('x', code: 'weak_password'),
+      ]) {
+        expect(say(e), isNot(contains('connection')));
+      }
+    });
+
     Future<void> open(WidgetTester tester, Future<void> Function(String) change) async {
       await tester.pumpWidget(_host(Builder(
         builder: (context) => Scaffold(

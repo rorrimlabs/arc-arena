@@ -151,6 +151,13 @@ class SyncEngine {
   bool _stopped = false;
 
   Stream<SyncStatus> get statusStream => _statusController.stream;
+
+  /// Fires after a pass that changed this device's data from the server
+  /// (pulled rows or a rollback). Screens that read the catalog once (station
+  /// list, games, prices) re-read on it, so another device's edit appears
+  /// without a restart. Floor state is already live through Drift streams.
+  Stream<void> get dataChanged => _dataChanged.stream;
+  final _dataChanged = StreamController<void>.broadcast();
   SyncStatus get status => _status;
 
   void _emit(SyncStatus s) {
@@ -181,11 +188,26 @@ class SyncEngine {
     stop();
     await _running;
     await _statusController.close();
+    await _dataChanged.close();
   }
 
   /// A local change was recorded: sync soon (coalescing bursts of writes).
-  void nudge() {
-    if (_stopped) return;
+  ///
+  /// Repositories call this from INSIDE their Drift transaction (the recorder
+  /// fires after the outbox insert). Anything scheduled from there inherits
+  /// the transaction's zone, and Drift runs its queries on that transaction —
+  /// which has committed by the time the timer fires, so the pass used to die
+  /// silently and changes only went out on the next poll. Scheduling from the
+  /// root zone makes the pass an ordinary reader that waits for the commit.
+  void nudge() => Zone.root.run(_nudge);
+
+  void _nudge() {
+    if (_stopped) {
+      // Not syncing (sign-in expired, paused), but the change is waiting: the
+      // strip and the sign-out warning must count it.
+      Timer.run(() => unawaited(_refreshCounts()));
+      return;
+    }
     _debounce?.cancel();
     _debounce = Timer(const Duration(milliseconds: 300), () {
       // A nudge is fresh work, so it does not wait out an offline backoff.
@@ -239,6 +261,15 @@ class SyncEngine {
             await _count(OutboxStatus.rejected, unresolvedOnly: true),
       );
 
+  Future<void> _refreshCounts() async {
+    try {
+      final s = await _counts(_status);
+      if (!_statusController.isClosed) _emit(s);
+    } on Object catch (_) {
+      // The database is closing (sign-out): nothing left to show.
+    }
+  }
+
   Future<SyncReport> _pass() async {
     final report = SyncReport();
     _emit(await _counts(_status.copyWith(state: SyncState.syncing)));
@@ -246,6 +277,10 @@ class SyncEngine {
       await _push(report);
       if (await _count(OutboxStatus.pending) == 0) {
         await _reconcile(report);
+      }
+      if ((report.pulledChanges > 0 || report.rolledBack > 0) &&
+          !_dataChanged.isClosed) {
+        _dataChanged.add(null);
       }
       _failures = 0;
       _notBefore = null;
@@ -364,6 +399,13 @@ class SyncEngine {
       (type: op.entityType, id: op.entityId),
     ];
     final payload = jsonDecode(op.payload) as Map<String, dynamic>;
+    // A check-in marks its booking checked_in in the same transaction; a
+    // refused one must put the booking back as the server has it, or it drops
+    // off the upcoming list on this device only.
+    final booking = payload['booking_id'];
+    if (op.entityType != 'booking' && booking is String) {
+      refs.add((type: 'booking', id: booking));
+    }
     final pads = <String>{};
     void collect(Object? list) {
       if (list is! List) return;

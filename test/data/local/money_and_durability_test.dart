@@ -221,6 +221,54 @@ void main() {
     });
   });
 
+  // Same rule as the server's op_payment (migration 0016).
+  group('payments fit the bill', () {
+    test('a settled bill cannot be collected twice; an advance counts '
+        'toward the final bill', () async {
+      final id = await startHex(controllers: 2);
+      // Taken while the session ran: no final bill yet, so not capped.
+      final advance = await sessions.recordPayment(RecordPaymentCommand(
+          sessionId: id, amountPaise: 10000, method: PaymentMethod.cash));
+      expect(advance.isOk, isTrue);
+      final billed = await endAndBill(id);
+      expect(billed, 28000);
+
+      final tooMuch = await sessions.recordPayment(RecordPaymentCommand(
+          sessionId: id, amountPaise: 28000, method: PaymentMethod.upi));
+      expect(tooMuch.failureOrNull?.code, 'overpayment',
+          reason: 'the ₹100 advance is already in the till');
+      expect(tooMuch.failureOrNull?.message, contains('₹180'));
+
+      final rest = await sessions.recordPayment(RecordPaymentCommand(
+          sessionId: id, amountPaise: 18000, method: PaymentMethod.upi));
+      expect(rest.isOk, isTrue);
+      expect((await sessions.getById(id))!.paymentStatus, PaymentStatus.paid);
+
+      final again = await sessions.recordPayment(RecordPaymentCommand(
+          sessionId: id, amountPaise: 1, method: PaymentMethod.cash));
+      expect(again.failureOrNull?.code, 'overpayment');
+      final total = (await sessions.paymentsFor(id))
+          .fold<int>(0, (a, p) => a + p.amountPaise);
+      expect(total, billed, reason: 'collected exactly the bill');
+    });
+
+    test('a refund cannot give back more than was collected', () async {
+      final id = await startHex();
+      await endAndBill(id);
+      await sessions.recordPayment(RecordPaymentCommand(
+          sessionId: id, amountPaise: 5000, method: PaymentMethod.cash));
+      final over = await sessions.recordPayment(RecordPaymentCommand(
+          sessionId: id,
+          amountPaise: 6000,
+          method: PaymentMethod.cash,
+          isRefund: true,
+          reason: 'test'));
+      expect(over.failureOrNull?.code, 'refund_exceeds_paid');
+      expect(await sessions.paymentsFor(id), hasLength(1),
+          reason: 'nothing was written');
+    });
+  });
+
   group('#16 retried operations do not duplicate', () {
     test('a repeated start on a busy station is refused, not duplicated',
         () async {

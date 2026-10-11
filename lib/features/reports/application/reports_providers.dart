@@ -5,6 +5,7 @@
 /// not a plausible-looking dashboard.
 library;
 
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/time/ist.dart';
@@ -78,6 +79,8 @@ final reportForRangeProvider =
   // Recompute when the floor changes, so "today" stays live.
   ref.watch(activeSessionsProvider);
   ref.watch(awaitingPaymentProvider);
+  // …and when another device's bills or payments arrive by sync.
+  ref.watch(syncRevisionProvider);
 
   final sessionRepo = ref.watch(sessionRepositoryProvider);
   final groupRepo = ref.watch(groupSessionRepositoryProvider);

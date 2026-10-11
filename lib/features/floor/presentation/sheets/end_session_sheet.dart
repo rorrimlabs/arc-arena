@@ -53,8 +53,14 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     _bill = ref
         .read(sessionActionsProvider)
         .endSummary(_session, widget.active.segments, at: _endAt);
-    _amountCtrl.text = (_bill.total.value / 100).toStringAsFixed(2);
   }
+
+  /// Money already taken against this session while it ran (Take payment).
+  int _collected() =>
+      (ref.read(paymentsForSessionProvider(_session.id)).value ?? const [])
+          .fold<int>(0, (sum, p) => sum + p.amountPaise);
+
+  bool _prefilled = false;
 
   @override
   void dispose() {
@@ -68,7 +74,17 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final billed = _bill.total.value;
+    // Settle what is still due: an advance taken while the session ran is
+    // already in the till and must not be collected (or counted) again.
+    final payments =
+        ref.watch(paymentsForSessionProvider(_session.id)).value;
+    final collected =
+        (payments ?? const []).fold<int>(0, (sum, p) => sum + p.amountPaise);
+    final billed = _bill.total.value - collected;
+    if (!_prefilled && payments != null) {
+      _prefilled = true;
+      _amountCtrl.text = billed > 0 ? (billed / 100).toStringAsFixed(2) : '';
+    }
     final paid = _paidPaise;
     final change = paid - billed;
     final customer = ref.watch(customerByIdProvider(_session.customerId)).value;
@@ -136,6 +152,10 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
               onChanged: (_) => setState(() {}),
             ),
             const SizedBox(height: AppSpacing.sm),
+            if (collected != 0)
+              Text('Already collected ${Paise(collected).display} · '
+                  'due now ${Paise(billed < 0 ? 0 : billed).display}',
+                  style: theme.textTheme.bodySmall),
             _StatusLine(billed: billed, paid: paid, change: change),
           ],
           const SizedBox(height: AppSpacing.md),
@@ -170,17 +190,22 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     // The session no longer holds its pads: record the ticked returns.
     if (_returning.isNotEmpty) await returnPadsHome(ref, _returning);
 
-    final billed = _bill.total.value;
+    final billed = _bill.total.value - _collected();
     String message = 'Session ended';
-    if (!_waived && _paidPaise > 0) {
+    if (!_waived && _paidPaise > 0 && billed > 0) {
       final record = _paidPaise >= billed ? billed : _paidPaise;
-      await actions.recordPayment(RecordPaymentCommand(
+      final paid = await actions.recordPayment(RecordPaymentCommand(
         sessionId: _session.id,
         amountPaise: record,
         method: _method,
       ));
       final change = _paidPaise - billed;
-      if (change > 0) {
+      if (paid.isErr) {
+        // The session IS ended; only the money did not go in. Say so plainly
+        // so nobody believes it was collected.
+        message = 'Ended, but the payment was not recorded: '
+            '${paid.failureOrNull!.display}';
+      } else if (change > 0) {
         message = 'Paid. Return ${Paise(change).display} change.';
       } else if (_paidPaise < billed) {
         message = 'Partial. ${Paise(billed - _paidPaise).display} pending.';
@@ -189,6 +214,11 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
       }
     } else if (_waived) {
       message = 'Session waived (complimentary).';
+    } else if (billed <= 0) {
+      message = billed < 0
+          ? 'Paid in advance. ${Paise(-billed).display} more than the bill '
+              'was collected; refund it if it is owed back.'
+          : 'Paid in full.';
     } else {
       message = 'Ended. ${Paise(billed).display} pending.';
     }

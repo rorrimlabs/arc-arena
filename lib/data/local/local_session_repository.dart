@@ -734,7 +734,17 @@ class LocalSessionRepository implements SessionRepository {
     if (session == null) {
       return const Err(Failure(message: 'Session not found.', code: 'not_found'));
     }
+    Failure? refused;
     final row = await _db.transaction(() async {
+      // Read the balance inside the write transaction, so a double tap cannot
+      // pass the check twice.
+      refused = paymentBalanceProblem(
+        signed: signed,
+        alreadyPaid: await _totalPaid(cmd.sessionId),
+        billed: session.billedAmountPaise,
+        waived: session.paymentStatus == PaymentStatus.waived,
+      );
+      if (refused != null) return null;
       final now = _clock.now();
       final payment = PaymentRow(
         id: _uuid.v4(),
@@ -775,6 +785,7 @@ class LocalSessionRepository implements SessionRepository {
       }
       return payment;
     });
+    if (row == null) return Err(refused!);
     return Ok(paymentFromRow(row));
   }
 

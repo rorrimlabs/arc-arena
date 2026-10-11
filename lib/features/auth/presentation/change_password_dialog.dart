@@ -1,5 +1,9 @@
+import 'dart:async';
+import 'dart:io';
+
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 /// Cloud mode: the signed-in person replaces their own password. The owner
 /// creates each login with a starting password; this turns it into
@@ -13,6 +17,29 @@ class ChangePasswordDialog extends StatefulWidget {
   /// Matches the minimum recommended for the hosted project
   /// (docs/DEPLOY_SUPABASE.md); the server enforces its own minimum too.
   static const minLength = 10;
+
+  /// What went wrong, in words that say what to do. Only a failure to reach
+  /// the server is a connection problem; the server's own refusals (same or
+  /// weak password, a sign-in too old for a password change) are not.
+  @visibleForTesting
+  static String describeError(Object e) {
+    if (e is AuthRetryableFetchException || e is SocketException ||
+        e is TimeoutException) {
+      return 'Not changed — needs a connection. Try again when online.';
+    }
+    if (e is AuthException) {
+      return switch (e.code) {
+        'same_password' => 'That is already your password. Choose a new one.',
+        'weak_password' => 'The server says this password is too weak. '
+            'Use a longer one with letters and digits.',
+        'reauthentication_needed' || 'reauth_nonce_missing' ||
+        'session_not_found' || 'session_expired' =>
+          'For safety, sign out and sign in again, then change it.',
+        _ => 'Not changed: ${e.message}',
+      };
+    }
+    return 'Not changed ($e).';
+  }
 
   @override
   State<ChangePasswordDialog> createState() => _ChangePasswordDialogState();
@@ -53,7 +80,7 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       if (mounted) {
         setState(() {
           _busy = false;
-          _error = 'Not changed — needs a connection ($e).';
+          _error = ChangePasswordDialog.describeError(e);
         });
       }
     }

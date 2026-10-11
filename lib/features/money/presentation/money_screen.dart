@@ -1,3 +1,4 @@
+import 'package:arena_ops/core/widgets/connection_status.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
@@ -42,6 +43,9 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
                 style: ArenaType.caption.copyWith(color: arena.textMuted),
               ),
             ),
+            // Totals include payments this device has not sent yet; the strip
+            // says so (cloud mode) instead of implying the server has them.
+            const ConnectionStatus(),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x5),
               child: ArenaSegmented<_MoneyTab>(

@@ -140,9 +140,24 @@ side must be reported).
 * Every synced row carries `sync_xid` (the id of the transaction that last wrote
   it). `sync_pull` returns rows with `cursor <= sync_xid < pg_snapshot_xmin`, all
   from one snapshot, so a row from a still-open transaction is never skipped.
-  Deletes arrive as tombstones.
-* The engine pulls after every push, every 10 s while the app is in front, and
-  on resume.
+  Deletes arrive as tombstones. A row in a page is the server's *current* row,
+  so it outranks a tombstone for the same key in that page (a delete the same
+  or an earlier transaction undid — `game.replace_controls`, a holiday or
+  station link removed and re-added). Before 2026-10-12 the tombstone was
+  applied last and wiped the row on every other device.
+* **This is polling, not Realtime.** A device pushes ~0.3 s after each local
+  change, then pulls; it also passes every 10 s while the app is in front, and
+  at once on resume (passes stop while the app is in the background). Another
+  device therefore sees a change on its next pass: typically within 10 s.
+  (Until 2026-10-12 the "push right after a change" never fired — the timer
+  was born inside the Drift write transaction and died silently — so changes
+  only left on the 10 s poll.)
+* Floor state (sessions, segments, groups, pads, payments, bookings) reaches
+  screens through Drift watch streams. Catalog reads (stations, games,
+  activities, price list, names on cards) are one-shot providers; they re-read
+  whenever a pass changed local data (`syncRevisionProvider`), so a station
+  another device renamed, added or took out of service appears without a
+  restart.
 
 ## Conflicts and rejections
 
@@ -162,11 +177,43 @@ Pull and rollback run only while the outbox has no pending ops. This is
 re-checked inside the Drift transaction, so server rows never overwrite an
 unsent local change.
 
+A refused check-in (`session.start` with a `booking_id`) also rolls the
+booking back to the server's status, so it does not stay "checked in" on that
+device only.
+
+## Money and permission rules (0016)
+
+`supabase/migrations/0016_integrity_and_authz.sql`, from the 2026-10-12 audit.
+Each rule is enforced on the device too, so the device refuses first and the
+server is the referee for devices working on stale numbers.
+
+| Rule | Server | Device |
+|---|---|---|
+| Once a bill is final, payments may only fill it up to the bill (`overpayment`). A running session's advance payments are not capped. A waived bill is unchanged. | `op_payment` wrapper locks the bill, sums payments | `paymentBalanceProblem` (`lib/domain/services/payment_rules.dart`), checked inside the write transaction |
+| A refund may never exceed what was collected (`refund_exceeds_paid`). | same | same |
+| The End sheet collects only what is still due (an advance taken while the session ran is not collected again) and says when the payment did not go in. Take payment books only the balance on a final bill and tells staff the change to return. | — | `end_session_sheet.dart`, `take_payment_sheet.dart` |
+| A `role='owner'` profile always holds every permission and stays active; `staff.update` rewrites it so and answers `adjusted` (the device refetches). An arena can therefore never be left without an owner; removing an owner is an operator action on the database. | `op_staff_update` wrapper | the device reverts to the server row |
+| `add_staff_by_email` cannot overwrite an existing owner's profile (`owner_profile`), refuses unknown permission codes, and must leave someone holding Settings. | redefined | — |
+| Loaning a pad or sending it home needs `start` or `settings` (was: any active member). Re-homing still needs `settings`. | `op_controller_move` wrapper | UI offers it only there |
+| Every cross-table reference stays inside the row's arena (`missing_reference`). | `t_same_arena` triggers on 19 tables | ids come from the device's own arena |
+| `resource.upsert` cannot touch another arena's station id (`not_found`). | wrapper | — |
+| Every public function pins `search_path`. | `alter function … set search_path` | — |
+
+Two devices that both see "₹300 remaining" and both take it: the first push
+is applied, the second is refused as `overpayment`. That device rolls back to
+the server's payments, and the refused payment (amount and method) stays under
+Sync → Needs attention. It is money a person physically took, so someone must
+hand it back or record it against another bill.
+
 ## Status strip
 
 Local mode · Synced · *N* waiting · Syncing · Offline (*N* saved here, not sent
 yet) · Sign in again / Access off, plus "*N* need attention" whenever refused
-ops are unacknowledged.
+ops are unacknowledged. It is on Today, Floor, Money and Reports (the screens
+that total money). The waiting count keeps counting while sync is stopped (an
+expired sign-in, the app paused), so the sign-out warning sees unsent work.
+In the "Sign in again" state the Sync screen has a **Sign in again** button;
+unsent work stays in that person's database file and goes after they sign in.
 
 ## Auth and roles
 
@@ -232,15 +279,42 @@ non-https or loopback backend.
 
 Blocking production:
 
-1. **No hosted project.** Everything here was verified on the local stack only.
-   That proves the logic, not devices on different networks. The step-by-step
-   checklist (dashboard settings, key handling, `db push` of 0001–0015, the
-   post-push audit and the two-phone test) is [DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md).
+1. **Hosted dev project:** linked (ref `ouxv…`) with 0001–0015 applied,
+   one arena, the owner (role owner, all permissions) and one staff login
+   (start, bill, discount, members), checked from the database 2026-10-12.
+   **0016 is not pushed yet** — that needs the owner's go-ahead
+   ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md) §4a). No session or op has
+   reached it yet.
 2. **Real-device, cross-network test** (two phones on different networks, one
-   going offline mid-shift) has not been done.
+   going offline mid-shift) has not been done. Every multi-device claim here
+   is proven against the local stack (`tool/sync_it.sh`: two real accounts,
+   two device databases, real PostgREST) — not on two phones.
 3. **Session times are device-asserted.** Server-side amount validation does
    not protect against forged or wrong timestamps (see *What is still
    trusted* above).
+
+Known limits (by design or not yet built):
+
+* **Another person's unsent work on a shared device is invisible.** Each
+  (arena, person) has its own database file; if A signs out with changes
+  waiting and B signs in on the same device, A's changes (payments included)
+  go only when A signs in there again, and nothing tells B or the owner. The
+  owner's decision is per-person devices, so this is a limit, not a bug —
+  but a shared counter tablet must not be used that way. The same applies to
+  a member whose access is turned off with work waiting.
+* **One unreadable server row stops pulls** (retried with backoff, shown as
+  "Sync error") until a build that can read it ships. No row in today's schema
+  is known to fail; there is no quarantine.
+* **A refused owner edit re-downloads the whole feed** to rebuild the catalog
+  (cursor 0, then filtered). Fine with today's data; with a long history it can
+  exceed the 8 s statement timeout and leave that device "offline".
+* Owner editing screens (Staff, Pricing, Hours, Holidays, Billing rules) read
+  once when opened; reopen them to see another device's edit.
+* Success messages ("Paid in full", "Saved") mean saved on this device; the
+  status strip says whether it has reached the server.
+* All staff of an arena can read all of its rows through sync (payments,
+  charges, staff permissions — not e-mails). The app hides Money/Reports from
+  staff; the data is on their device.
 
 Worth doing next:
 
@@ -251,10 +325,9 @@ Worth doing next:
 
 * Booking overlap is checked server-side only for a *specific* station, and not
   against live sessions (the device checks both).
-* A refused owner edit re-downloads the whole feed to rebuild the catalog. That
-  is fine now, heavy for a large history.
 * Other devices learn of changes by 10 s polling while the app is in front.
-  Supabase Realtime could cut that latency and data use.
+  Supabase Realtime (a broadcast that nudges a pass) could cut that latency
+  and data use; the pull path would stay as it is.
 * Cloud mode has no PIN quick-unlock (the OS lock protects the device), and the
   staff editor still shows the device-only PIN field there.
 * There is no import of local-only history into a cloud arena (only test data

@@ -154,14 +154,19 @@ final usableControllersByStationProvider =
 /// Active games with their availability on a given resource (spec §5).
 final gamesForResourceProvider =
     FutureProvider.autoDispose.family<List<GameOnResource>, String>(
-  (ref, resourceId) =>
-      ref.watch(catalogRepositoryProvider).gamesForResource(resourceId),
+  (ref, resourceId) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).gamesForResource(resourceId);
+  },
 );
 
 /// Resources with a game's availability on each (spec §19).
 final resourcesForGameProvider =
     FutureProvider.autoDispose.family<List<ResourceForGame>, String>(
-  (ref, gameId) => ref.watch(catalogRepositoryProvider).resourcesForGame(gameId),
+  (ref, gameId) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).resourcesForGame(gameId);
+  },
 );
 
 final recentCustomersProvider = StreamProvider.autoDispose<List<Customer>>(
@@ -169,33 +174,54 @@ final recentCustomersProvider = StreamProvider.autoDispose<List<Customer>>(
 );
 
 final activitiesProvider = FutureProvider.autoDispose<List<Activity>>(
-  (ref) => ref.watch(catalogRepositoryProvider).activities(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).activities();
+  },
 );
 
 final resourcesProvider = FutureProvider.autoDispose<List<Resource>>(
-  (ref) => ref.watch(catalogRepositoryProvider).resources(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).resources();
+  },
 );
 
 final pricingSnapshotProvider = FutureProvider.autoDispose<PricingSnapshot>(
-  (ref) => ref.watch(catalogRepositoryProvider).currentSnapshot(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).currentSnapshot();
+  },
 );
 
 final activeGamesProvider = FutureProvider.autoDispose<List<Game>>(
-  (ref) => ref.watch(catalogRepositoryProvider).games(activeOnly: true),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).games(activeOnly: true);
+  },
 );
 
 final allGamesProvider = FutureProvider.autoDispose<List<Game>>(
-  (ref) => ref.watch(catalogRepositoryProvider).games(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).games();
+  },
 );
 
 final gameCategoriesProvider = FutureProvider.autoDispose<List<GameCategory>>(
-  (ref) => ref.watch(catalogRepositoryProvider).categories(),
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).categories();
+  },
 );
 
 /// Controls for a specific game.
 final gameControlsProvider =
     FutureProvider.autoDispose.family<List<GameControl>, String>(
-  (ref, gameId) => ref.watch(catalogRepositoryProvider).controlsFor(gameId),
+  (ref, gameId) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).controlsFor(gameId);
+  },
 );
 
 /// Payment rows for one session (append-only history).
@@ -207,10 +233,16 @@ final paymentsForSessionProvider =
 /// A customer by id (for showing names on cards).
 final customerByIdProvider =
     FutureProvider.autoDispose.family<Customer?, String>(
-  (ref, id) => ref.watch(customerRepositoryProvider).getById(id),
+  (ref, id) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(customerRepositoryProvider).getById(id);
+  },
 );
 
 /// A game by id (for showing names on cards).
 final gameByIdProvider = FutureProvider.autoDispose.family<Game?, String>(
-  (ref, id) => ref.watch(catalogRepositoryProvider).gameById(id),
+  (ref, id) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).gameById(id);
+  },
 );

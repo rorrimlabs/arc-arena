@@ -69,3 +69,14 @@ final syncStatusProvider = StreamProvider<SyncStatus>((ref) {
   });
   return controller.stream;
 });
+
+/// Counts sync passes that brought server changes onto this device (0 in
+/// local-only mode). One-shot catalog providers watch it so a station, game or
+/// price another device changed shows up without a restart.
+final syncRevisionProvider = StreamProvider<int>((ref) async* {
+  final binding = ref.watch(cloudBindingProvider);
+  yield 0;
+  if (binding == null) return;
+  var n = 0;
+  yield* binding.engine.dataChanged.map((_) => ++n);
+});
