@@ -41,9 +41,10 @@ class SimDevice {
 
   String get userId => client.auth.currentUser!.id;
 
-  /// Signs a NEW account up (local stack: no e-mail confirmation) and opens an
-  /// empty device database. The catalog arrives with the first pull.
-  static Future<SimDevice> signUp(
+  /// Signs in with a login the owner created (tool/sync_it.sh provisions them
+  /// — public sign-up is off) and opens an empty device database. The catalog
+  /// arrives with the first pull.
+  static Future<SimDevice> signIn(
       String name, String url, String anonKey, String email) async {
     // Two devices in one test isolate is the point here; each has its own
     // in-memory executor, so drift's same-executor warning does not apply.
@@ -51,7 +52,7 @@ class SimDevice {
     final client = SupabaseClient(url, anonKey,
         authOptions: const AuthClientOptions(
             autoRefreshToken: false, authFlowType: AuthFlowType.implicit));
-    await client.auth.signUp(email: email, password: 'it-pass-$email');
+    await client.auth.signInWithPassword(email: email, password: 'it-pass-$email');
     return SimDevice._(name, client, AppDatabase(NativeDatabase.memory()),
         SupabaseSyncTransport(client));
   }

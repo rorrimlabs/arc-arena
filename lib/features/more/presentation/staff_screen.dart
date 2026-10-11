@@ -58,8 +58,10 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Text('They create their account on their own device '
-                  'first, with this e-mail.'),
+              const Text('First create their login in the Supabase '
+                  'dashboard (Authentication → Users → Add user, with a '
+                  'starting password). Then add that e-mail here; they can '
+                  'change the password after signing in.'),
               TextField(
                 controller: email,
                 keyboardType: TextInputType.emailAddress,
@@ -107,7 +109,8 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
     } on PostgrestException catch (e) {
       messenger.showSnackBar(SnackBar(
           content: Text(e.message == 'no_account'
-              ? 'No account uses that e-mail yet — ask them to create one.'
+              ? 'No login uses that e-mail yet — create it in the Supabase '
+                  'dashboard first (Authentication → Users → Add user).'
               : 'Not added: ${e.message}')));
     } on Object catch (e) {
       messenger.showSnackBar(

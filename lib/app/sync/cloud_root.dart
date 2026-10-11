@@ -214,6 +214,8 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
             'p_name': name,
             'p_perms': perms,
           }),
+      changePassword: (password) =>
+          _client.auth.updateUser(UserAttributes(password: password)),
     );
     final container = ProviderContainer(overrides: [
       databaseProvider.overrideWithValue(db),
@@ -307,18 +309,18 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       darkTheme: AppTheme.dark(),
       themeMode: ThemeMode.dark,
       home: switch (_phase) {
-        _Phase.signIn => _SignInScreen(onSignedIn: _loadArenas, notice: _message),
-        _Phase.pickArena => _ArenaPickScreen(
+        _Phase.signIn => CloudSignInScreen(
+            signIn: (email, password) =>
+                _client.auth.signInWithPassword(email: email, password: password),
+            onSignedIn: _loadArenas,
+            notice: _message,
+          ),
+        _Phase.pickArena => CloudArenaPickScreen(
             arenas: _arenas,
             message: _message,
             email: _client.auth.currentUser?.email ?? '',
             onPick: _open,
             onRefresh: _loadArenas,
-            onCreate: (name, ownerName) async {
-              await _client.rpc('create_arena',
-                  params: {'p_name': name, 'p_owner_name': ownerName});
-              await _loadArenas();
-            },
             onSignOut: () async {
               await _client.auth.signOut();
               _go(_Phase.signIn);
@@ -347,8 +349,20 @@ final _serverOffsetProvider = StreamProvider<Duration>((ref) async* {
 
 // ------------------------------------------------------------------ screens
 
-class _SignInScreen extends StatefulWidget {
-  const _SignInScreen({required this.onSignedIn, this.notice});
+/// The cloud-mode entry screen: sign in, nothing else. This is an internal
+/// shop app — there is no public registration. The owner creates every login
+/// (Supabase dashboard → Authentication → Users → Add user, migration 0015)
+/// and grants it access to the arena from Settings → Staff.
+class CloudSignInScreen extends StatefulWidget {
+  const CloudSignInScreen({
+    required this.signIn,
+    required this.onSignedIn,
+    this.notice,
+    super.key,
+  });
+
+  /// Signs in with e-mail + password (Supabase in the app; a fake in tests).
+  final Future<void> Function(String email, String password) signIn;
   final Future<void> Function() onSignedIn;
 
   /// Why the device came back here (e.g. access turned off), if it was not
@@ -356,10 +370,10 @@ class _SignInScreen extends StatefulWidget {
   final String? notice;
 
   @override
-  State<_SignInScreen> createState() => _SignInScreenState();
+  State<CloudSignInScreen> createState() => _CloudSignInScreenState();
 }
 
-class _SignInScreenState extends State<_SignInScreen> {
+class _CloudSignInScreenState extends State<CloudSignInScreen> {
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _busy = false;
@@ -372,23 +386,18 @@ class _SignInScreenState extends State<_SignInScreen> {
     super.dispose();
   }
 
-  Future<void> _run(Future<void> Function(GoTrueClient auth) action) async {
+  Future<void> _submit() async {
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await action(Supabase.instance.client.auth);
-      if (Supabase.instance.client.auth.currentSession != null) {
-        await widget.onSignedIn();
-      } else {
-        setState(() => _error = 'Check your e-mail to confirm the account, '
-            'then sign in.');
-      }
+      await widget.signIn(_email.text.trim(), _password.text);
+      await widget.onSignedIn();
     } on AuthException catch (e) {
-      setState(() => _error = e.message);
+      if (mounted) setState(() => _error = e.message);
     } on Object catch (e) {
-      setState(() => _error = 'Could not reach the server ($e).');
+      if (mounted) setState(() => _error = 'Could not reach the server ($e).');
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -409,8 +418,8 @@ class _SignInScreenState extends State<_SignInScreen> {
                 Text('Sign in', style: ArenaType.h1.copyWith(color: arena.text)),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Use your own account. Your owner gives it access to the '
-                  'arena; what you can do comes from there.',
+                  'Use the login the owner created for you. No account yet? '
+                  'Ask the owner.',
                   style: ArenaType.body.copyWith(color: arena.textMuted),
                 ),
                 if (widget.notice != null) ...[
@@ -434,6 +443,7 @@ class _SignInScreenState extends State<_SignInScreen> {
                   obscureText: true,
                   autofillHints: const [AutofillHints.password],
                   decoration: const InputDecoration(labelText: 'Password'),
+                  onSubmitted: (_) => _busy ? null : _submit(),
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: AppSpacing.md),
@@ -441,19 +451,8 @@ class _SignInScreenState extends State<_SignInScreen> {
                 ],
                 const SizedBox(height: AppSpacing.xl),
                 FilledButton(
-                  onPressed: _busy
-                      ? null
-                      : () => _run((auth) => auth.signInWithPassword(
-                          email: _email.text.trim(), password: _password.text)),
+                  onPressed: _busy ? null : _submit,
                   child: const Text('Sign in'),
-                ),
-                const SizedBox(height: AppSpacing.sm),
-                TextButton(
-                  onPressed: _busy
-                      ? null
-                      : () => _run((auth) => auth.signUp(
-                          email: _email.text.trim(), password: _password.text)),
-                  child: const Text('Create my account'),
                 ),
               ],
             ),
@@ -464,15 +463,17 @@ class _SignInScreenState extends State<_SignInScreen> {
   }
 }
 
-class _ArenaPickScreen extends StatefulWidget {
-  const _ArenaPickScreen({
+/// The arenas this login belongs to. Arenas are not created here: the first
+/// owner is set up once by the operator (bootstrap_owner, migration 0015).
+class CloudArenaPickScreen extends StatelessWidget {
+  const CloudArenaPickScreen({
     required this.arenas,
     required this.email,
     required this.onPick,
     required this.onRefresh,
-    required this.onCreate,
     required this.onSignOut,
     this.message,
+    super.key,
   });
 
   final List<Membership> arenas;
@@ -480,24 +481,7 @@ class _ArenaPickScreen extends StatefulWidget {
   final String? message;
   final Future<void> Function(Membership) onPick;
   final Future<void> Function() onRefresh;
-  final Future<void> Function(String name, String ownerName) onCreate;
   final Future<void> Function() onSignOut;
-
-  @override
-  State<_ArenaPickScreen> createState() => _ArenaPickScreenState();
-}
-
-class _ArenaPickScreenState extends State<_ArenaPickScreen> {
-  final _name = TextEditingController();
-  final _owner = TextEditingController();
-  String? _error;
-
-  @override
-  void dispose() {
-    _name.dispose();
-    _owner.dispose();
-    super.dispose();
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -509,60 +493,31 @@ class _ArenaPickScreenState extends State<_ArenaPickScreen> {
           children: [
             Text('Your arenas', style: ArenaType.h1.copyWith(color: arena.text)),
             const SizedBox(height: AppSpacing.sm),
-            Text('Signed in as ${widget.email}',
+            Text('Signed in as $email',
                 style: ArenaType.caption.copyWith(color: arena.textMuted)),
-            if (widget.message != null) ...[
+            if (message != null) ...[
               const SizedBox(height: AppSpacing.md),
-              Text(widget.message!,
-                  style: ArenaType.label.copyWith(color: arena.warning)),
+              Text(message!, style: ArenaType.label.copyWith(color: arena.warning)),
             ],
             const SizedBox(height: AppSpacing.lg),
-            for (final a in widget.arenas)
+            for (final a in arenas)
               ListTile(
                 title: Text(a.arenaName),
                 subtitle: Text(a.active ? a.name : 'Access turned off'),
                 enabled: a.active,
                 trailing: const Icon(Icons.chevron_right),
-                onTap: a.active ? () => widget.onPick(a) : null,
+                onTap: a.active ? () => onPick(a) : null,
               ),
-            if (widget.arenas.isEmpty)
+            if (arenas.isEmpty)
               Text(
-                'No arena has added you yet. Ask the owner to add '
-                '${widget.email} in Settings → Staff, then refresh.',
+                'This login has no arena access yet. Ask the owner to add '
+                '$email in Settings → Staff, then refresh.',
                 style: ArenaType.body.copyWith(color: arena.textMuted),
               ),
             const SizedBox(height: AppSpacing.md),
-            OutlinedButton(onPressed: widget.onRefresh, child: const Text('Refresh')),
+            OutlinedButton(onPressed: onRefresh, child: const Text('Refresh')),
             const SizedBox(height: AppSpacing.xxl),
-            Text('Starting a new arena?',
-                style: ArenaType.h3.copyWith(color: arena.text)),
-            const SizedBox(height: AppSpacing.sm),
-            TextField(
-              controller: _name,
-              decoration: const InputDecoration(labelText: 'Arena name'),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            TextField(
-              controller: _owner,
-              decoration: const InputDecoration(labelText: 'Your name'),
-            ),
-            if (_error != null) ...[
-              const SizedBox(height: AppSpacing.sm),
-              Text(_error!, style: ArenaType.label.copyWith(color: arena.danger)),
-            ],
-            const SizedBox(height: AppSpacing.sm),
-            FilledButton.tonal(
-              onPressed: () async {
-                try {
-                  await widget.onCreate(_name.text.trim(), _owner.text.trim());
-                } on Object catch (e) {
-                  setState(() => _error = 'Could not create it ($e).');
-                }
-              },
-              child: const Text('Create arena (you become its owner)'),
-            ),
-            const SizedBox(height: AppSpacing.xxl),
-            TextButton(onPressed: widget.onSignOut, child: const Text('Sign out')),
+            TextButton(onPressed: onSignOut, child: const Text('Sign out')),
           ],
         ),
       ),

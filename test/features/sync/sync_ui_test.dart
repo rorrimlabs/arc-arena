@@ -48,6 +48,7 @@ void main() {
       clock: OffsetClock(clock, Duration.zero),
       signOut: () async => signedOut++,
       addStaffByEmail: (_, _, _) async {},
+      changePassword: (_) async {},
     );
   });
   tearDown(() async {

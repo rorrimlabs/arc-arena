@@ -21,6 +21,7 @@ class CloudBinding {
     required this.clock,
     required this.signOut,
     required this.addStaffByEmail,
+    required this.changePassword,
   });
 
   final String arenaId;
@@ -36,9 +37,15 @@ class CloudBinding {
   /// Ends the cloud session on this device and returns to the sign-in gate.
   final Future<void> Function() signOut;
 
-  /// Owner-only, online-only: give an existing account access to this arena.
+  /// Owner-only, online-only: give an EXISTING login access to this arena with
+  /// the chosen permissions. It does not create the login — the owner creates
+  /// that in the Supabase dashboard (migration 0015).
   final Future<void> Function(String email, String name, List<String> perms)
       addStaffByEmail;
+
+  /// Online-only: replace the signed-in person's own password, so a login the
+  /// owner set up becomes credentials only that person knows.
+  final Future<void> Function(String newPassword) changePassword;
 }
 
 /// Overridden in cloud mode; null in local-only mode.

@@ -10,7 +10,6 @@ library;
 
 import 'dart:convert';
 import 'dart:io';
-import 'dart:math';
 
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
@@ -30,13 +29,19 @@ import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/repositories/group_commands.dart';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
 
 import '../support/sim_device.dart';
 
 void main() {
   final url = Platform.environment['AO_SUPABASE_URL'];
   final key = Platform.environment['AO_SUPABASE_ANON_KEY'];
-  final skip = (url == null || key == null)
+  // Provisioned by tool/sync_it.sh the way the owner does it (migration 0015):
+  // logins created by an admin, the owner attached by bootstrap_owner.
+  final ownerEmail = Platform.environment['AO_IT_OWNER_EMAIL'];
+  final staffEmail = Platform.environment['AO_IT_STAFF_EMAIL'];
+  final provisionedArena = Platform.environment['AO_IT_ARENA'];
+  final skip = (url == null || key == null || ownerEmail == null)
       ? 'local Supabase stack not configured (run tool/sync_it.sh)'
       : null;
 
@@ -46,18 +51,16 @@ void main() {
 
   setUpAll(() async {
     if (skip != null) return;
-    final run = Random().nextInt(1 << 32).toRadixString(16);
-    a = await SimDevice.signUp('A', url!, key!, 'it-owner-$run@arena.test');
-    b = await SimDevice.signUp('B', url, key, 'it-staff-$run@arena.test');
-    // A fresh arena per run: isolated from other runs and from the dev seed.
-    arenaId = await a.client.rpc('create_arena',
-        params: {'p_name': 'IT $run', 'p_owner_name': 'Owner A'}) as String;
+    a = await SimDevice.signIn('A', url!, key!, ownerEmail!);
+    arenaId = provisionedArena!;
+    // The owner gives the staff login access from the app (Settings → Staff).
     await a.client.rpc('add_staff_by_email', params: {
       'p_arena': arenaId,
-      'p_email': 'it-staff-$run@arena.test',
+      'p_email': staffEmail,
       'p_name': 'Staff B',
       'p_perms': ['start', 'bill', 'discount', 'members'],
     });
+    b = await SimDevice.signIn('B', url, key, staffEmail!);
     a.bind(arenaId);
     b.bind(arenaId);
   });
@@ -107,6 +110,42 @@ void main() {
         .value;
     return quote(newEnd) - quote(s.scheduledEndAt);
   }
+
+  test('owner-managed accounts: no public sign-up, no app route to an arena',
+      () async {
+    final stranger = SupabaseClient(url!, key!,
+        authOptions: const AuthClientOptions(
+            autoRefreshToken: false, authFlowType: AuthFlowType.implicit));
+    addTearDown(stranger.dispose);
+    await expectLater(
+        stranger.auth.signUp(email: 'stranger-${DateTime.now().microsecondsSinceEpoch}@arena.test',
+            password: 'stranger-pass-123'),
+        throwsA(isA<AuthException>()
+            .having((e) => e.code, 'code', 'signup_disabled')));
+    await expectLater(stranger.auth.signInAnonymously(),
+        throwsA(isA<AuthException>()));
+    // Even the owner's own signed-in login cannot mint arenas from the app.
+    await expectLater(
+        a.client.rpc('create_arena', params: {'p_name': 'Mine', 'p_owner_name': 'X'}),
+        throwsA(isA<PostgrestException>()
+            .having((e) => e.code, 'code', anyOf('42501', 'PGRST202'))));
+    final mine = await b.client.rpc('my_arenas') as List;
+    expect([for (final m in mine) (m as Map)['arena_id']], [arenaId],
+        reason: 'staff belongs to exactly the arena the owner added them to');
+  }, skip: skip);
+
+  test('staff replace the owner-issued password with their own', () async {
+    await b.client.auth.updateUser(UserAttributes(password: 'staff-own-pass-42'));
+    final again = SupabaseClient(url!, key!,
+        authOptions: const AuthClientOptions(
+            autoRefreshToken: false, authFlowType: AuthFlowType.implicit));
+    addTearDown(again.dispose);
+    await expectLater(
+        again.auth.signInWithPassword(email: staffEmail!, password: 'it-pass-$staffEmail'),
+        throwsA(isA<AuthException>()), reason: 'the starting password no longer works');
+    final ok = await again.auth.signInWithPassword(email: staffEmail, password: 'staff-own-pass-42');
+    expect(ok.session, isNotNull);
+  }, skip: skip);
 
   test('both devices start from the server catalog (shared identity)', () async {
     expect((await a.sync()).endedIn, SyncState.synced);

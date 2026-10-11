@@ -170,11 +170,21 @@ ops are unacknowledged.
 
 ## Auth and roles
 
-* Staff create their own account on their own device. An owner adds that
-  e-mail in Settings → Staff (`add_staff_by_email`). No service-role key exists
-  anywhere in the app or the repo.
-* `create_arena` makes a new arena with the starter catalog; the caller becomes
-  its owner. `claim_arena` is no longer client-callable.
+* **Owner-managed logins, no public registration** (migration 0015; sign-up is
+  off in Auth). The cloud entry screen only signs in.
+* **First owner:** the owner creates their login in the Supabase dashboard
+  (Authentication → Users → Add user, auto-confirmed) and runs
+  `select bootstrap_owner(email, arena name, owner name)` once in the SQL
+  editor. That function, `create_arena` and `claim_arena` are not callable by
+  the app — there is no app route to ownership.
+* **Staff:** the owner creates the login in the dashboard the same way, then
+  Settings → Staff → *Add by e-mail* with the permissions.
+  `add_staff_by_email` only **links an existing login** — verified, it never
+  creates one (unknown e-mail → `no_account`, `auth.users` unchanged). The
+  person then replaces the starting password in More → *Change password*.
+* No service-role key exists anywhere in the app or the repo's app code
+  (`tool/sync_it.sh` uses the LOCAL stack's key in a non-exported shell
+  variable to create test logins, the scripted equivalent of "Add user").
 * Permissions come from `staff_profiles` and follow an owner's edits live. Turning
   a member off stops their device syncing and returns it to the sign-in gate.
   Their unsent ops stay in their database file.
@@ -224,7 +234,7 @@ Blocking production:
 
 1. **No hosted project.** Everything here was verified on the local stack only.
    That proves the logic, not devices on different networks. The step-by-step
-   checklist (dashboard settings, key handling, `db push` of 0001–0014, the
+   checklist (dashboard settings, key handling, `db push` of 0001–0015, the
    post-push audit and the two-phone test) is [DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md).
 2. **Real-device, cross-network test** (two phones on different networks, one
    going offline mid-shift) has not been done.

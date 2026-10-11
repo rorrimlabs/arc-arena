@@ -5,6 +5,7 @@ import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/core/widgets/arena_placeholder_page.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
+import 'package:arena_ops/features/auth/presentation/change_password_dialog.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_board_screen.dart';
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
@@ -108,6 +109,23 @@ class MoreScreen extends ConsumerWidget {
                   title: 'Sync',
                   subtitle: '${cloud.arenaName} · what is waiting or refused',
                   onTap: () => _push(context, const SyncScreen()),
+                ),
+              if (cloud != null)
+                ArenaListRow(
+                  icon: Icons.password_rounded,
+                  title: 'Change password',
+                  subtitle: 'Your own sign-in for ${cloud.email}',
+                  onTap: () async {
+                    final changed = await showDialog<bool>(
+                      context: context,
+                      builder: (_) => ChangePasswordDialog(
+                          changePassword: cloud.changePassword),
+                    );
+                    if (changed == true && context.mounted) {
+                      ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Password changed.')));
+                    }
+                  },
                 ),
               ArenaListRow(
                 icon: Icons.help_outline_rounded,
