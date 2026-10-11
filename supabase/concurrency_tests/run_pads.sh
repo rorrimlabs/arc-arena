@@ -38,13 +38,14 @@ SQL
 
 start_op() { # op_id session_id segment_id station alloc_id move_id
 cat <<SQL
+select _pricing_snapshot((select id from arenas limit 1)) as snap \\gset
 set role authenticated;
 select set_config('request.jwt.claims','{"sub":"$OWNER","role":"authenticated"}', false);
 select sync_push((select id from arenas limit 1), jsonb_build_array(jsonb_build_object(
   'op_id','$1','kind','session.start','payload', jsonb_build_object(
     'id','$2','segment_id','$3','customer_id','cccccccc-0000-0000-0000-0000000eace0',
     'started_at','2026-10-01T09:00:00Z','scheduled_end_at','2026-10-01T10:00:00Z',
-    'pricing_snapshot','{}'::jsonb,'resource_id',(select id from resources where name='$4'),
+    'pricing_snapshot',:'snap'::jsonb,'resource_id',(select id from resources where name='$4'),
     'activity_code','PS5','controller_count',1,
     'allocations', jsonb_build_array(jsonb_build_object('id','$5','controller_id',(select id from controllers where label='GHOST-1'))),
     'moves', jsonb_build_array(jsonb_build_object('id','$6','controller_id',(select id from controllers where label='GHOST-1')))))),

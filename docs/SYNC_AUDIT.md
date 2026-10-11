@@ -73,6 +73,8 @@ PostgREST directly with their own JWT.
    Dart pricing engine is the single source of truth). A member with direct API
    access and `bill` could under-bill. Mitigation today: append-only history +
    `created_by` attribution + owner reports. Server-side re-pricing is future work.
+   **Closed 2026-10-11 by 0013**: the server re-prices every end and extension,
+   and checks every session's price list at start (SYNC.md "Server-side pricing").
 9. Local stack config is dev-grade (`enable_signup = true`,
    `minimum_password_length = 6`). Fine locally; must be tightened for production.
 

@@ -42,6 +42,65 @@ SyncEngine ── sync_push(arena, ops, device) ──► sync_ops ledger ─►
   a newer version.
 * Clients cannot write tables directly any more; `sync_push` is the only path.
 
+## Server-side pricing (0013)
+
+Every bill a device pushes is priced again on the server. An op whose money
+does not match is refused (`price_mismatch`), so the device keeps the session
+open and Sync shows the reason. Migration
+`0013_server_pricing.sql` ports `PricingService`, `SegmentBilling` and
+`GroupBilling` to plpgsql (`_pr_quote`, `_pr_session_bill`, `_pr_group_bill`).
+
+**Why re-price instead of a tolerance check.** The engine uses only integer
+paise with fixed rounding rules, so the server can reach the device's exact
+number. Any tolerance would be free money for anyone with API access, and it
+would also hide a porting bug. The tolerance is therefore **0 paise**.
+
+**What is checked**
+
+| Op | Check |
+|---|---|
+| `session.start`, `group.create` | `pricing_snapshot` must equal the arena's price list (rates, activities, policy, opening/happy hours, holidays, closures). That is the live list, or one an owner replaced in the last 72 h, which covers a device that went offline holding the old list. Card name and ordering are ignored. A group's `billing_mode` must be the snapshot policy's. Otherwise the op is refused with `pricing_snapshot_mismatch`. Without this check, a forged ₹0 price list would get past re-pricing. |
+| `session.end`, `group.end` | The server prices the segments/assignments it holds, using the stored snapshot and the end time. `billed_amount_paise` must equal the server total. The charge rows must match the server's rows as a multiset on activity, station, controllers, band, start, end, played/billed minutes, unit, unit price and amount; ids and order are ignored. The end may not come before the start of the open segment or assignment. |
+| `session.extend`, `group.extend` | `added_amount_paise` must equal what the device's planner computes. For a single session that is the money-rounded quote over the open segment's config, from the session start to the new end, minus the same quote to the old end. For a group it is the unrounded group subtotal at the new end minus the subtotal at the old end. |
+| waived ends | Priced and checked exactly like any other end. Waiving changes only `payment_status` and still needs `discount`. |
+
+Verification runs after the 0011 op body. Permission, stale and floor
+refusals therefore keep their own codes. A price refusal rolls the whole op
+back through the op's savepoint.
+
+**Edge cases the port reproduces** (the Dart engine is the reference):
+
+* Happy hour is split at the IST window boundaries of every day the interval
+  touches. Holidays and closed days have no happy hour. Adjacent pieces of the
+  same band are merged. A missing happy rate falls back to standard, and an
+  activity that is not happy-eligible is never split.
+* Grace: a session or segment of `≤ grace` minutes is free. Minimum charge
+  extends the *billed* interval, so a charge row may end after the session.
+  Played minutes still count only actual time.
+* Per-minute bills prorate by the second. Block bills round the whole minutes
+  up first, then up or to the nearest block. VR is billed in units rounded up
+  or to the nearest unit, or prorated.
+* Rounding scope `session` rounds each priced interval once, using the exact
+  numerator over a common denominator. Rounding scope `segment`, or mixed
+  denominators, sums the per-piece paise. Cash rounding (to nearest or up)
+  applies once to the session or group total.
+* Policy applies **per segment**, which is option A in
+  [billing-segment-policy.md](billing-segment-policy.md). If the owner picks
+  option B, the Dart engine and `_pr_*` must change together.
+* A segment with no rate in the snapshot contributes nothing on both sides
+  (the End screen warns staff).
+* Groups: a per-system sweep splits at every controller-count change. In
+  pooled mode the purchased count is priced once over the group window, and
+  stretches without controllers are still billed per system.
+* `early_exit` / `late_arrival = planned` are stored but not used by the app's
+  billing. Both sides bill actual time.
+
+**What is still trusted.** Times come from the device, which is required for
+offline-first. The server bounds them, but cannot prove that an end time was
+not set early. Server receipt times (`sync_ops.created_at`, `sessions.created_at`)
+are kept for audit. In pooled group mode, the purchased controller count is
+staff's declaration.
+
 ## Read path
 
 * Every synced row carries `sync_xid` (the id of the transaction that last wrote
@@ -109,18 +168,22 @@ Blocking production:
 
 1. **No hosted project.** Everything here was verified on the local stack only.
    That proves the logic, not devices on different networks. To go live, the
-   owner creates a production project, applies migrations 0001–0012, keeps
+   owner creates a production project, applies migrations 0001–0013, keeps
    e-mail confirmation on (or turns off open sign-up and invites), sets a real
    minimum password length and SMTP, and builds with a `dart_define.prod.json`
    kept outside git.
-2. **Prices are computed on the device.** The server enforces structure: who may
-   do what, resources, pads, idempotency, sign of money, and staleness. It does
-   not check amounts. A member with `bill` and direct API access could under-bill.
-   This was accepted by design in Phase 1; server-side re-pricing is the fix.
-3. **Real-device, cross-network test** (two phones on different networks, one
+2. **Real-device, cross-network test** (two phones on different networks, one
    going offline mid-shift) has not been done.
 
 Worth doing next:
+
+* Server pricing (0013) is a hand port of the Dart engine. Any change to
+  `lib/domain/pricing` or `SegmentBilling` / `GroupBilling` must change `_pr_*`
+  in a new migration, or every affected bill will be refused. When pricing
+  changes, re-run the Dart-vs-SQL differential check. It priced 3,600 random
+  bills both ways with 0 mismatches, and it caught a one-paise change to the
+  rounding rule. A permanent CI version of it would lock this in.
+* Bill times come from the device (see *What is still trusted* above).
 
 * Booking overlap is checked server-side only for a *specific* station, and not
   against live sessions (the device checks both).

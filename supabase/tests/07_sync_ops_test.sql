@@ -48,7 +48,8 @@ returns jsonb as $$
     'customer_id', 'cccccccc-0000-0000-0000-000000000001',
     'booking_id', p_booking,
     'started_at', '2026-10-01T09:00:00Z', 'scheduled_end_at', '2026-10-01T10:00:00Z',
-    'pricing_snapshot', '{"policy":{"name":"Default"}}'::jsonb,
+    -- The arena's own price list, as an in-sync device would freeze it (0013).
+    'pricing_snapshot', _pricing_snapshot((select id from arenas limit 1)),
     'resource_id', pg_temp.r(p_res), 'activity_code', 'PS5', 'game_id', pg_temp.g(p_game),
     'controller_count', p_cc, 'allocations', p_allocs, 'moves', p_moves) $$ language sql;
 
@@ -162,7 +163,7 @@ select is(pg_temp.push('session.extend', jsonb_build_object('session_id','aaaaaa
 select is(pg_temp.push('session.extend', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
     'extension_id','e1000000-0000-0000-0000-000000000001', 'added_minutes', 30,
     'old_end_at','2026-10-01T10:00:00Z', 'new_end_at','2026-10-01T10:30:00Z',
-    'added_amount_paise', 14000))->>'status', 'applied', 'extend from the current end applies');
+    'added_amount_paise', 11000))->>'status', 'applied', 'extend from the current end applies');
 select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
     'ended_at','2026-10-01T10:30:00Z', 'billed_amount_paise', 42000, 'mark_waived', false,
     'expected_segment_ids', jsonb_build_array('bbbbbbbb-0000-0000-0000-000000000002'),
@@ -171,15 +172,15 @@ select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-
 
 -- ------------------------------------------- 8. end releases pads, history preserved
 select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
-    'ended_at','2026-10-01T10:30:00Z', 'billed_amount_paise', 42000, 'mark_waived', false,
+    'ended_at','2026-10-01T10:30:00Z', 'billed_amount_paise', 33000, 'mark_waived', false,
     'expected_segment_ids', jsonb_build_array('bbbbbbbb-0000-0000-0000-000000000002'),
     'expected_scheduled_end_at','2026-10-01T10:30:00Z',
     'charges', jsonb_build_array(jsonb_build_object('id','c1000000-0000-0000-0000-000000000001',
-      'segment_id','bbbbbbbb-0000-0000-0000-000000000002','segment_index',0,'band_code','standard',
+      'segment_id','bbbbbbbb-0000-0000-0000-000000000002','segment_index',0,'band_code','happy',
       'activity_code','PS5','resource_id', pg_temp.r('VOID'),'controller_count',2,
       'segment_start','2026-10-01T09:00:00Z','segment_end','2026-10-01T10:30:00Z',
-      'played_minutes',90,'billed_minutes',90,'unit_minutes',60,'unit_price_paise',28000,
-      'amount_paise',42000)))) ->>'status', 'applied', 'VOID session ends');
+      'played_minutes',90,'billed_minutes',90,'unit_minutes',60,'unit_price_paise',22000,
+      'amount_paise',33000)))) ->>'status', 'applied', 'VOID session ends (happy hour, 2 pads)');
 select is((select count(*)::int from controller_allocations
             where session_id = 'aaaaaaaa-0000-0000-0000-000000000002' and ended_at is null), 0,
   'ending released both pads');
@@ -243,7 +244,7 @@ select is(pg_temp.push('session.start', pg_temp.start(
 select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-0000-0000-000000000001',
     'primary_customer_id','cccccccc-0000-0000-0000-000000000001','player_count',2,
     'purchased_controller_count',2,'started_at','2026-10-01T11:00:00Z',
-    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot','{}'::jsonb,'billing_mode','per_system',
+    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot((select id from arenas limit 1)),'billing_mode','per_system',
     'assignments', jsonb_build_array(jsonb_build_object('id','98000000-0000-0000-0000-000000000001',
       'player_number',1,'idx',0,'resource_id', pg_temp.r('HEX'),'activity_code','PS5',
       'game_id', pg_temp.g('EA SPORTS FC 25'),'controller_count',1,'allocations','[]'::jsonb,
@@ -251,7 +252,7 @@ select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-00
 select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-0000-0000-000000000001',
     'primary_customer_id','cccccccc-0000-0000-0000-000000000001','player_count',2,
     'purchased_controller_count',2,'started_at','2026-10-01T11:00:00Z',
-    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot','{}'::jsonb,'billing_mode','per_system',
+    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot((select id from arenas limit 1)),'billing_mode','per_system',
     'assignments', jsonb_build_array(
       jsonb_build_object('id','98000000-0000-0000-0000-000000000001','player_number',1,'idx',0,
         'resource_id', pg_temp.r('VOID'),'activity_code','PS5','game_id', pg_temp.g('EA SPORTS FC 25'),
@@ -266,16 +267,22 @@ select is((select count(*)::int from group_sessions), 0, 'refused group left not
 select is(pg_temp.push('group.create', jsonb_build_object('id','99999999-0000-0000-0000-000000000001',
     'primary_customer_id','cccccccc-0000-0000-0000-000000000001','player_count',1,
     'purchased_controller_count',1,'started_at','2026-10-01T11:00:00Z',
-    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot','{}'::jsonb,'billing_mode','per_system',
+    'scheduled_end_at','2026-10-01T12:00:00Z','pricing_snapshot',_pricing_snapshot((select id from arenas limit 1)),'billing_mode','per_system',
     'assignments', jsonb_build_array(
       jsonb_build_object('id','98000000-0000-0000-0000-000000000001','player_number',1,'idx',0,
         'resource_id', pg_temp.r('VOID'),'activity_code','PS5','game_id', pg_temp.g('EA SPORTS FC 25'),
         'controller_count',1,'allocations', jsonb_build_array(pg_temp.pad('a9000000-0000-0000-0000-000000000001','GHOST-2')),
         'moves','[]'::jsonb))))->>'status', 'applied', 'a group player uses GHOST-2 (already at VOID)');
 select is(pg_temp.push('group.end', jsonb_build_object('group_id','99999999-0000-0000-0000-000000000001',
-    'ended_at','2026-10-01T11:30:00Z','billed_amount_paise', 7500,
+    'ended_at','2026-10-01T11:30:00Z','billed_amount_paise', 6000,
     'expected_assignment_ids', jsonb_build_array('98000000-0000-0000-0000-000000000001'),
-    'expected_scheduled_end_at','2026-10-01T12:00:00Z','charges','[]'::jsonb))->>'status', 'applied',
+    'expected_scheduled_end_at','2026-10-01T12:00:00Z',
+    'charges', jsonb_build_array(jsonb_build_object('id','c9000000-0000-0000-0000-000000000001',
+      'assignment_id','98000000-0000-0000-0000-000000000001','player_number',1,'charge_index',0,
+      'band_code','happy','activity_code','PS5','resource_id', pg_temp.r('VOID'),'controller_count',1,
+      'segment_start','2026-10-01T11:00:00Z','segment_end','2026-10-01T11:30:00Z',
+      'played_minutes',30,'billed_minutes',30,'unit_minutes',60,'unit_price_paise',12000,
+      'amount_paise',6000))))->>'status', 'applied',
   'group ends');
 select is((select count(*)::int from controller_allocations
             where group_id = '99999999-0000-0000-0000-000000000001' and ended_at is null), 0,

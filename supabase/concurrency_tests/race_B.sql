@@ -1,6 +1,8 @@
 -- Connection B: start 0.3s after A (so A holds the lock), race for the SAME
 -- station. B must block on A's lock, then be refused with resource_busy.
 select pg_sleep(0.3);
+-- The arena's own price list, as an in-sync device freezes it (0013 refuses others).
+select _pricing_snapshot((select id from arenas limit 1)) as snap \gset
 -- Through the client write path (sync_push → session.start), as a device would.
 set role authenticated;
 select set_config('request.jwt.claims','{"sub":"c0c0c0c0-0000-4000-8000-000000000001","role":"authenticated"}', false);
@@ -11,6 +13,6 @@ from (select sync_push((select id from arenas limit 1), jsonb_build_array(jsonb_
   'segment_id', gen_random_uuid(),
   'customer_id','cccccccc-0000-0000-0000-00000000c0de',
   'started_at','2026-10-01T09:00:00Z','scheduled_end_at','2026-10-01T10:00:00Z',
-  'pricing_snapshot','{}'::jsonb,
+  'pricing_snapshot',:'snap'::jsonb,
   'resource_id',(select id from resources where name='HEX'),'activity_code','PS5'))), 'race') r) q;
 

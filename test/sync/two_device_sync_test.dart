@@ -14,7 +14,10 @@ import 'dart:math';
 
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
+import 'package:arena_ops/domain/pricing/pricing_service.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
+import 'package:arena_ops/domain/services/group_billing.dart';
+import 'package:arena_ops/domain/services/segment_billing.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -70,6 +73,39 @@ void main() {
     var q = a.client.from(table).select('id').eq(column, value);
     if (openOnly) q = q.isFilter('ended_at', null);
     return (await q).length;
+  }
+
+  // The server re-prices every bill (0013), so money the tests send must be
+  // what the app would compute: the same engine the End / Extend screens use.
+  Future<EndSessionCommand> pricedEnd(SimDevice d, String id, DateTime at) async {
+    final s = (await d.sessions.getById(id))!;
+    final bill = const SegmentBilling().bill(
+        snapshot: s.snapshot, segments: await d.sessions.segmentsFor(id), openEndAt: at);
+    return EndSessionCommand(sessionId: id, actualEndedAt: at,
+        charges: bill.charges, billedAmountPaise: bill.total.value);
+  }
+
+  Future<EndGroupCommand> pricedGroupEnd(SimDevice d, String id, DateTime at) async {
+    final g = (await d.groups.getById(id))!;
+    final bill = const GroupBilling().bill(
+        snapshot: g.snapshot, assignments: await d.groups.assignmentsFor(id),
+        mode: g.billingMode, purchasedControllerCount: g.purchasedControllerCount,
+        groupStart: g.startedAt, openEndAt: at);
+    return EndGroupCommand(groupId: id, actualEndedAt: at,
+        charges: bill.charges, billedAmountPaise: bill.total.value);
+  }
+
+  // SessionPlanner.planExtension: quote to the new end − quote to the old end.
+  Future<int> extensionCost(SimDevice d, Session s, DateTime newEnd) async {
+    final segs = await d.sessions.segmentsFor(s.id);
+    final open = segs.firstWhere((x) => x.isOpen, orElse: () => segs.last);
+    int quote(DateTime end) => const PricingService()
+        .quote(snapshot: s.snapshot, activityCode: open.activityCode,
+            controllerCount: open.controllerCount, start: s.startedAt, end: end)
+        .valueOrNull!
+        .amount
+        .value;
+    return quote(newEnd) - quote(s.scheduledEndAt);
   }
 
   test('both devices start from the server catalog (shared identity)', () async {
@@ -212,20 +248,17 @@ void main() {
         .firstWhere((x) => x.segments.any((s) => s.isOpen && s.resourceId.isNotEmpty))
         .session;
     // A extends and syncs; B, not having pulled, ends from the old end.
+    final newEnd = target.scheduledEndAt.add(const Duration(minutes: 30));
     final ext = await a.sessions.extend(ExtendSessionCommand(
       sessionId: target.id,
       addedMinutes: 30,
-      newEndAt: target.scheduledEndAt.add(const Duration(minutes: 30)),
-      addedAmountPaise: 7500,
+      newEndAt: newEnd,
+      addedAmountPaise: await extensionCost(a, target, newEnd),
     ));
     expect(ext.isOk, isTrue);
     await a.sync();
-    final ended = await b.sessions.end(EndSessionCommand(
-      sessionId: target.id,
-      actualEndedAt: DateTime.now().toUtc(),
-      charges: const [],
-      billedAmountPaise: 15000,
-    ));
+    final ended = await b.sessions
+        .end(await pricedEnd(b, target.id, DateTime.now().toUtc()));
     expect(ended.valueOrNull?.status, SessionStatus.completed);
     final r = await b.sync();
     expect(r.rejected, 1);
@@ -297,12 +330,9 @@ void main() {
     final hexSession = (await a.sessions.active())
         .firstWhere((x) => x.segments.any((s) => s.isOpen && s.resourceId == hex))
         .session;
-    final res = await a.sessions.end(EndSessionCommand(
-      sessionId: hexSession.id,
-      actualEndedAt: DateTime.now().toUtc(),
-      charges: const [],
-      billedAmountPaise: 0,
-    ));
+    // Ended 47m13.517s in: a real, multi-paise bill the server must re-price.
+    final res = await a.sessions.end(await pricedEnd(a, hexSession.id,
+        hexSession.startedAt.add(const Duration(minutes: 47, seconds: 13, milliseconds: 517))));
     expect(res.isOk, isTrue);
     expect((await a.sync()).rejected, 0);
     expect(await serverCount('controller_allocations', 'session_id', hexSession.id,
@@ -356,12 +386,8 @@ void main() {
     await a.sync();
     final group = await a.groups.getById(groupId);
     expect(group?.isActive, isTrue);
-    final ended = await a.groups.end(EndGroupCommand(
-      groupId: groupId,
-      actualEndedAt: DateTime.now().toUtc(),
-      charges: const [],
-      billedAmountPaise: 0,
-    ));
+    final ended = await a.groups.end(await pricedGroupEnd(a, groupId,
+        group!.startedAt.add(const Duration(minutes: 47, seconds: 13, milliseconds: 517))));
     expect(ended.isOk, isTrue);
     expect((await a.sync()).rejected, 0);
     await b.sync();
