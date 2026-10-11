@@ -13,6 +13,7 @@ Repo layout:
 | repo root (`lib/`, `test/`, platform dirs) | Flutter staff app |
 | `apps/admin/` | Angular 22 admin web app (standalone components, signals, Tailwind 4, Vitest). Its own rules live in `apps/admin/CLAUDE.md` (identical to its `AGENTS.md`) and load automatically when working in that folder — follow them for any Angular code. Run its commands from `apps/admin/` (`npm start`, `npm run build`, `npm test`). Prefer the `angular-cli` MCP server (root `.mcp.json`) over shelling out to `ng`. |
 | `supabase/` | Postgres schema (declarative), pgTAP tests, seed |
+| `design/` | Design references: `admin.html` = final admin design export (how to read it: `apps/admin/design/README.md`; build screens with `/design-build <screen>`); `404 Arena App (offline).html` = staff app design |
 | `.agents/skills/` (linked into `.claude/skills/`) | Agent skills installed with `npx skills add` (tracked in `skills-lock.json`): `supabase` and `supabase-postgres-best-practices`. Use them for any Supabase/Postgres work. |
 
 ## Commands
