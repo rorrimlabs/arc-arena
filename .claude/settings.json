@@ -1,0 +1,16 @@
+{
+  "sandbox": {
+    "enabled": true,
+    "excludedCommands": ["supabase *", "docker *"],
+    "network": {
+      "allowLocalBinding": true
+    }
+  },
+  "permissions": {
+    "defaultMode": "default",
+    "disableAutoMode": "disable",
+    "deny": [
+      "Edit(supabase/migrations/**)"
+    ]
+  }
+}

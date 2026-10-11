@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "angular-cli": {
+      "command": "sh",
+      "args": ["-c", "cd apps/admin && exec npx --no-install ng mcp"]
+    }
+  }
+}
