@@ -45,7 +45,7 @@ unexpected_api as (  -- anything signed-in users can call beyond the known API
    where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'EXECUTE')
      and p.oid not in (select objid from pg_depend where deptype = 'e')
      and p.proname not in ('sync_push', 'sync_pull', 'sync_fetch_entity', 'my_arenas',
-       'create_arena', 'add_staff_by_email', 'app_arena_ids', 'app_owner_arena_ids',
+       'add_staff_by_email', 'app_arena_ids', 'app_owner_arena_ids',
        'app_is_owner', 'app_has_perm')),
 open_policy as (     -- every policy must key off arena membership
   select 'FAIL', 'policy not scoped to arena membership', c.relname || '.' || pol.polname

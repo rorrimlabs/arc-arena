@@ -62,12 +62,15 @@ from unnest(array[
 
 select ok(has_function_privilege('authenticated', f, 'EXECUTE'), 'client API: ' || f)
 from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
-  'sync_fetch_entity(uuid,jsonb)', 'my_arenas()', 'create_arena(text,text)',
+  'sync_fetch_entity(uuid,jsonb)', 'my_arenas()',
   'add_staff_by_email(uuid,text,text,text[])']) f;
+-- Owner-managed accounts (0015): no client can create an arena / owner.
+select ok(not has_function_privilege('authenticated', f, 'EXECUTE'), 'not client API: ' || f)
+from unnest(array['create_arena(text,text)', 'bootstrap_owner(text,text,text)']) f;
 
 select ok(not has_function_privilege('anon', f, 'EXECUTE'), 'anon cannot call ' || f)
 from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
-  'create_arena(text,text)']) f;
+  'create_arena(text,text)', 'bootstrap_owner(text,text,text)']) f;
 
 -- ===================== as STAFF (reads) =====================
 set local role authenticated;
