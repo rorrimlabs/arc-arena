@@ -58,11 +58,40 @@ app.*.map.json
 .env
 .env.*
 /env/
+dart_define.json
+dart_define.dev.json
+dart_define.hosted-dev.json
 dart_define*.json
 *.dart-define.json
-# Allow committed, non-secret templates (e.g. supabase.example.env).
+# Allow committed, non-secret templates (e.g. .env.example, dart_define.example.json).
+!.env.example
 !*.example.env
+!dart_define.example.json
 !*.example.json
+
+# Private signing keys, keystores, and certificate files
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+*.der
+key.properties
+local.properties
+**/android/key.properties
+**/android/local.properties
+
+# Service account credentials & cloud service configs
+*service-account*.json
+*credentials*.json
+firebase-adminsdk*.json
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
 
 # Supabase CLI local-stack state (created by `supabase init` / `supabase start`).
 supabase/.branches/
