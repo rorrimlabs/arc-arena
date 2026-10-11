@@ -57,6 +57,8 @@ dependencies:
   sqlite3: ^3.5.2
   # Salted PBKDF2-HMAC-SHA256 for staff PINs (domain/auth/pin_credential.dart).
   crypto: ^3.0.7
+  supabase_flutter: ^2.18.2
+  flutter_secure_storage: ^11.2.0
 
 dev_dependencies:
   flutter_test:

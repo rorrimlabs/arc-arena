@@ -88,6 +88,9 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS controller_moves');
     raw.execute('DROP TABLE IF EXISTS controller_allocations');
     raw.execute('ALTER TABLE resources DROP COLUMN current_mode');
+    raw.execute('DROP TABLE IF EXISTS sync_outbox');
+    raw.execute('DROP TABLE IF EXISTS sync_meta');
+    raw.execute('DROP TABLE IF EXISTS sync_versions');
     raw.execute('PRAGMA user_version = 10');
     raw.close();
     return sessionId;
@@ -265,6 +268,9 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS controller_moves');
     raw.execute('DROP TABLE IF EXISTS controller_allocations');
     raw.execute('ALTER TABLE resources DROP COLUMN current_mode');
+    raw.execute('DROP TABLE IF EXISTS sync_outbox');
+    raw.execute('DROP TABLE IF EXISTS sync_meta');
+    raw.execute('DROP TABLE IF EXISTS sync_versions');
     raw.execute('PRAGMA user_version = 11');
     raw.close();
     return sessionId;
@@ -367,6 +373,9 @@ void main() {
     await db.close();
     final raw = sqlite3.open(file.path);
     raw.execute('DROP TABLE IF EXISTS controller_moves');
+    raw.execute('DROP TABLE IF EXISTS sync_outbox');
+    raw.execute('DROP TABLE IF EXISTS sync_meta');
+    raw.execute('DROP TABLE IF EXISTS sync_versions');
     raw.execute('PRAGMA user_version = 12');
     raw.close();
     return started.valueOrNull!.id;
@@ -423,6 +432,100 @@ void main() {
               .isNotEmpty,
           isTrue);
       check.close();
+    });
+  });
+
+  /// A genuine v13 database: the current shape minus the sync tables, with a
+  /// live session holding a tracked pad, a borrow in the location history, a
+  /// payment, and a completed session.
+  Future<String> buildV13Database() async {
+    final db = AppDatabase(NativeDatabase(file));
+    await LocalSeed.apply(db);
+    final catalog = LocalCatalogRepository(db);
+    final sessions = LocalSessionRepository(db);
+    final who = await LocalCustomerRepository(db).create(name: 'Dev');
+    final started = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: start,
+      scheduledEndAt: start.add(const Duration(hours: 1)),
+      snapshot: await catalog.currentSnapshot(),
+      resourceId: 'void',
+      resourceName: 'VOID',
+      activityCode: 'PS5',
+      controllerCount: 3,
+      controllerIds: ['ctl_void_1', 'ctl_void_2', 'ctl_ghost_1'],
+      borrowControllerIds: ['ctl_ghost_1'],
+    ));
+    await sessions.recordPayment(RecordPaymentCommand(
+      sessionId: started.valueOrNull!.id,
+      amountPaise: 39000,
+      method: PaymentMethod.cash,
+    ));
+    await db.close();
+    final raw = sqlite3.open(file.path);
+    raw.execute('DROP TABLE IF EXISTS sync_outbox');
+    raw.execute('DROP TABLE IF EXISTS sync_meta');
+    raw.execute('DROP TABLE IF EXISTS sync_versions');
+    raw.execute('PRAGMA user_version = 13');
+    raw.close();
+    return started.valueOrNull!.id;
+  }
+
+  group('v13 -> v14 (cloud sync bookkeeping)', () {
+    test('sessions, pads, moves and payments survive; the sync tables appear '
+        'empty; local-only mode records nothing', () async {
+      final sessionId = await buildV13Database();
+      final before = sqlite3.open(file.path);
+      expect(before.userVersion, 13);
+      expect(
+          before
+              .select("SELECT name FROM sqlite_master WHERE name='sync_outbox'")
+              .isEmpty,
+          isTrue);
+      before.close();
+
+      final db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0, reason: 'sequential, not a rebuild');
+      final sessions = LocalSessionRepository(db);
+      final s = await sessions.getById(sessionId);
+      expect(s!.isActive, isTrue);
+      expect((await sessions.paymentsFor(sessionId)).single.amountPaise, 39000);
+      final alloc = LocalControllerAllocationRepository(db);
+      expect({for (final a in await alloc.openPadAllocations()) a.controllerId},
+          {'ctl_void_1', 'ctl_void_2', 'ctl_ghost_1'});
+      expect((await alloc.movesForController('ctl_ghost_1')).single.toResourceId,
+          'void');
+
+      // Local-only repositories have no recorder: the outbox stays empty.
+      await sessions.recordPayment(RecordPaymentCommand(
+        sessionId: sessionId,
+        amountPaise: 100,
+        method: PaymentMethod.upi,
+      ));
+      expect(await db.select(db.syncOutbox).get(), isEmpty);
+      expect(await db.select(db.syncMeta).get(), isEmpty);
+
+      final check = sqlite3.open(file.path);
+      expect(check.userVersion, AppDatabase.expectedSchemaVersion);
+      expect(
+          check
+              .select("SELECT name FROM sqlite_master WHERE type='index' "
+                  "AND name='ix_outbox_status'")
+              .isNotEmpty,
+          isTrue);
+      check.close();
+    });
+
+    test('migrating twice is a no-op', () async {
+      final sessionId = await buildV13Database();
+      var db = AppDatabase(NativeDatabase(file));
+      expect(await LocalSessionRepository(db).getById(sessionId), isNotNull);
+      await db.close();
+      db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0);
+      expect(await LocalSessionRepository(db).getById(sessionId), isNotNull);
     });
   });
 }

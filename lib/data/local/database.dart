@@ -486,6 +486,69 @@ class Users extends Table {
   Set<Column> get primaryKey => {id};
 }
 
+/// The durable outbox for cloud sync (Phase 2). One row per operation that
+/// must reach the server, written in the SAME transaction as the local change it
+/// describes, so a crash can never leave a change without its op or an op
+/// without its change. Rows are never deleted: an applied op is the audit trail
+/// of what this device sent, and a rejected one is the only copy of what the
+/// server refused (shown to staff until resolved).
+///
+/// Unused in local-only mode — nothing is ever enqueued there.
+@DataClassName('SyncOutboxRow')
+class SyncOutbox extends Table {
+  /// Push order. The server applies a device's ops in exactly this order.
+  IntColumn get seq => integer().autoIncrement()();
+
+  /// Generated on this device; the server's idempotency key.
+  TextColumn get opId => text().unique()();
+  TextColumn get kind => text()(); // e.g. session.start, payment.record
+  /// What the op is about, for rollback after a rejection:
+  /// session | group | controller | customer | booking | catalog | staff.
+  TextColumn get entityType => text()();
+  TextColumn get entityId => text()();
+  TextColumn get payload => text()(); // JSON, exactly what sync_push receives
+
+  /// pending → applied | rejected. A rejected op stays visible until resolved.
+  TextColumn get status => text()();
+  IntColumn get attempts => integer().withDefault(const Constant(0))();
+  TextColumn get errorCode => text().nullable()();
+  TextColumn get errorDetail => text().nullable()();
+  TextColumn get result => text().nullable()(); // server result JSON
+
+  /// The device must refetch [entityType]/[entityId] from the server: its local
+  /// copy was rolled forward by an op the server refused or adjusted.
+  BoolColumn get needsRefetch => boolean().withDefault(const Constant(false))();
+
+  /// Who did it on this device, for the conflicts list.
+  TextColumn get actorId => text().nullable()();
+  DateTimeColumn get createdAt => dateTime()();
+  DateTimeColumn get lastAttemptAt => dateTime().nullable()();
+  DateTimeColumn get resolvedAt => dateTime().nullable()();
+}
+
+/// Sync bookkeeping (pull cursor, bound arena/user, device id) as key/value.
+@DataClassName('SyncMetaRow')
+class SyncMeta extends Table {
+  TextColumn get key => text()();
+  TextColumn get value => text()();
+
+  @override
+  Set<Column> get primaryKey => {key};
+}
+
+/// The server version (`sync_xid`) this device last saw for an editable row,
+/// sent back as `base_version` so the server can refuse an edit made on top of
+/// a copy another device has since changed.
+@DataClassName('SyncVersionRow')
+class SyncVersions extends Table {
+  TextColumn get entity => text()(); // server table name
+  TextColumn get rowId => text()();
+  TextColumn get version => text()();
+
+  @override
+  Set<Column> get primaryKey => {entity, rowId};
+}
+
 @DataClassName('PaymentRow')
 class Payments extends Table {
   TextColumn get id => text()();
@@ -529,6 +592,9 @@ class Payments extends Table {
   Payments,
   Bookings,
   Users,
+  SyncOutbox,
+  SyncMeta,
+  SyncVersions,
 ])
 class AppDatabase extends _$AppDatabase {
   AppDatabase(super.e);
@@ -536,7 +602,7 @@ class AppDatabase extends _$AppDatabase {
   /// Readable without constructing (and therefore without opening) the
   /// database, so the pre-open backup in `main()` can compare it against what
   /// is on disk and decide whether a migration is about to run.
-  static const expectedSchemaVersion = 13;
+  static const expectedSchemaVersion = 14;
 
   @override
   int get schemaVersion => expectedSchemaVersion;
@@ -597,6 +663,10 @@ class AppDatabase extends _$AppDatabase {
     await customStatement(
       'CREATE INDEX IF NOT EXISTS ix_moves_controller '
       'ON controller_moves (controller_id, moved_at)',
+    );
+    // The sync engine reads "what is still pending, in order" on every pass.
+    await customStatement(
+      'CREATE INDEX IF NOT EXISTS ix_outbox_status ON sync_outbox (status, seq)',
     );
   }
 
@@ -668,6 +738,14 @@ class AppDatabase extends _$AppDatabase {
         // ADDITIVE — one new append-only table; nothing existing is touched.
         12: (m) async {
           await m.createTable(controllerMoves);
+        },
+        // v13 -> v14: cloud sync bookkeeping (outbox, cursor, row versions).
+        // ADDITIVE — three new tables, empty until the device is bound to a
+        // cloud arena; no existing row is touched.
+        13: (m) async {
+          await m.createTable(syncOutbox);
+          await m.createTable(syncMeta);
+          await m.createTable(syncVersions);
         },
       };
 
