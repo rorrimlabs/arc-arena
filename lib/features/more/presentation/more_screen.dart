@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
@@ -9,6 +10,7 @@ import 'package:arena_ops/features/customers/presentation/customers_screen.dart'
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
 import 'package:arena_ops/features/reports/presentation/session_log_screen.dart';
+import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -40,6 +42,8 @@ class MoreScreen extends ConsumerWidget {
     final user = ref.watch(authControllerProvider);
     final canSettings = user?.can(Permission.settings) ?? false;
     final canMembers = user?.can(Permission.members) ?? false;
+    final cloud = ref.watch(cloudBindingProvider);
+    final pending = ref.watch(syncStatusProvider).value?.pending ?? 0;
 
     return Scaffold(
       body: SafeArea(
@@ -98,6 +102,13 @@ class MoreScreen extends ConsumerWidget {
               ),
             ]),
             _Group('You', [
+              if (cloud != null)
+                ArenaListRow(
+                  icon: Icons.sync_rounded,
+                  title: 'Sync',
+                  subtitle: '${cloud.arenaName} · what is waiting or refused',
+                  onTap: () => _push(context, const SyncScreen()),
+                ),
               ArenaListRow(
                 icon: Icons.help_outline_rounded,
                 title: 'Help',
@@ -107,8 +118,35 @@ class MoreScreen extends ConsumerWidget {
               ArenaListRow(
                 icon: Icons.logout_rounded,
                 title: 'Sign out',
-                subtitle: 'Lock this device',
-                onTap: () => ref.read(authControllerProvider.notifier).signOut(),
+                subtitle: cloud == null
+                    ? 'Lock this device'
+                    : 'Sign out of ${cloud.email}',
+                onTap: () async {
+                  if (cloud != null && pending > 0) {
+                    // Nothing is lost — the changes stay in this person's
+                    // database on this device and go next time they sign in
+                    // here — but they will not reach anyone until then.
+                    final go = await showDialog<bool>(
+                      context: context,
+                      builder: (c) => AlertDialog(
+                        title: const Text('Changes not sent yet'),
+                        content: Text('$pending change(s) have not reached the '
+                            'server. They stay on this device and are sent the '
+                            'next time you sign in here.'),
+                        actions: [
+                          TextButton(
+                              onPressed: () => Navigator.pop(c, false),
+                              child: const Text('Stay signed in')),
+                          TextButton(
+                              onPressed: () => Navigator.pop(c, true),
+                              child: const Text('Sign out')),
+                        ],
+                      ),
+                    );
+                    if (go != true) return;
+                  }
+                  ref.read(authControllerProvider.notifier).signOut();
+                },
               ),
             ]),
             const SizedBox(height: AppSpacing.xxl),
@@ -133,7 +171,10 @@ class MoreScreen extends ConsumerWidget {
                   Text('404 ARENA · OPS',
                       style: ArenaType.overline.copyWith(color: arena.textSubtle)),
                   const SizedBox(height: 2),
-                  Text('Version 1.0.0 · Local-first',
+                  Text(
+                      cloud == null
+                          ? 'Version 1.0.0 · Local-first'
+                          : 'Version 1.0.0 · Cloud · ${cloud.arenaName}',
                       style: ArenaType.caption.copyWith(color: arena.textMuted)),
                 ],
               ),

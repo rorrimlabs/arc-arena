@@ -1,14 +1,15 @@
 /// Build-time configuration, selected with `--dart-define`.
 ///
 /// Default backend is **local** (Drift/SQLite) so the app is runnable on-device
-/// with no server. Switch to Supabase with:
+/// with no server. Cloud mode reads its settings from a dart-define file:
 ///
-/// ```
-/// flutter run \
-///   --dart-define=AO_BACKEND=supabase \
-///   --dart-define=AO_SUPABASE_URL=https://xxxx.supabase.co \
-///   --dart-define=AO_SUPABASE_ANON_KEY=eyJ...
-/// ```
+/// * development: `tool/dev_run.sh` writes `dart_define.dev.json` (git-ignored)
+///   from the local stack's `supabase status` and runs with it;
+/// * production: a `dart_define.prod.json` kept outside git, with the hosted
+///   project's https URL and its anon (public) key.
+///
+/// Only the anon key ever goes into the app. The service-role key and the
+/// database password never do.
 library;
 
 import 'package:meta/meta.dart';
@@ -34,6 +35,29 @@ class AppConfig {
       isSupabase &&
       (supabaseUrl?.isNotEmpty ?? false) &&
       (supabaseAnonKey?.isNotEmpty ?? false);
+
+  /// A plain-http or loopback backend is the local DEVELOPMENT stack. A release
+  /// build must never ship pointing at it (or at any non-TLS server).
+  bool get isDevelopmentBackend {
+    final uri = Uri.tryParse(supabaseUrl ?? '');
+    if (uri == null) return true;
+    return uri.scheme != 'https' ||
+        const {'localhost', '127.0.0.1', '10.0.2.2'}.contains(uri.host);
+  }
+
+  /// Why this configuration must not be used, or null when it is fine.
+  String? problemFor({required bool releaseBuild}) {
+    if (!isSupabase) return null;
+    if (!supabaseReady) {
+      return 'Cloud mode is selected but AO_SUPABASE_URL / '
+          'AO_SUPABASE_ANON_KEY are missing.';
+    }
+    if (releaseBuild && isDevelopmentBackend) {
+      return 'This release build points at a development server '
+          '(${supabaseUrl ?? '?'}). Build it with the production configuration.';
+    }
+    return null;
+  }
 
   /// Read configuration from the compile-time environment.
   factory AppConfig.fromEnvironment() {

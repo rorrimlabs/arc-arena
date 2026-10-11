@@ -2,6 +2,7 @@
 library;
 
 import 'package:arena_ops/app/providers/core_providers.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/local_booking_repository.dart';
 import 'package:arena_ops/data/local/local_catalog_repository.dart';
@@ -37,6 +38,7 @@ final sessionRepositoryProvider = Provider<SessionRepository>(
   (ref) => LocalSessionRepository(
     ref.watch(databaseProvider),
     ref.watch(clockProvider),
+    ref.watch(syncRecorderProvider),
   ),
 );
 
@@ -44,6 +46,7 @@ final customerRepositoryProvider = Provider<CustomerRepository>(
   (ref) => LocalCustomerRepository(
     ref.watch(databaseProvider),
     ref.watch(clockProvider),
+    ref.watch(syncRecorderProvider),
   ),
 );
 
@@ -51,6 +54,7 @@ final groupSessionRepositoryProvider = Provider<GroupSessionRepository>(
   (ref) => LocalGroupSessionRepository(
     ref.watch(databaseProvider),
     ref.watch(clockProvider),
+    ref.watch(syncRecorderProvider),
   ),
 );
 
@@ -58,6 +62,7 @@ final catalogRepositoryProvider = Provider<CatalogRepository>(
   (ref) => LocalCatalogRepository(
     ref.watch(databaseProvider),
     ref.watch(clockProvider),
+    ref.watch(syncRecorderProvider),
   ),
 );
 
@@ -65,6 +70,7 @@ final bookingRepositoryProvider = Provider<BookingRepository>(
   (ref) => LocalBookingRepository(
     ref.watch(databaseProvider),
     ref.watch(clockProvider),
+    ref.watch(syncRecorderProvider),
   ),
 );
 
@@ -75,6 +81,7 @@ final controllerAllocationRepositoryProvider =
   (ref) => LocalControllerAllocationRepository(
     ref.watch(databaseProvider),
     ref.watch(clockProvider),
+    ref.watch(syncRecorderProvider),
   ),
 );
 

@@ -1,21 +1,48 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:arena_ops/app/arena_ops_app.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
-import 'package:arena_ops/app/router/app_router.dart';
-import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/app/sync/cloud_root.dart';
+import 'package:arena_ops/app/sync/secure_session_storage.dart';
+import 'package:arena_ops/core/config/app_config.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
 import 'package:arena_ops/data/local/seed_data.dart';
 import 'package:arena_ops/features/more/presentation/database_locked_screen.dart';
 import 'package:drift_flutter/drift_flutter.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' hide LocalStorage;
+
+export 'package:arena_ops/app/arena_ops_app.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  final config = AppConfig.fromEnvironment();
+  final problem = config.problemFor(releaseBuild: kReleaseMode);
+  if (problem != null) {
+    runApp(_ConfigProblemApp(problem));
+    return;
+  }
+  if (config.isSupabase) {
+    // Cloud mode: each person signs in with their own account; the arena's
+    // data lives in its own database file (the local-only file is untouched).
+    await Supabase.initialize(
+      url: config.supabaseUrl!,
+      publishableKey: config.supabaseAnonKey!,
+      authOptions: const FlutterAuthClientOptions(
+        localStorage: SecureSessionStorage(),
+      ),
+    );
+    final documents = await getApplicationDocumentsDirectory();
+    runApp(CloudRoot(documentsPath: documents.path));
+    return;
+  }
 
   // The counter device holds the only copy of the day's takings, and Drift
   // migrates the file the instant it opens. So: back it up and verify the
@@ -89,21 +116,21 @@ Future<void> _initReminders(ProviderContainer container) async {
   }
 }
 
-class ArenaOpsApp extends ConsumerWidget {
-  const ArenaOpsApp({super.key});
+/// Shown instead of the app when the build's configuration is unusable.
+class _ConfigProblemApp extends StatelessWidget {
+  const _ConfigProblemApp(this.problem);
+  final String problem;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
-    final router = ref.watch(goRouterProvider);
-    return MaterialApp.router(
-      title: 'arena_ops',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.light(),
-      darkTheme: AppTheme.dark(),
-      // The 404 Arena design is dark-first (black counter-top); light is kept
-      // available for a future in-app toggle.
-      themeMode: ThemeMode.dark,
-      routerConfig: router,
-    );
-  }
+  Widget build(BuildContext context) => MaterialApp(
+        debugShowCheckedModeBanner: false,
+        home: Scaffold(
+          body: SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: Center(child: Text(problem, textAlign: TextAlign.center)),
+            ),
+          ),
+        ),
+      );
 }

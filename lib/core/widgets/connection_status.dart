@@ -1,20 +1,18 @@
-import 'package:arena_ops/app/providers/core_providers.dart';
-import 'package:arena_ops/core/config/app_config.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/data/sync/sync_engine.dart';
+import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Honest connection status (spec §4). The staff must never mistake stale data
 /// for live data.
 ///
-/// The app is **local-first**: the on-device database is always available, so
-/// it shows "Local mode · saved on this device" rather than a misleading
-/// Online/Offline pill — there is no server to be offline from.
-///
-/// Selecting the Supabase backend does **not** currently sync anything (there
-/// is no client), so that case says so plainly instead of claiming a cloud.
-/// When a sync layer exists, this strip becomes the real Online / Offline +
-/// last-synced indicator; the seam is here so no call site has to change.
+/// Local-only mode shows "Local mode · saved on this device" — there is no
+/// server to be offline from. Cloud mode shows the sync engine's real state:
+/// synced, changes waiting, syncing, offline (with how much is waiting), a
+/// sign-in problem, and how many refused changes need attention. Tapping it in
+/// cloud mode opens the Sync screen.
 class ConnectionStatus extends ConsumerWidget {
   const ConnectionStatus({super.key, this.padding});
 
@@ -22,30 +20,63 @@ class ConnectionStatus extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final config = ref.watch(appConfigProvider);
     final arena = context.arena;
+    final cloud = ref.watch(cloudBindingProvider) != null;
+    final s = ref.watch(syncStatusProvider).value ?? SyncStatus.localOnly;
+    final attention =
+        s.needsAttention == 0 ? '' : ' · ${s.needsAttention} need attention';
 
-    // Local backend (the default): data lives on this device, no network needed.
     final (IconData icon, String label, String detail, Color dot) =
-        switch (config.backend) {
-      Backend.local => (
+        switch (s.state) {
+      SyncState.localOnly => (
           Icons.smartphone_outlined,
           'Local mode',
           'Saved on this device',
           arena.primary,
         ),
-      // The Supabase flag is accepted but no sync layer exists yet, so the
-      // writes still go to this device only. Saying "syncing enabled" here
-      // would be the exact kind of status staff must not have to second-guess.
-      Backend.supabase => (
-          Icons.cloud_off_outlined,
-          'Cloud not wired',
-          'Still saved on this device only',
+      SyncState.synced => (
+          Icons.cloud_done_outlined,
+          'Synced',
+          'Up to date$attention',
+          s.needsAttention == 0 ? arena.success : arena.danger,
+        ),
+      SyncState.pending => (
+          Icons.cloud_upload_outlined,
+          '${s.pending} waiting',
+          'Saved here, sending$attention',
           arena.warning,
+        ),
+      SyncState.syncing => (
+          Icons.sync,
+          'Syncing',
+          s.pending == 0
+              ? 'Checking for changes$attention'
+              : '${s.pending} to send$attention',
+          arena.info,
+        ),
+      SyncState.offline => (
+          Icons.cloud_off_outlined,
+          'Offline',
+          s.pending == 0
+              ? 'Showing what this device last saw$attention'
+              : '${s.pending} saved here, not sent yet$attention',
+          arena.warning,
+        ),
+      SyncState.authProblem => (
+          Icons.lock_outline,
+          s.accessRevoked ? 'Access off' : 'Sign in again',
+          'Changes stay on this device',
+          arena.danger,
+        ),
+      SyncState.error => (
+          Icons.error_outline,
+          'Sync error',
+          'Retrying$attention',
+          arena.danger,
         ),
     };
 
-    return Padding(
+    final strip = Padding(
       padding: padding ??
           const EdgeInsets.fromLTRB(
               AppSpacing.x5, 0, AppSpacing.x5, AppSpacing.md),
@@ -78,9 +109,17 @@ class ConnectionStatus extends ConsumerWidget {
                 style: ArenaType.caption.copyWith(color: arena.textMuted),
               ),
             ),
+            if (cloud) Icon(Icons.chevron_right, size: 16, color: arena.textSubtle),
           ],
         ),
       ),
+    );
+    if (!cloud) return strip;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => Navigator.of(context)
+          .push(MaterialPageRoute(builder: (_) => const SyncScreen())),
+      child: strip,
     );
   }
 }

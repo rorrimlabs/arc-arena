@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
@@ -6,6 +7,7 @@ import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:uuid/uuid.dart';
 
 /// Staff accounts and what each one may do (brief §12, design role model).
@@ -42,17 +44,95 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
     }
   }
 
+  /// Cloud mode: a person is a real account. They create it on their own
+  /// device; the owner then grants it access here (online only).
+  Future<void> _addByEmail(CloudBinding cloud) async {
+    final email = TextEditingController();
+    final name = TextEditingController();
+    var owner = false;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, set) => AlertDialog(
+          title: const Text('Add by e-mail'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('They create their account on their own device '
+                  'first, with this e-mail.'),
+              TextField(
+                controller: email,
+                keyboardType: TextInputType.emailAddress,
+                decoration: const InputDecoration(labelText: 'E-mail'),
+              ),
+              TextField(
+                controller: name,
+                decoration: const InputDecoration(labelText: 'Name'),
+              ),
+              SwitchListTile(
+                contentPadding: EdgeInsets.zero,
+                title: const Text('Owner access'),
+                subtitle: const Text('Money, reports and settings'),
+                value: owner,
+                onChanged: (v) => set(() => owner = v),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(c, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () => Navigator.pop(c, true), child: const Text('Add')),
+          ],
+        ),
+      ),
+    );
+    if (go != true || !mounted) return;
+    final perms = owner
+        ? Permission.codesOf(Permission.all)
+        : Permission.codesOf({
+            Permission.start,
+            Permission.bill,
+            Permission.discount,
+            Permission.members,
+          });
+    final messenger = ScaffoldMessenger.of(context);
+    try {
+      await cloud.addStaffByEmail(email.text.trim(), name.text.trim(), perms);
+      await cloud.engine.syncNow();
+      await _load();
+      messenger.showSnackBar(
+          SnackBar(content: Text('${name.text.trim()} can now sign in.')));
+    } on PostgrestException catch (e) {
+      messenger.showSnackBar(SnackBar(
+          content: Text(e.message == 'no_account'
+              ? 'No account uses that e-mail yet — ask them to create one.'
+              : 'Not added: ${e.message}')));
+    } on Object catch (e) {
+      messenger.showSnackBar(
+          SnackBar(content: Text('Needs a connection to add someone ($e).')));
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final arena = context.arena;
+    final cloud = ref.watch(cloudBindingProvider);
 
     return Scaffold(
       appBar: AppBar(title: const Text('Staff & roles')),
-      floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => _edit(null),
-        icon: const Icon(Icons.person_add_alt),
-        label: const Text('Add person'),
-      ),
+      floatingActionButton: cloud == null
+          ? FloatingActionButton.extended(
+              onPressed: () => _edit(null),
+              icon: const Icon(Icons.person_add_alt),
+              label: const Text('Add person'),
+            )
+          : FloatingActionButton.extended(
+              onPressed: () => _addByEmail(cloud),
+              icon: const Icon(Icons.alternate_email),
+              label: const Text('Add by e-mail'),
+            ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
