@@ -223,23 +223,21 @@ non-https or loopback backend.
 Blocking production:
 
 1. **No hosted project.** Everything here was verified on the local stack only.
-   That proves the logic, not devices on different networks. To go live, the
-   owner creates a production project, applies migrations 0001–0013, keeps
-   e-mail confirmation on (or turns off open sign-up and invites), sets a real
-   minimum password length and SMTP, and builds with a `dart_define.prod.json`
-   kept outside git.
+   That proves the logic, not devices on different networks. The step-by-step
+   checklist (dashboard settings, key handling, `db push` of 0001–0014, the
+   post-push audit and the two-phone test) is [DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md).
 2. **Real-device, cross-network test** (two phones on different networks, one
    going offline mid-shift) has not been done.
+3. **Session times are device-asserted.** Server-side amount validation does
+   not protect against forged or wrong timestamps (see *What is still
+   trusted* above).
 
 Worth doing next:
 
-* Server pricing (0013) is a hand port of the Dart engine. Any change to
-  `lib/domain/pricing` or `SegmentBilling` / `GroupBilling` must change `_pr_*`
-  in a new migration, or every affected bill will be refused. When pricing
-  changes, re-run the Dart-vs-SQL differential check. It priced 3,600 random
-  bills both ways with 0 mismatches, and it caught a one-paise change to the
-  rounding rule. A permanent CI version of it would lock this in.
-* Bill times come from the device (see *What is still trusted* above).
+* Server pricing (0013) is a hand port of the Dart engine; the rule and the
+  check that enforces it are under *Changing pricing* above
+  (`tool/pricing_parity.sh`, also step 7 of `tool/verify_all.sh`). It is not
+  in a CI pipeline yet — there is no CI in this repo.
 
 * Booking overlap is checked server-side only for a *specific* station, and not
   against live sessions (the device checks both).
