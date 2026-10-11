@@ -1,0 +1,657 @@
+/// Writes server rows (the sync feed, or a whole refetched entity) into the
+/// device's Drift database.
+///
+/// The server and the device share row ids (the device generates them and the
+/// server keeps them), so applying a row is an upsert by id. A few tables are
+/// keyed differently on the device and are matched on their natural key
+/// instead: rates (activity, band, controllers), holidays (day), links
+/// (station, activity), per-station game availability (game, station),
+/// settings (key) and the staff list (account id).
+///
+/// Device-local columns are never overwritten: a member's PIN hash and lockout
+/// state, and a booking's reminder status (each device schedules its own).
+///
+/// Rows are written as companions built with `toCompanion(false)`: a server
+/// null (a segment re-opened by a rollback, a loan cleared by a return) must
+/// overwrite the device's value, and Drift's data-class upsert would skip it.
+///
+/// Every method must run inside the caller's Drift transaction.
+library;
+
+import 'dart:convert';
+
+import 'package:arena_ops/data/local/database.dart';
+import 'package:drift/drift.dart';
+
+/// One server row from the feed: its published table name and its columns.
+typedef ServerRow = ({String table, Map<String, dynamic> row});
+
+/// Settings keys that are arena-wide (and so synced). Every other key in the
+/// Drift settings table is device-local and never touched by sync.
+const sharedSettingKeys = {'business_hours'};
+
+/// Tables that make up the owner's configuration — replaced wholesale when an
+/// owner edit is refused, so the device converges on the server's catalog.
+const catalogTables = {
+  'activities', 'resources', 'resource_activities', 'controllers',
+  'game_categories', 'games', 'game_resources', 'game_controls', 'rates',
+  'billing_policies', 'holidays', 'settings', 'staff_profiles',
+};
+
+class SyncApplier {
+  SyncApplier(this._db);
+  final AppDatabase _db;
+
+  // ---------------------------------------------------------------- the feed
+
+  /// Applies a page of feed changes ({t, r} maps). Closed segments,
+  /// assignments and allocations go first, so a station or pad that changed
+  /// hands within the page never trips the device's one-open-row indexes.
+  Future<void> applyChanges(List<Map<String, dynamic>> changes) async {
+    final rows = <ServerRow>[];
+    final tombstones = <ServerRow>[];
+    for (final c in changes) {
+      final t = c['t'] as String;
+      final r = Map<String, dynamic>.from(c['r'] as Map);
+      if (t == '_tombstone') {
+        tombstones.add((
+          table: r['table'] as String,
+          row: Map<String, dynamic>.from(r['row'] as Map),
+        ));
+      } else {
+        rows.add((table: t, row: r));
+      }
+    }
+    await applyRows(rows);
+    for (final t in tombstones) {
+      await _delete(t.table, t.row);
+    }
+  }
+
+  /// Upserts server rows, closings first.
+  Future<void> applyRows(List<ServerRow> rows) async {
+    bool opens(ServerRow x) =>
+        const {'session_segments', 'group_assignments', 'controller_allocations'}
+            .contains(x.table) &&
+        x.row['ended_at'] == null;
+    for (final x in rows.where((x) => !opens(x))) {
+      await upsert(x.table, x.row);
+    }
+    for (final x in rows.where(opens)) {
+      await upsert(x.table, x.row);
+    }
+  }
+
+  // ------------------------------------------------- entity rollback
+
+  /// Makes the device's copy of one entity exactly the server's: upserts the
+  /// server rows and drops local rows of that entity the server does not have
+  /// (rows an op the server refused had written). [rows] empty = the server
+  /// never had the entity at all.
+  Future<void> replaceEntity(
+      String type, String id, List<ServerRow> rows) async {
+    Set<String> ids(String table) => {
+          for (final x in rows)
+            if (x.table == table) x.row['id'] as String,
+        };
+    switch (type) {
+      case 'session':
+        await (_db.delete(_db.payments)
+              ..where((t) => t.sessionId.equals(id) & t.id.isNotIn(ids('payments'))))
+            .go();
+        await (_db.delete(_db.sessionCharges)
+              ..where((t) =>
+                  t.sessionId.equals(id) & t.id.isNotIn(ids('session_charges'))))
+            .go();
+        await (_db.delete(_db.sessionExtensions)
+              ..where((t) => t.sessionId.equals(id) &
+                  t.id.isNotIn(ids('session_extensions'))))
+            .go();
+        await (_db.delete(_db.controllerAllocations)
+              ..where((t) => t.sessionId.equals(id) &
+                  t.id.isNotIn(ids('controller_allocations'))))
+            .go();
+        await (_db.delete(_db.controllerMoves)
+              ..where((t) => t.sessionRef.equals('s:$id') &
+                  t.id.isNotIn(ids('controller_moves'))))
+            .go();
+        await (_db.delete(_db.sessionSegments)
+              ..where((t) => t.sessionId.equals(id) &
+                  t.id.isNotIn(ids('session_segments'))))
+            .go();
+        await (_db.delete(_db.sessions)
+              ..where((t) => t.id.equals(id) & t.id.isNotIn(ids('sessions'))))
+            .go();
+      case 'group':
+        await (_db.delete(_db.groupPayments)
+              ..where((t) =>
+                  t.groupId.equals(id) & t.id.isNotIn(ids('group_payments'))))
+            .go();
+        await (_db.delete(_db.groupCharges)
+              ..where((t) =>
+                  t.groupId.equals(id) & t.id.isNotIn(ids('group_charges'))))
+            .go();
+        await (_db.delete(_db.groupExtensions)
+              ..where((t) =>
+                  t.groupId.equals(id) & t.id.isNotIn(ids('group_extensions'))))
+            .go();
+        await (_db.delete(_db.controllerAllocations)
+              ..where((t) => t.groupId.equals(id) &
+                  t.id.isNotIn(ids('controller_allocations'))))
+            .go();
+        await (_db.delete(_db.controllerMoves)
+              ..where((t) => t.sessionRef.equals('g:$id') &
+                  t.id.isNotIn(ids('controller_moves'))))
+            .go();
+        await (_db.delete(_db.groupAssignments)
+              ..where((t) => t.groupId.equals(id) &
+                  t.id.isNotIn(ids('group_assignments'))))
+            .go();
+        await (_db.delete(_db.groupSessions)
+              ..where((t) => t.id.equals(id) & t.id.isNotIn(ids('group_sessions'))))
+            .go();
+      case 'controller':
+        // Location + history are the pad's; who holds it belongs to sessions.
+        await (_db.delete(_db.controllerMoves)
+              ..where((t) => t.controllerId.equals(id) &
+                  t.id.isNotIn(ids('controller_moves'))))
+            .go();
+      case 'customer':
+        await (_db.delete(_db.customers)
+              ..where((t) => t.id.equals(id) & t.id.isNotIn(ids('customers'))))
+            .go();
+      case 'booking':
+        await (_db.delete(_db.bookings)
+              ..where((t) => t.id.equals(id) & t.id.isNotIn(ids('bookings'))))
+            .go();
+    }
+    await applyRows(rows);
+  }
+
+  /// Replaces the whole configuration (catalog tables) with the server's —
+  /// after an owner edit was refused. [rows] is a full feed of those tables.
+  Future<void> replaceCatalog(List<ServerRow> rows) async {
+    Set<String> ids(String table) => {
+          for (final x in rows)
+            if (x.table == table) x.row['id'] as String,
+        };
+    await (_db.delete(_db.activities)..where((t) => t.id.isNotIn(ids('activities'))))
+        .go();
+    await (_db.delete(_db.resources)..where((t) => t.id.isNotIn(ids('resources'))))
+        .go();
+    await _db.delete(_db.resourceActivities).go();
+    await (_db.delete(_db.gameCategories)
+          ..where((t) => t.id.isNotIn(ids('game_categories'))))
+        .go();
+    await (_db.delete(_db.games)..where((t) => t.id.isNotIn(ids('games')))).go();
+    await _db.delete(_db.gameResources).go();
+    await (_db.delete(_db.gameControls)
+          ..where((t) => t.id.isNotIn(ids('game_controls'))))
+        .go();
+    await _db.delete(_db.rates).go();
+    await _db.delete(_db.holidays).go();
+    await (_db.delete(_db.settings)
+          ..where((t) => t.key.isIn(sharedSettingKeys)))
+        .go();
+    await (_db.delete(_db.controllers)
+          ..where((t) => t.id.isNotIn(ids('controllers'))))
+        .go();
+    final members = {
+      for (final x in rows)
+        if (x.table == 'staff_profiles') x.row['user_id'] as String,
+    };
+    await (_db.delete(_db.users)..where((t) => t.id.isNotIn(members))).go();
+    await applyRows([
+      for (final x in rows)
+        if (catalogTables.contains(x.table)) x,
+    ]);
+  }
+
+  // ------------------------------------------------------------- rows
+
+  Future<void> upsert(String table, Map<String, dynamic> r) async {
+    switch (table) {
+      case 'arenas':
+        await _meta('arena_name', r['name'] as String);
+      case 'staff_profiles':
+        await _db.into(_db.users).insert(
+              UsersCompanion.insert(
+                id: r['user_id'] as String,
+                name: r['name'] as String,
+                perms: _strings(r['perms']),
+                active: Value(r['active'] as bool),
+                sortOrder: Value(r['sort_order'] as int),
+              ),
+              // Keep this device's PIN + lockout: they never leave the device.
+              onConflict: DoUpdate((_) => UsersCompanion(
+                    name: Value(r['name'] as String),
+                    perms: Value(_strings(r['perms'])),
+                    active: Value(r['active'] as bool),
+                    sortOrder: Value(r['sort_order'] as int),
+                  )),
+            );
+      case 'activities':
+        await _db.into(_db.activities).insertOnConflictUpdate(ActivityRow(
+              id: r['id'] as String,
+              code: r['code'] as String,
+              name: r['name'] as String,
+              usesControllers: r['uses_controllers'] as bool,
+              usesGames: r['uses_games'] as bool,
+              durationModel: r['duration_model'] as String,
+              happyHourEligible: r['happy_hour_eligible'] as bool,
+              sortOrder: r['sort_order'] as int,
+              active: r['active'] as bool,
+            ).toCompanion(false));
+      case 'resources':
+        await _db.into(_db.resources).insertOnConflictUpdate(ResourceRow(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              kind: r['kind'] as String,
+              status: r['status'] as String,
+              sortOrder: r['sort_order'] as int,
+              currentMode: r['current_mode'] as String?,
+            ).toCompanion(false));
+      case 'resource_activities':
+        await _db.into(_db.resourceActivities).insertOnConflictUpdate(
+            ResourceActivityRow(
+                resourceId: r['resource_id'] as String,
+                activityCode: r['activity_code'] as String).toCompanion(false));
+      case 'controllers':
+        await _db.into(_db.controllers).insertOnConflictUpdate(ControllerRow(
+              id: r['id'] as String,
+              label: r['label'] as String,
+              homeResourceId: r['home_resource_id'] as String,
+              currentResourceId: r['current_resource_id'] as String,
+              status: r['status'] as String,
+              notes: r['notes'] as String?,
+              loanReturnTo: r['loan_return_to'] as String?,
+              loanSessionRef: r['loan_session_ref'] as String?,
+              updatedAt: _at(r['updated_at'])!,
+            ).toCompanion(false));
+      case 'customers':
+        await _db.into(_db.customers).insertOnConflictUpdate(CustomerRow(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              phone: r['phone'] as String?,
+              notes: r['notes'] as String?,
+              lastVisitAt: _at(r['last_visit_at']),
+              isGuest: r['is_guest'] as bool,
+              createdAt: _at(r['created_at'])!,
+              updatedAt: _at(r['updated_at'])!,
+            ).toCompanion(false));
+        await _version('customers', r);
+      case 'rates':
+        // The device keys a price by (activity, band, controllers); a row it
+        // wrote itself carries a local id. Replace whatever holds that key.
+        final cc = r['controller_count'] as int?;
+        await (_db.delete(_db.rates)
+              ..where((t) =>
+                  t.activityCode.equals(r['activity_code'] as String) &
+                  t.band.equals(r['band'] as String) &
+                  (cc == null
+                      ? t.controllerCount.isNull()
+                      : t.controllerCount.equals(cc)) &
+                  t.id.equals(r['id'] as String).not()))
+            .go();
+        await _db.into(_db.rates).insertOnConflictUpdate(RateRow(
+              id: r['id'] as String,
+              activityCode: r['activity_code'] as String,
+              band: r['band'] as String,
+              controllerCount: cc,
+              unitMinutes: r['unit_minutes'] as int,
+              pricePaise: r['price_paise'] as int,
+            ).toCompanion(false));
+      case 'billing_policies':
+        if (r['active'] != true) return;
+        // The columns ARE BillingPolicy.toJson()'s keys.
+        const keys = [
+          'billing_unit', 'block_rounding', 'grace_minutes',
+          'minimum_charge_minutes', 'early_exit', 'rounding_scope',
+          'late_arrival', 'vr_unit_rounding', 'money_rounding_paise',
+          'money_rounding_dir', 'payment_timing', 'allow_extend_past_close',
+          'cleaning_gap_minutes', 'group_billing_mode',
+        ];
+        await _db.into(_db.billingPolicies).insertOnConflictUpdate(
+            BillingPolicyRow(
+                id: 'default', json: jsonEncode({for (final k in keys) k: r[k]})).toCompanion(false));
+      case 'holidays':
+        await _db.into(_db.holidays).insertOnConflictUpdate(HolidayRow(
+              day: r['day'] as String,
+              name: r['name'] as String,
+              closed: r['closed'] as bool,
+            ).toCompanion(false));
+      case 'settings':
+        final key = r['key'] as String;
+        if (!sharedSettingKeys.contains(key)) return;
+        await _db.into(_db.settings).insertOnConflictUpdate(
+            SettingRow(key: key, json: jsonEncode(r['json'])).toCompanion(false));
+      case 'game_categories':
+        await _db.into(_db.gameCategories).insertOnConflictUpdate(GameCategoryRow(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              sortOrder: r['sort_order'] as int,
+            ).toCompanion(false));
+      case 'games':
+        await _db.into(_db.games).insertOnConflictUpdate(GameRow(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              aliases: _strings(r['aliases']),
+              categoryId: r['category_id'] as String?,
+              platforms: _strings(r['platforms']),
+              playerMode: r['player_mode'] as String,
+              maxLocalPlayers: r['max_local_players'] as int,
+              active: r['active'] as bool,
+              lastPlayedAt: _at(r['last_played_at']),
+            ).toCompanion(false));
+      case 'game_resources':
+        await _db.into(_db.gameResources).insertOnConflictUpdate(GameResourceRow(
+              gameId: r['game_id'] as String,
+              resourceId: r['resource_id'] as String,
+              status: r['status'] as String,
+              notes: r['notes'] as String?,
+              updatedAt: _at(r['updated_at']),
+            ).toCompanion(false));
+      case 'game_controls':
+        await _db.into(_db.gameControls).insertOnConflictUpdate(GameControlRow(
+              id: r['id'] as String,
+              gameId: r['game_id'] as String,
+              section: r['section'] as String,
+              action: r['action'] as String,
+              buttons: _strings(r['buttons']),
+              explanation: r['explanation'] as String?,
+              notes: r['notes'] as String?,
+              imageUrl: r['image_url'] as String?,
+              sortOrder: r['sort_order'] as int,
+            ).toCompanion(false));
+      case 'bookings':
+        final row = BookingsCompanion.insert(
+          id: r['id'] as String,
+          customerId: Value(r['customer_id'] as String?),
+          activityCode: (r['activity_code'] as String?) ?? '',
+          gameId: Value(r['game_id'] as String?),
+          resourceId: Value(r['resource_id'] as String?),
+          scheduledStart: _at(r['scheduled_start'])!,
+          scheduledEnd: _at(r['scheduled_end'])!,
+          playersRequired: Value(r['players_required'] as int?),
+          controllerRequirement: Value(r['controller_requirement'] as int?),
+          status: r['status'] as String,
+          partyName: Value(r['party_name'] as String?),
+          phone: Value(r['phone'] as String?),
+          notes: Value(r['notes'] as String?),
+          reminderStatus: Value(r['reminder_status'] as String),
+          createdAt: _at(r['created_at'])!,
+          updatedAt: _at(r['updated_at'])!,
+        );
+        // Everything but the reminder: this device decides its own reminders.
+        await _db.into(_db.bookings).insert(row,
+            onConflict:
+                DoUpdate((_) => row.copyWith(reminderStatus: const Value.absent())));
+        await _version('bookings', r);
+      case 'sessions':
+        await _db.into(_db.sessions).insertOnConflictUpdate(SessionRow(
+              id: r['id'] as String,
+              bookingId: r['booking_id'] as String?,
+              customerId: r['customer_id'] as String,
+              status: r['status'] as String,
+              paymentStatus: r['payment_status'] as String,
+              startedAt: _at(r['started_at'])!,
+              scheduledEndAt: _at(r['scheduled_end_at'])!,
+              actualEndedAt: _at(r['actual_ended_at']),
+              pricingSnapshot:
+                  Map<String, dynamic>.from(r['pricing_snapshot'] as Map),
+              billedAmountPaise: r['billed_amount_paise'] as int?,
+              voidReason: r['void_reason'] as String?,
+              createdAt: _at(r['created_at'])!,
+              updatedAt: _at(r['updated_at'])!,
+            ).toCompanion(false));
+      case 'session_segments':
+        final row = SessionSegmentRow(
+          id: r['id'] as String,
+          sessionId: r['session_id'] as String,
+          index: r['idx'] as int,
+          resourceId: r['resource_id'] as String,
+          activityCode: r['activity_code'] as String,
+          gameId: r['game_id'] as String?,
+          controllerCount: r['controller_count'] as int?,
+          startedAt: _at(r['started_at'])!,
+          endedAt: _at(r['ended_at']),
+          createdAt: _at(r['created_at'])!,
+        );
+        if (row.endedAt == null) {
+          // The server says this station is held by this segment. A different
+          // open segment here is an older server row whose close lands in a
+          // later page; close it provisionally so the index holds (the real
+          // end arrives with that page and overwrites this).
+          await (_db.update(_db.sessionSegments)
+                ..where((t) =>
+                    t.resourceId.equals(row.resourceId) &
+                    t.endedAt.isNull() &
+                    t.id.equals(row.id).not()))
+              .write(SessionSegmentsCompanion(endedAt: Value(row.startedAt)));
+        }
+        await _db.into(_db.sessionSegments).insertOnConflictUpdate(row.toCompanion(false));
+      case 'session_extensions':
+        await _db.into(_db.sessionExtensions).insertOnConflictUpdate(
+            SessionExtensionRow(
+              id: r['id'] as String,
+              sessionId: r['session_id'] as String,
+              addedMinutes: r['added_minutes'] as int,
+              oldEndAt: _at(r['old_end_at'])!,
+              newEndAt: _at(r['new_end_at'])!,
+              addedAmountPaise: r['added_amount_paise'] as int,
+              reason: r['reason'] as String?,
+              createdAt: _at(r['created_at'])!,
+            ).toCompanion(false));
+      case 'session_charges':
+        await _db.into(_db.sessionCharges).insertOnConflictUpdate(SessionChargeRow(
+              id: r['id'] as String,
+              sessionId: r['session_id'] as String,
+              segmentId: r['segment_id'] as String?,
+              segmentIndex: r['segment_index'] as int,
+              bandCode: r['band_code'] as String,
+              activityCode: r['activity_code'] as String,
+              resourceId: r['resource_id'] as String?,
+              controllerCount: r['controller_count'] as int?,
+              segmentStart: _at(r['segment_start'])!,
+              segmentEnd: _at(r['segment_end'])!,
+              playedMinutes: r['played_minutes'] as int,
+              billedMinutes: r['billed_minutes'] as int,
+              unitMinutes: r['unit_minutes'] as int,
+              unitPricePaise: r['unit_price_paise'] as int,
+              amountPaise: r['amount_paise'] as int,
+            ).toCompanion(false));
+      case 'payments':
+        await _db.into(_db.payments).insertOnConflictUpdate(PaymentRow(
+              id: r['id'] as String,
+              sessionId: r['session_id'] as String,
+              amountPaise: r['amount_paise'] as int,
+              method: r['method'] as String,
+              isRefund: r['kind'] == 'refund',
+              note: r['note'] as String?,
+              reason: r['reason'] as String?,
+              createdAt: _at(r['created_at'])!,
+            ).toCompanion(false));
+      case 'group_sessions':
+        await _db.into(_db.groupSessions).insertOnConflictUpdate(GroupSessionRow(
+              id: r['id'] as String,
+              primaryCustomerId: r['primary_customer_id'] as String,
+              playerCount: r['player_count'] as int,
+              purchasedControllerCount: r['purchased_controller_count'] as int,
+              status: r['status'] as String,
+              paymentStatus: r['payment_status'] as String,
+              startedAt: _at(r['started_at'])!,
+              scheduledEndAt: _at(r['scheduled_end_at'])!,
+              actualEndedAt: _at(r['actual_ended_at']),
+              pricingSnapshot:
+                  Map<String, dynamic>.from(r['pricing_snapshot'] as Map),
+              billingMode: r['billing_mode'] as String,
+              billedAmountPaise: r['billed_amount_paise'] as int?,
+              voidReason: r['void_reason'] as String?,
+              createdAt: _at(r['created_at'])!,
+              updatedAt: _at(r['updated_at'])!,
+            ).toCompanion(false));
+      case 'group_assignments':
+        await _db.into(_db.groupAssignments).insertOnConflictUpdate(
+            GroupAssignmentRow(
+              id: r['id'] as String,
+              groupId: r['group_id'] as String,
+              playerNumber: r['player_number'] as int,
+              playerLabel: r['player_label'] as String?,
+              index: r['idx'] as int,
+              resourceId: r['resource_id'] as String,
+              activityCode: r['activity_code'] as String,
+              gameId: r['game_id'] as String?,
+              controllerCount: r['controller_count'] as int?,
+              startedAt: _at(r['started_at'])!,
+              endedAt: _at(r['ended_at']),
+              createdAt: _at(r['created_at'])!,
+            ).toCompanion(false));
+      case 'group_extensions':
+        await _db.into(_db.groupExtensions).insertOnConflictUpdate(
+            GroupExtensionRow(
+              id: r['id'] as String,
+              groupId: r['group_id'] as String,
+              addedMinutes: r['added_minutes'] as int,
+              oldEndAt: _at(r['old_end_at'])!,
+              newEndAt: _at(r['new_end_at'])!,
+              addedAmountPaise: r['added_amount_paise'] as int,
+              reason: r['reason'] as String?,
+              createdAt: _at(r['created_at'])!,
+            ).toCompanion(false));
+      case 'group_charges':
+        await _db.into(_db.groupCharges).insertOnConflictUpdate(GroupChargeRow(
+              id: r['id'] as String,
+              groupId: r['group_id'] as String,
+              assignmentId: r['assignment_id'] as String?,
+              playerNumber: r['player_number'] as int?,
+              chargeIndex: r['charge_index'] as int,
+              bandCode: r['band_code'] as String,
+              activityCode: r['activity_code'] as String,
+              resourceId: r['resource_id'] as String?,
+              controllerCount: r['controller_count'] as int?,
+              segmentStart: _at(r['segment_start'])!,
+              segmentEnd: _at(r['segment_end'])!,
+              playedMinutes: r['played_minutes'] as int,
+              billedMinutes: r['billed_minutes'] as int,
+              unitMinutes: r['unit_minutes'] as int,
+              unitPricePaise: r['unit_price_paise'] as int,
+              amountPaise: r['amount_paise'] as int,
+            ).toCompanion(false));
+      case 'group_payments':
+        await _db.into(_db.groupPayments).insertOnConflictUpdate(GroupPaymentRow(
+              id: r['id'] as String,
+              groupId: r['group_id'] as String,
+              amountPaise: r['amount_paise'] as int,
+              method: r['method'] as String,
+              isRefund: r['is_refund'] as bool,
+              note: r['note'] as String?,
+              reason: r['reason'] as String?,
+              createdAt: _at(r['created_at'])!,
+            ).toCompanion(false));
+      case 'controller_allocations':
+        final row = ControllerAllocationRow(
+          id: r['id'] as String,
+          controllerId: r['controller_id'] as String,
+          scope: r['scope'] as String,
+          sessionId: r['session_id'] as String?,
+          groupId: r['group_id'] as String?,
+          segmentId: r['segment_id'] as String?,
+          assignmentId: r['assignment_id'] as String?,
+          playerNumber: r['player_number'] as int?,
+          playerLabel: r['player_label'] as String?,
+          resourceId: r['resource_id'] as String,
+          activityCode: r['activity_code'] as String,
+          gameId: r['game_id'] as String?,
+          startedAt: _at(r['started_at'])!,
+          endedAt: _at(r['ended_at']),
+          requestId: r['request_id'] as String?,
+          createdAt: _at(r['created_at'])!,
+        );
+        if (row.endedAt == null) {
+          // Same provisional close as segments: one open row per pad.
+          await (_db.update(_db.controllerAllocations)
+                ..where((t) =>
+                    t.controllerId.equals(row.controllerId) &
+                    t.endedAt.isNull() &
+                    t.id.equals(row.id).not()))
+              .write(ControllerAllocationsCompanion(endedAt: Value(row.startedAt)));
+        }
+        await _db.into(_db.controllerAllocations).insertOnConflictUpdate(row.toCompanion(false));
+      case 'controller_moves':
+        await _db.into(_db.controllerMoves).insertOnConflictUpdate(ControllerMoveRow(
+              id: r['id'] as String,
+              controllerId: r['controller_id'] as String,
+              fromResourceId: r['from_resource_id'] as String,
+              toResourceId: r['to_resource_id'] as String,
+              kind: r['kind'] as String,
+              sessionRef: r['session_ref'] as String?,
+              movedAt: _at(r['moved_at'])!,
+              createdAt: _at(r['created_at'])!,
+            ).toCompanion(false));
+      default:
+        // A table this build does not know yet: ignore rather than fail.
+        return;
+    }
+  }
+
+  Future<void> _delete(String table, Map<String, dynamic> r) async {
+    String? id() => r['id'] as String?;
+    switch (table) {
+      case 'rates':
+        await (_db.delete(_db.rates)..where((t) => t.id.equals(id()!))).go();
+      case 'holidays':
+        await (_db.delete(_db.holidays)
+              ..where((t) => t.day.equals(r['day'] as String)))
+            .go();
+      case 'game_controls':
+        await (_db.delete(_db.gameControls)..where((t) => t.id.equals(id()!)))
+            .go();
+      case 'game_resources':
+        await (_db.delete(_db.gameResources)
+              ..where((t) =>
+                  t.gameId.equals(r['game_id'] as String) &
+                  t.resourceId.equals(r['resource_id'] as String)))
+            .go();
+      case 'resource_activities':
+        // The tombstone carries the activity's server id; the device keys the
+        // link by the activity's code.
+        final activity = await (_db.select(_db.activities)
+              ..where((t) => t.id.equals(r['activity_id'] as String)))
+            .getSingleOrNull();
+        if (activity == null) return;
+        await (_db.delete(_db.resourceActivities)
+              ..where((t) =>
+                  t.resourceId.equals(r['resource_id'] as String) &
+                  t.activityCode.equals(activity.code)))
+            .go();
+      case 'settings':
+        final key = r['key'] as String;
+        if (!sharedSettingKeys.contains(key)) return;
+        await (_db.delete(_db.settings)..where((t) => t.key.equals(key))).go();
+      case 'staff_profiles':
+        await (_db.delete(_db.users)
+              ..where((t) => t.id.equals(r['user_id'] as String)))
+            .go();
+      default:
+        // Floor history is append-only server-side; nothing else is deleted.
+        return;
+    }
+  }
+
+  Future<void> _version(String entity, Map<String, dynamic> r) async {
+    final v = r['sync_xid'];
+    if (v == null) return;
+    await _db.into(_db.syncVersions).insertOnConflictUpdate(SyncVersionRow(
+        entity: entity, rowId: r['id'] as String, version: '$v').toCompanion(false));
+  }
+
+  Future<void> _meta(String key, String value) => _db
+      .into(_db.syncMeta)
+      .insertOnConflictUpdate(SyncMetaRow(key: key, value: value).toCompanion(false));
+
+  static DateTime? _at(Object? v) =>
+      v == null ? null : DateTime.parse(v as String).toUtc();
+
+  static List<String> _strings(Object? v) =>
+      v == null ? const [] : [for (final e in v as List) e as String];
+}
