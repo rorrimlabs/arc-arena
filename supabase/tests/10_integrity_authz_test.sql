@@ -182,11 +182,11 @@ select is((select count(*)::int from pg_proc p join pg_namespace n on n.oid = p.
               and not exists (select 1 from pg_depend d where d.objid = p.oid and d.deptype = 'e')),
   0, 'every public function pins its search_path');
 select ok(not has_function_privilege('authenticated', f, 'execute'), 'not client-callable: ' || f)
-  from unnest(array['op_payment(uuid,jsonb)', '_op_payment_v1(uuid,jsonb)',
-    'op_staff_update(uuid,jsonb)', '_op_staff_update_v1(uuid,jsonb)',
-    'op_controller_move(uuid,jsonb)', '_op_controller_move_v1(uuid,jsonb)',
-    'op_resource_upsert(uuid,jsonb)', '_op_resource_upsert_v1(uuid,jsonb)',
-    '_sync_apply(uuid,text,jsonb)', '_sync_apply_v1(uuid,text,jsonb)',
+  from unnest(array['op_payment(uuid,jsonb)',
+    'op_staff_update(uuid,jsonb)',
+    'op_controller_move(uuid,jsonb)',
+    'op_resource_upsert(uuid,jsonb)',
+    '_sync_apply(uuid,text,jsonb)',
     '_assert_same_arena()', '_known_perms()', '_assert_known_perms(text[])', '_rupees(bigint)']) f;
 select ok(not has_function_privilege('anon', 'add_staff_by_email(uuid,text,text,text[])', 'execute'),
   'anon cannot call add_staff_by_email');

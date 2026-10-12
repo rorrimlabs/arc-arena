@@ -283,10 +283,9 @@ select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-00
 select ok(not has_function_privilege('authenticated', f, 'execute'), f || ' is not client-callable')
   from unnest(array['_pr_quote(jsonb,text,int,timestamptz,timestamptz)',
     '_pr_session_bill(uuid,timestamptz)','_pr_group_bill(uuid,timestamptz)',
-    '_pricing_snapshot(uuid)','_assert_snapshot(uuid,jsonb)','op_session_end(uuid,jsonb)',
-    '_op_session_end_v1(uuid,jsonb)','op_group_end(uuid,jsonb)','_op_group_end_v1(uuid,jsonb)',
+    '_pricing_snapshot(uuid)','_assert_snapshot(uuid,jsonb)','op_session_end(uuid,jsonb)','op_group_end(uuid,jsonb)',
     'op_session_start(uuid,jsonb)','op_group_create(uuid,jsonb)','op_session_extend(uuid,jsonb)',
-    'op_group_extend(uuid,jsonb)','_sync_apply(uuid,text,jsonb)','_sync_apply_v1(uuid,text,jsonb)']) f;
+    'op_group_extend(uuid,jsonb)','_sync_apply(uuid,text,jsonb)']) f;
 select ok(not has_table_privilege('authenticated', 'pricing_catalog_history', 'select'),
   'price-list history is server-only');
 

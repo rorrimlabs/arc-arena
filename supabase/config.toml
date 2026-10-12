@@ -53,9 +53,6 @@ max_client_conn = 100
 [db.migrations]
 # If disabled, migrations will be skipped during a db push or reset.
 enabled = true
-# Specifies an ordered list of schema files that describe your database.
-# Supports glob patterns relative to supabase directory: "./schemas/*.sql"
-schema_paths = []
 
 [db.seed]
 # If enabled, seeds the database after migrations during a db reset.
@@ -168,18 +165,22 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-# Internal shop app: no public registration — the owner creates every login
-# (dashboard: Authentication → Users → Add user). See migration 0015.
-enable_signup = false
+# ON: a new arena owner signs up in the app, confirms the e-mail with a 6-digit
+# code ([auth.email] below), then create_my_arena makes their arena (one per
+# login). Staff logins are still added by an owner, never self-registered into
+# an arena: a fresh sign-up belongs to no arena until create_my_arena or
+# add_staff_by_email.
+enable_signup = true
 # Allow/disallow anonymous sign-ins to your project.
 enable_anonymous_sign_ins = false
 # Allow/disallow testing manual linking of accounts
 enable_manual_linking = false
 # Passwords shorter than this value will be rejected as weak. Minimum 6, recommended 8 or more.
-minimum_password_length = 6
+# Matches the app (sign-up and Change password require 10, letters and digits).
+minimum_password_length = 10
 # Passwords that do not meet the following requirements will be rejected as weak. Supported values
 # are: `letters_digits`, `lower_upper_letters_digits`, `lower_upper_letters_digits_symbols`
-password_requirements = ""
+password_requirements = "letters_digits"
 
 # Configure passkey sign-ins.
 # [auth.passkey]
@@ -216,13 +217,14 @@ web3 = 30
 [auth.email]
 # Allow/disallow new user signups via email to your project.
 # KEEP true: in the CLI this flag is the e-mail PROVIDER switch — false would
-# block password sign-in too. Public registration is off via [auth] above.
+# block password sign-in too. Registration itself is the [auth] flag above.
 enable_signup = true
 # If enabled, a user will be required to confirm any email change on both the old, and new email
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-enable_confirmations = false
+# ON: sign-up is confirmed with the 6-digit code in templates/confirmation.html.
+enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
 # Controls the minimum amount of time that must pass before sending another signup confirmation or password reset email.
@@ -241,6 +243,12 @@ otp_expiry = 3600
 # pass = "env(SENDGRID_API_KEY)"
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
+
+# Sign-up confirmation: the app asks for the code, so the mail must show
+# {{ .Token }} (the default template only has a link, which the app cannot open).
+[auth.email.template.confirmation]
+subject = "Your 404 Arena sign-up code"
+content_path = "./supabase/templates/confirmation.html"
 
 # Uncomment to customize email template
 # [auth.email.template.invite]
@@ -403,10 +411,9 @@ s3_access_key = "env(S3_ACCESS_KEY)"
 # Configures AWS_SECRET_ACCESS_KEY for S3 bucket
 s3_secret_key = "env(S3_SECRET_KEY)"
 
-# [experimental.pgdelta]
-# When enabled, pg-delta becomes the active engine for supported schema flows.
-# enabled = false
-# Directory under `supabase/` where declarative files are written.
-# declarative_schema_path = "./database"
+# Declarative schema: supabase/schemas/ is the source of truth. pg-delta diffs
+# it against the migration history (`supabase db schema declarative sync`).
+[experimental.pgdelta]
+enabled = true
 # JSON string passed through to pg-delta SQL formatting.
-# format_options = "{\"keywordCase\":\"upper\",\"indent\":2,\"maxWidth\":80,\"commaStyle\":\"trailing\"}"
+format_options = "{\"keywordCase\":\"lower\",\"indent\":2,\"maxWidth\":100,\"commaStyle\":\"trailing\"}"

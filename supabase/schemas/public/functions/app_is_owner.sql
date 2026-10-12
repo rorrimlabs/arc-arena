@@ -1,0 +1,32 @@
+-- app_is_owner(arena) — is the caller "owner level" in the arena?
+--
+-- True when auth.uid() has an active staff profile in p_arena with role 'owner'
+-- or holding money or reports (holding either makes a member owner level, the
+-- same rule as the app's AppUser.isOwner). Gates add_staff_by_email and the
+-- owner-only branches of op_staff_update. SECURITY DEFINER (reads staff_profiles).
+-- Client API: callable by signed-in users (authenticated).
+create or replace function public.app_is_owner (
+  p_arena uuid
+)
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+  select exists (
+    select 1 from staff_profiles
+     where user_id = auth.uid() and arena_id = p_arena and active
+       and (role = 'owner' or perms && array['money','reports'])
+  );
+$function$;
+
+comment on function public.app_is_owner(uuid) is 'True when the signed-in user is owner level in the arena: an active profile with role owner, or holding the money or reports permission.';
+
+grant execute
+  on function "public"."app_is_owner"(uuid)
+  to "authenticated", "postgres", "service_role";
+
+revoke all on function "public"."app_is_owner"(uuid) from public;
+
+revoke all on function "public".app_is_owner(p_arena uuid) from anon;

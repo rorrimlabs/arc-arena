@@ -38,10 +38,10 @@ loopback URL.
 | `seed.sql` | **Do not apply to hosted.** It creates a dev arena with no owner. `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
 | RLS | Enabled on every public table; every policy is scoped to arena membership. Views are not client-readable (views bypass RLS). |
-| Client API | Signed-in users can call only: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, and four read-only membership helpers. `anon` can call nothing. `create_arena` and `bootstrap_owner` are database-only (0015). Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
+| Client API | Signed-in users can call only: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena` (sign-up: confirmed logins, one arena each), and three read-only membership helpers. `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena` is dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
 | SECURITY DEFINER | All pin `search_path`. |
 | Role limits | Same as hosted defaults: `authenticated` 8 s statement timeout, 8 s lock timeout. The two-device suite runs under them through PostgREST. Pulls are paged at 2,000 rows; pushes at 50 ops. |
-| Auth design | Owner-managed, per-person logins; **no public registration**. The owner creates every login in the dashboard; `bootstrap_owner` (SQL editor) attaches the first owner to a new arena; `add_staff_by_email` links an existing login with chosen permissions — it does **not** create logins (verified). People replace their starting password in the app (More → Change password). No service-role key anywhere in the app or repo. |
+| Auth design | Per-person logins. A new arena owner signs up in the app and confirms the e-mail with a 6-digit code, then `create_my_arena` creates their one arena; the operator can also use `bootstrap_owner` (SQL editor). Staff logins are created by the owner in the dashboard; `add_staff_by_email` links an existing login with chosen permissions — it does **not** create logins (verified). People replace their starting password in the app (More → Change password). No service-role key anywhere in the app or repo. |
 | Mobile — Android | **Fixed:** the release manifest had no `INTERNET` permission (only debug/profile did), so a release build could not reach Supabase at all. Debug builds now allow cleartext only for the local dev stack. |
 | Mobile — iOS | No ATS exceptions; https works as is. Session (refresh token) stored in the Keychain via `flutter_secure_storage`. |
 | Settings that are NOT migrations | Everything under `[auth]` in `supabase/config.toml` applies to the LOCAL stack only. On hosted you set them in the dashboard (step 3). |
@@ -64,12 +64,15 @@ all of the above on the hosted database. It must return no `FAIL` row.
 
 1. **Authentication → Sign In / Providers → Email**: enabled.
    * Keep the **Email provider itself ENABLED** — it is how everyone signs in with e-mail + password.
-   * **Authentication → Sign In / Providers → User Signups → Allow new users to sign up**: **OFF**. Internal shop app: nobody registers; the owner creates every login (step 7). With this off, the app's sign-in screen is the only door, and only owner-created logins open it.
-   * **Confirm email**: leave as is — logins you create with **Auto Confirm User** are already confirmed, so no confirmation e-mail is needed (and no SMTP is required for this flow).
+   * **Authentication → Sign In / Providers → User Signups → Allow new users to sign up**: **ON** — new arena owners create their account in the app. A sign-up belongs to no arena until it confirms its e-mail and creates one (`create_my_arena`, one per login).
+   * **Confirm email**: **ON**. The app asks for the 6-digit code, so:
+     * **Authentication → Emails → Templates → Confirm signup**: replace the body with the one in `supabase/templates/confirmation.html` — it must contain `{{ .Token }}` (the default template only has a link the app cannot open).
+     * **Project Settings → Authentication → SMTP**: set up your own SMTP sender. The built-in one sends only a few e-mails an hour to team addresses, so real sign-ups would never get their code.
+   * **Attack protection**: turn on **CAPTCHA** (hCaptcha or Turnstile) once the app sends a captcha token — until then leave it off or sign-up fails. Keep the default sign-up rate limits.
    * **Secure password change**: ON. A person whose last sign-in is older than 24 h may be asked to sign out and back in before More → Change password succeeds.
 2. **Authentication → Sign In / Providers → Anonymous sign-ins**: **OFF**.
 3. **Authentication → Policies / Passwords** (wording varies): minimum length **10**, require letters and digits; enable **leaked-password protection** if your plan offers it.
-4. **Authentication → URL Configuration → Site URL**: a page you control (e.g. your website). It is only used by e-mail links, which this flow does not send; the app needs no redirect URLs (no OAuth, no deep links).
+4. **Authentication → URL Configuration → Site URL**: a page you control (e.g. your website). The confirmation e-mail uses a code, not a link, so the app needs no redirect URLs (no OAuth, no deep links).
 5. Leave JWT expiry (3600 s) and refresh-token rotation at their defaults (they match the local stack the app was tested with).
 6. *(Optional, smaller surface)* **Integrations / Database → Extensions**: the app does not use GraphQL; you may disable `pg_graphql`.
 
@@ -171,7 +174,10 @@ still debug-signed until your developer account exists
 
 ## 7. Bootstrap and the two-phone test
 
-**Initial owner (once, needs dashboard + database access — there is no app route):**
+**Initial owner — either route:**
+
+* **In the app (self-serve):** *Create an account* → e-mail + password → enter the code from the e-mail → *Create your arena*. Needs steps 3.1's sign-up, confirmation, template and SMTP settings. Then continue at step 3 below.
+* **By the operator (dashboard + database access):**
 
 1. **Authentication → Users → Add user → Create new user**: your e-mail, a strong password (password manager), tick **Auto Confirm User**.
 2. **SQL Editor** → run (your values):

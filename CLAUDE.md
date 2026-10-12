@@ -10,13 +10,15 @@ Repo layout:
 
 | Path | What |
 |---|---|
-| repo root (`lib/`, `test/`, platform dirs) | Flutter staff app |
+| `apps/mobile/` (`lib/`, `test/`, platform dirs) | Flutter staff app — run every `flutter`/`dart` command from this folder |
 | `apps/admin/` | Angular 22 admin web app (standalone components, signals, Tailwind 4, Vitest). Its own rules live in `apps/admin/CLAUDE.md` (identical to its `AGENTS.md`) and load automatically when working in that folder — follow them for any Angular code. Run its commands from `apps/admin/` (`npm start`, `npm run build`, `npm test`). Prefer the `angular-cli` MCP server (root `.mcp.json`) over shelling out to `ng`. |
-| `supabase/` | Postgres schema (declarative), pgTAP tests, seed |
+| `supabase/` | Postgres backend: declarative schema (`schemas/`), generated migrations, pgTAP tests, seed. Map of tables/functions and the security model: `supabase/README.md` |
 | `design/` | Design references: `admin.html` = final admin design export (how to read it: `apps/admin/design/README.md`; build screens with `/design-build <screen>`); `404 Arena App (offline).html` = staff app design |
 | `.agents/skills/` (linked into `.claude/skills/`) | Agent skills installed with `npx skills add` (tracked in `skills-lock.json`): `supabase` and `supabase-postgres-best-practices`. Use them for any Supabase/Postgres work. |
 
 ## Commands
+
+Flutter (from `apps/mobile/`):
 
 ```bash
 flutter pub get
@@ -29,25 +31,31 @@ dart run build_runner build --delete-conflicting-outputs          # regen *.free
 flutter build apk --release --split-per-abi   # counter tablet uses app-arm64-v8a-release.apk
 ```
 
-Generated files (`*.freezed.dart`, `*.g.dart`, `lib/data/local/database.g.dart`) are committed — regenerate after editing entities or Drift tables, never hand-edit. `build.yaml` makes Drift store `DateTime` as ISO-8601 UTC text; keep it that way.
+Generated files (`*.freezed.dart`, `*.g.dart`, `apps/mobile/lib/data/local/database.g.dart`) are committed — regenerate after editing entities or Drift tables, never hand-edit. `build.yaml` makes Drift store `DateTime` as ISO-8601 UTC text; keep it that way.
 
 ## Supabase — declarative schemas only
 
-`supabase/schemas/*.sql` is the **single source of truth** for the Postgres schema (`[db.migrations] schema_paths` in `supabase/config.toml`; files apply in that order). Migrations in `supabase/migrations/` are **generated output — never write, edit, rename or delete a migration file by hand** (an `Edit(supabase/migrations/**)` deny rule enforces this).
+`supabase/schemas/` is the **single source of truth** for the Postgres schema, in the layout `supabase db schema declarative generate` produces: `public/tables/<table>.sql`, `public/functions/<fn>.sql`, `public/views/`, `public/sequences/`, `public/default_privileges.sql`, `_cluster/extensions/`. Each file holds one object with its indexes, triggers, RLS policies, grants and `comment on` documentation. The CLI's **pg-delta** engine (`[experimental.pgdelta] enabled = true` in `supabase/config.toml`) diffs those files against the migration history. Migrations in `supabase/migrations/` are **generated output — never write, edit, rename or delete a migration file by hand** (an `Edit(supabase/migrations/**)` deny rule enforces this). `0001`–`0016` are the original hand-written history, kept as the baseline.
 
 To change the schema:
-1. edit the desired end state in `supabase/schemas/` (add a column to the `create table`, change the function body, etc. — not `alter` statements);
-2. `supabase stop` (diff needs the local DB stopped), then `supabase db diff -f <descriptive_name>` to generate the migration;
-3. review the generated SQL; `supabase start` (or `supabase migration up`) applies it; `supabase db reset` rebuilds from scratch + `seed.sql`;
-4. verify: `supabase test db` (pgTAP in `supabase/tests/`), `supabase db advisors`, and for locking changes `bash supabase/concurrency_tests/run.sh`.
+1. edit the desired end state in `supabase/schemas/` (add the column to the `create table`, change the function body, add the policy/grant/comment to the object's file — not `alter` statements); a new object gets a new file in the matching folder;
+2. `supabase db schema declarative sync --name <descriptive_name> --no-apply` generates the migration — **read it**; then `supabase migration up --local` applies it;
+3. **run the same sync again with `--no-apply`**: it must say "No schema changes found". pg-delta can miss grants/revokes created in the same run; if it generates something, review and apply it too;
+4. verify: `supabase test db --local` (pgTAP in `supabase/tests/`), `supabase db advisors --local --type all`.
 
-The diff engine does not capture DML (data goes in `supabase/seed.sql`) and has known blind spots (e.g. view ownership/`security_invoker`, materialized views, `alter policy`, comments, partitions, publications, domains, some grants). If a change needs one of those, **stop and ask** rather than hand-writing a migration. Never push to a remote project without being asked.
+`supabase db diff` does **not** read `supabase/schemas/` in this CLI version — don't use it here. Data is not part of the schema (it goes in `supabase/seed.sql`). If a change can't be expressed in the schema files, **stop and ask** rather than hand-writing a migration. Never push to a remote project without being asked.
+
+Security conventions (asserted by `supabase/tests/13_security_hardening_test.sql`):
+- **Every object file states its client grants explicitly.** A new table/view/function/sequence file must end with `revoke all … from anon;` and `revoke all … from authenticated;` (then any deliberate grant). pg-delta's shadow database applies default privileges, so a missing explicit revoke turns into a generated `grant … to anon` — always check generated migrations for that.
+- `anon` can reach nothing. `authenticated` may only `select` tables (RLS: `to authenticated using (arena_id in (select app_arena_ids()))`) and execute the client API: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena`, `app_arena_ids`, `app_has_perm`, `app_is_owner`.
+- **All writes go through `sync_push`** → `_sync_apply` → an `op_*` function (`security definer`, `set search_path`, checks `_need(arena, perm)`). No insert/update/delete policies exist.
+- Views use `security_invoker = true`.
 
 `supabase` and `docker` are excluded from the Bash sandbox (they need the Docker socket and `~/.supabase`); Docker Desktop must be running.
 
 ## Architecture
 
-Layered under `lib/`; dependencies point inward:
+Layered under `apps/mobile/lib/`; dependencies point inward:
 
 - `core/` — cross-cutting primitives: `Clock` (UTC; `FakeClock` in tests), `Result`/`Failure`, money (`paise.dart`, `rounding.dart`), IST/business-calendar time, theme (`arena_*` palette/type), shared widgets.
 - `domain/` — pure Dart, no Flutter/DB. Freezed entities, repository **interfaces**, command objects (`repositories/commands.dart`, `group_commands.dart`), and the rule engines: `pricing/` (pricing service, immutable `PricingSnapshot`, billing policy), `services/` (availability, session planner/timer, segment & group billing, pad selection, payment rules), `reports/`, `auth/` (permissions, `PermissionGuard`, PBKDF2 PIN credentials).
@@ -73,14 +81,14 @@ The device DB is the only copy of the day's takings. `main()` calls `DbSafety.pr
 To change the schema:
 1. bump `AppDatabase.expectedSchemaVersion`;
 2. add an **additive** step to `_steps` in `database.dart` (`_steps[n]` = v`n` → v`n+1`; never drop/rewrite user rows);
-3. add a case to `test/data/local/migration_test.dart` that builds the old shape with real session/segment/payment rows and asserts they survive.
+3. add a case to `apps/mobile/test/data/local/migration_test.dart` that builds the old shape with real session/segment/payment rows and asserts they survive.
 
 `db_safety_test.dart` fails the build on gaps in the step chain.
 
 ### Backend status
 
-Local-first, single-device. `--dart-define=AO_BACKEND=supabase` (`core/config/app_config.dart`) is only a seam — there is no Supabase client, sync or outbox, and the UI must say so honestly rather than show a fake online indicator. `supabase/schemas/` is the intended Postgres schema (RLS, RPCs) and has not been applied to a real project.
+Local-first. The default build runs on Drift/SQLite only. `--dart-define-from-file=dart_define.<env>.json` with `AO_BACKEND=supabase` (`core/config/app_config.dart`) turns on multi-device sync: every local write also lands in an outbox that is pushed through `sync_push`, and other devices' changes arrive through `sync_pull` (`lib/data/sync/`, `lib/app/sync/`; design in `docs/SYNC.md`). Only the anon/publishable key ever goes into the app.
 
 ## Tests
 
-`test/` mirrors `lib/` (`domain/`, `data/local/`, `app/`, `features/`, plus `integration/`). Use `test/support/test_db.dart`: `seededMemoryDb()` for an in-memory seeded Drift DB and `testOverrides(db, clock: FakeClock(...), auth: TestStaffAuth.new)` for `ProviderScope` overrides (defaults to a signed-in owner and a no-op notification service). `test/support/pricing_fixtures.dart` holds pricing fixtures. Widget tests cover phone and desktop sizes.
+`apps/mobile/test/` mirrors `lib/` (`domain/`, `data/local/`, `app/`, `features/`, plus `integration/`). Use `test/support/test_db.dart`: `seededMemoryDb()` for an in-memory seeded Drift DB and `testOverrides(db, clock: FakeClock(...), auth: TestStaffAuth.new)` for `ProviderScope` overrides (defaults to a signed-in owner and a no-op notification service). `test/support/pricing_fixtures.dart` holds pricing fixtures. Widget tests cover phone and desktop sizes.

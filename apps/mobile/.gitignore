@@ -1,0 +1,109 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# IntelliJ related
+*.iml
+*.ipr
+*.iws
+.idea/
+
+# The .vscode folder contains launch configuration and tasks you configure in
+# VS Code which you may wish to be included in version control, so this line
+# is commented out by default.
+#.vscode/
+
+# Flutter/Dart/Pub related
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+/apps/mobile/build/
+/apps/mobile/coverage/
+
+# Symbolication related
+app.*.symbols
+
+# Obfuscation related
+app.*.map.json
+
+# Android Studio will place build artifacts here
+/apps/mobile/android/app/debug
+/apps/mobile/android/app/profile
+/apps/mobile/android/app/release
+
+# Widget Preview related
+.widget_preview/
+
+# ---------------------------------------------------------------------------
+# arena_ops — backend/sync additions (added at Phase 0, see docs + plan).
+# Keep Supabase credentials and any on-device database copies OUT of git.
+# ---------------------------------------------------------------------------
+
+# Environment & secrets: Supabase URL/keys, --dart-define-from-file inputs.
+# NEVER commit a service-role key; the anon key also lives only in these files.
+*.env
+.env
+.env.*
+/env/
+dart_define.json
+dart_define.dev.json
+dart_define.hosted-dev.json
+dart_define*.json
+*.dart-define.json
+# Allow committed, non-secret templates (e.g. .env.example, dart_define.example.json).
+!.env.example
+!*.example.env
+!dart_define.example.json
+!*.example.json
+
+# Private signing keys, keystores, and certificate files
+*.keystore
+*.jks
+*.p12
+*.pfx
+*.pem
+*.key
+*.cer
+*.crt
+*.der
+key.properties
+local.properties
+**/android/key.properties
+**/android/local.properties
+
+# Service account credentials & cloud service configs
+*service-account*.json
+*credentials*.json
+firebase-adminsdk*.json
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
+
+# Supabase CLI local-stack state (created by `supabase init` / `supabase start`).
+supabase/.branches/
+supabase/.temp/
+supabase/.env
+supabase/.env.*
+
+# Stray on-device SQLite files or backups copied in for debugging. The real
+# database and its arena_ops-backups/ folder live in the app's documents
+# directory on-device, never in the repo — this is belt-and-braces.
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+arena_ops-backups/

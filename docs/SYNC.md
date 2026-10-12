@@ -217,13 +217,16 @@ unsent work stays in that person's database file and goes after they sign in.
 
 ## Auth and roles
 
-* **Owner-managed logins, no public registration** (migration 0015; sign-up is
-  off in Auth). The cloud entry screen only signs in.
-* **First owner:** the owner creates their login in the Supabase dashboard
-  (Authentication → Users → Add user, auto-confirmed) and runs
-  `select bootstrap_owner(email, arena name, owner name)` once in the SQL
-  editor. That function, `create_arena` and `claim_arena` are not callable by
-  the app — there is no app route to ownership.
+* **New arena owners sign up in the app** (cloud mode): Create an account →
+  e-mail + password (10+, letters and digits) → the 6-digit code from the
+  confirmation e-mail (`verifyOTP`, no deep links) → Create your arena →
+  `create_my_arena(arena name, owner name)`. The server refuses unconfirmed
+  logins and a second arena per login (`arena_limit`), and seeds the starter
+  catalog. A login that signs in before confirming is sent to the code screen.
+  Screens: `lib/app/sync/cloud_account_screens.dart`; phases in `CloudRoot`.
+* **Operator route:** `select bootstrap_owner(email, arena name, owner name)`
+  in the SQL editor still attaches an owner to a new arena (no limit; not
+  callable by the app). The legacy `create_arena` / `claim_arena` stay dropped.
 * **Staff:** the owner creates the login in the dashboard the same way, then
   Settings → Staff → *Add by e-mail* with the permissions.
   `add_staff_by_email` only **links an existing login** — verified, it never
