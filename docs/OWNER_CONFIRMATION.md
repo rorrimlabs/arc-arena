@@ -63,3 +63,21 @@ Legend: 🟡 = pending owner confirmation · ✅ = fixed rule the spec already s
 - Resources: HEX, VOID, GHOST, RIFT (PS5); RIFT also VR; Pool Table 1; Private Lounge.
 - Session statuses: active / completed / voided. Payment: unpaid / partial / paid / waived.
   Overtime is **not** a status.
+
+## Admin dashboard controls waiting on these decisions
+
+The admin dashboard shows these controls as designed (`design/admin.html`) but disabled with a
+"Not connected yet" note. Each one changes what a bill is worth, so it is built only after the
+owner answers the questions below. Every answer has to hold identically in the server pricer
+(`_pr_*`) and the floor app (`PricingService`), and in the pricing snapshot a session captures.
+
+| Control (admin screen) | Rule | Decisions needed |
+|---|---|---|
+| Discount on a bill; "Discounts given" (Overview); "Discounts · 30 days" (Users); Discount row (Sales); Max staff discount %, Discount needs a reason (Settings › Billing) | #21 | % or flat or both? Applied before or after cash rounding? Maximum per staff vs owner override? Fixed reason list or free text? Does a discount need the `discount` permission only, or owner approval above the limit? Can it apply to a group bill per player? |
+| GST %, Prices include GST, Invoice prefix (Settings › Billing); GST row (Sales) | #22 | Is the arena GST-registered? Rate (18%?) and HSN/SAC code? Rates inclusive (back out tax) or exclusive (add on top)? Rounding of the tax line? Invoice series: one per arena, per financial year, gap-free? What happens to the number of a voided bill? Are receipts printed/shared with the GSTIN? |
+| Percentage / flat pricing rules ("Weekend evenings", "Public holidays"…; Pricing › + Rule, Price change) | #6, #15, #26 | Do rules replace or sit on top of the happy-hour band? Can two rules overlap, and which wins? Does a holiday rule apply on a day marked closed/without happy hour? Is the rate fixed by the session's start time (current snapshot rule) or split at the boundary like happy hour (#6)? |
+| Membership plans ("Weekday 10h", "Gamer 25h"; Members) | — | Prepaid hours or a discount tier? Price, validity and expiry? Which station types and times may use plan hours? How plan minutes appear on a bill (₹0 line, separate payment method?) and in takings? Refunds of unused hours? |
+
+Already connected on the dashboard (no owner decision needed): game age rating and media, arena
+name / area / phone, payment methods offered, session start durations and end warning
+(`floor_options`), and member birth year.

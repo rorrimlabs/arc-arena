@@ -13,7 +13,8 @@ working on its own SQLite database. The audit that preceded this work is in
 
 Cloud mode never opens or migrates the local-only file. One file per
 (arena, person) means a person's unsent work can only ever be pushed under
-their own sign-in.
+their own sign-in. A release build runs cloud mode only; local mode (demo
+catalog, demo PINs) is for debug builds ([RELEASE.md](RELEASE.md)).
 
 ## Write path
 
@@ -115,8 +116,9 @@ segment_billing.dart`, `group_billing.dart`, `session_planner.dart` (extension
 cost), `lib/core/money/`, the IST/business calendar in `lib/core/time/`, or the
 `BillingPolicy` knobs — **must ship together with**:
 
-1. a NEW migration that changes the matching `_pr_*` function (never edit an
-   applied migration);
+1. the matching change to the `_pr_*` function in `supabase/schemas/`, with
+   the migration generated from it (migrations are never written or edited by
+   hand — see CLAUDE.md, "Supabase — declarative schemas only");
 2. a green `bash tool/pricing_parity.sh` run (parity at 0 mismatches and both
    self-tests caught), with the new rule added to the boundary corpus in
    `tool/pricing_parity/generate.dart` if random sampling would rarely hit it.
@@ -145,10 +147,40 @@ side must be reported).
   or an earlier transaction undid — `game.replace_controls`, a holiday or
   station link removed and re-added). Before 2026-10-12 the tombstone was
   applied last and wiped the row on every other device.
-* **This is polling, not Realtime.** A device pushes ~0.3 s after each local
-  change, then pulls; it also passes every 10 s while the app is in front, and
-  at once on resume (passes stop while the app is in the background). Another
-  device therefore sees a change on its next pass: typically within 10 s.
+* **Realtime nudges a pull; polling stays as the fallback.** Both apps join one
+  PRIVATE channel per arena, topic `arena:<arena uuid>` (`private: true`; the
+  user's JWT is set on the socket before joining). The `realtime.messages`
+  policies (`supabase/schemas/realtime/policies.sql`: `arena_members_receive`
+  for select, `arena_members_send` for insert, both `to authenticated`) admit
+  only active members of that arena, so a deactivated member or another arena's
+  login can neither listen nor send. Realtime caches that decision per
+  connection until the JWT refreshes: a revocation takes effect within
+  `jwt_expiry` (3600 s).
+  * *Postgres Changes*: INSERT and UPDATE only, filtered by `arena_id` and
+    RLS-filtered. DELETE is never subscribed (Supabase neither RLS-checks nor
+    filters DELETE events); deletions travel as the broadcast nudge.
+  * *Broadcast `sync`*, sent only AFTER the server committed ops: the floor
+    app's `SyncEngine` calls `onPushed` with the applied op kinds; the
+    dashboard's `pushOps` broadcasts only applied kinds (never on a transport
+    error or refusal). Payload: `{arena_id, kind:'push', kinds:[…],
+    source:'mobile'|'admin-web', at}`.
+  * **No business data travels in Realtime.** Every event only triggers a pull
+    (floor app, `lib/data/sync/realtime_sync.dart`, debounced) or a store
+    refetch (dashboard) through the normal authorized queries.
+  * Published tables (`supabase/schemas/_cluster/publications.sql`, 29):
+    activities, billing_policies, bookings, controller_allocations,
+    controller_moves, controllers, customers, game_categories, game_controls,
+    game_resources, games, group_assignments, group_charges, group_extensions,
+    group_payments, group_sessions, holidays, payments, rate_bands, rate_cards,
+    rates, resource_activities, resources, session_charges,
+    session_extensions, session_segments, sessions, settings, staff_profiles.
+* **Timing.** A device pushes ~0.3 s after each local change, then pulls; a
+  nudge triggers a pass on every other device, so changes arrive in about a
+  second. The floor app still passes every 10 s while it is in front (the
+  fallback and catch-up), and at once on resume (passes stop while the app is
+  in the background); a Realtime reconnect triggers a catch-up pull
+  (cursor-based, nothing missed). A nudge never restarts a stopped engine. The
+  dashboard does not poll: it refetches on each event and on reconnect/online.
   (Until 2026-10-12 the "push right after a change" never fired — the timer
   was born inside the Drift write transaction and died silently — so changes
   only left on the 10 s poll.)
@@ -193,7 +225,7 @@ server is the referee for devices working on stale numbers.
 | A refund may never exceed what was collected (`refund_exceeds_paid`). | same | same |
 | The End sheet collects only what is still due (an advance taken while the session ran is not collected again) and says when the payment did not go in. Take payment books only the balance on a final bill and tells staff the change to return. | — | `end_session_sheet.dart`, `take_payment_sheet.dart` |
 | A `role='owner'` profile always holds every permission and stays active; `staff.update` rewrites it so and answers `adjusted` (the device refetches). An arena can therefore never be left without an owner; removing an owner is an operator action on the database. | `op_staff_update` wrapper | the device reverts to the server row |
-| `add_staff_by_email` cannot overwrite an existing owner's profile (`owner_profile`), refuses unknown permission codes, and must leave someone holding Settings. | redefined | — |
+| `add_staff_by_email` cannot overwrite an existing owner's profile (`owner_profile`), refuses unknown permission codes, and must leave someone holding Settings. (Since removed: people join only by invitation — *Auth and roles*.) | redefined | — |
 | Loaning a pad or sending it home needs `start` or `settings` (was: any active member). Re-homing still needs `settings`. | `op_controller_move` wrapper | UI offers it only there |
 | Every cross-table reference stays inside the row's arena (`missing_reference`). | `t_same_arena` triggers on 19 tables | ids come from the device's own arena |
 | `resource.upsert` cannot touch another arena's station id (`not_found`). | wrapper | — |
@@ -228,35 +260,100 @@ unsent work stays in that person's database file and goes after they sign in.
 * **Operator route:** `select bootstrap_owner(email, arena name, owner name)`
   in the SQL editor still attaches an owner to a new arena (no limit; not
   callable by the app). The legacy `create_arena` / `claim_arena` stay dropped.
-* **Staff and co-owners:** the owner adds them on the admin dashboard (Users →
-  Add: Staff or Owner, name, e-mail, starting password; only an owner may add
-  an owner). The `staff-admin` Edge Function creates the confirmed login with
-  the service-role key (server-side only) and links it with
-  `add_member_by_email` as the owner; an e-mail that already has a login is
-  linked without touching its password. Permissions, rename and deactivate are
-  `staff.update` ops through `sync_push`. The person signs in on the floor app
-  and replaces the starting password in More → *Change password*.
-* No service-role key exists anywhere in the app or the repo's app code
-  (`tool/sync_it.sh` uses the LOCAL stack's key in a non-exported shell
-  variable to create test logins, the scripted equivalent of "Add user").
+* **Staff and co-owners join only by accepting an invitation.** Admin
+  dashboard → Users → *Invite user* (name, e-mail, role, permissions; no
+  password). The `staff-admin` Edge Function calls `invite_member` **as the
+  caller**: staff invites need `settings`, granting `money`/`reports` needs
+  owner level, inviting an owner needs an owner. Only the SHA-256 of a random
+  one-time token is stored; the invite expires in 7 days, and a newer invite to
+  the same address replaces the old link. The function e-mails the link
+  through Supabase Auth, so only the address's owner receives it: no login →
+  Auth invite e-mail (creates the login, unconfirmed until opened); an
+  unconfirmed login → its password is scrubbed first, then the invite e-mail;
+  a confirmed login → a sign-in (magic) link. It replies the same way in every
+  case, so it reveals nothing about whether an address has an account; if the
+  e-mail fails, the invite is withdrawn.
+* The link opens the dashboard's `/accept-invite?invite=<id>&token=<token>`.
+  The page takes the session from the link, has a new login choose its own
+  password, then calls `accept_invite`: the token must match and be unused,
+  unwithdrawn and unexpired; the caller's **confirmed** e-mail must be the
+  invited address (`invite_wrong_account`); the inviter must still hold the
+  authority; an existing owner is never demoted. It creates or reactivates the
+  person's profile in that arena only. The person then signs in on the floor
+  app with their e-mail and their own password. Owners see pending invites on
+  the Users page and can withdraw them.
+* Removed: `add_member_by_email` / `add_staff_by_email` (they linked an
+  existing login without its consent), the owner-set starting password, and
+  the floor app's "Add by e-mail" (it now explains that invitations are sent
+  from the dashboard). Permissions, rename and deactivate are `staff.update`
+  ops through `sync_push`; a field the op leaves out keeps its value.
+* No service-role key exists anywhere in the app or the repo's app code; only
+  the `staff-admin` function holds it, server-side. `tool/sync_it.sh` uses the
+  LOCAL stack's key in a non-exported shell variable to create test logins
+  (never printed, never given to a test process).
 * Permissions come from `staff_profiles` and follow an owner's edits live. Turning
   a member off stops their device syncing and returns it to the sign-in gate.
   Their unsent ops stay in their database file.
+* **Stored sign-in.** The floor app keeps the session in the Keychain/Keystore
+  per backend (key `arena_ops.supabase.session@<host:port>`), so a local-stack
+  session is never replayed against hosted dev or vice versa; the old shared
+  key is deleted at start (one extra sign-in after updating).
+* **Start-up.** A stored session is checked before the first call; no request
+  is ever sent as anon. A failed start-up call is classified: *offline* (no
+  network, 5xx, or the access-token refresh could not reach Auth) → the
+  sign-in is kept and the last arena opens from disk; *sign-in needed* (Auth
+  refused the refresh token, the API rejected the token, or the session is
+  gone) → cleared locally, sign-in screen; *server refused* (reachable, signed
+  in, refused) → error with retry, sign-in kept.
+* **During a shift.** A refresh that fails for lack of network is "offline":
+  the engine keeps retrying with backoff and the outbox is kept. Nothing is
+  sent without a session. A 42501 counts as "access turned off" only when the
+  call ran with a session. Realtime nudges never restart a stopped engine.
+  Unsent work always stays in the person's database file.
+* Floor app permission checks live in the action controllers: `BookingActions`
+  (start), `CatalogActions` (settings; pad loan/return start or settings,
+  permanent re-home settings), `CustomerActions` (start or members), plus the
+  session and group actions. The floor "View games" sheet is read-only without
+  settings.
 * The device PIN is device-local and never synced. Cloud mode has no PIN step.
 
 ## Running it locally
 
 ```bash
 supabase start              # project arena_ops, ports 5443x (Zitemonk keeps 5432x)
-bash tool/verify_all.sh     # everything, in order, each step reported separately
+bash tool/verify_all.sh --with-it --with-psql   # everything, in order, each step reported separately
 bash tool/dev_run.sh -d "iPhone 17"   # the app in cloud mode against the local stack
 ```
 
 `tool/verify_all.sh` runs, in this order: `flutter analyze`, `flutter test`,
-`supabase test db`, the two race scripts, the two-device suite
-(`tool/sync_it.sh`), the pricing parity check (`tool/pricing_parity.sh`), then
-`supabase test db` again to prove order does not matter. Each piece can also be
-run on its own, in any order.
+the admin unit tests (`ng test`), an admin development build (to a temp dir;
+the production config inlines Google Fonts, which needs the network),
+`supabase test db --local`, `supabase db advisors --local` (must be empty).
+`--with-it` adds the cross-app integration (`tool/sync_it.sh`); `--with-psql`
+adds the pricing parity check (`tool/pricing_parity.sh`) and the two race
+scripts — both use `docker exec psql` on the local container, inside
+rolled-back transactions / their own fixture arena. Every step runs and is
+reported PASS, FAIL or SKIP with the reason; the exit code is non-zero if any
+step failed. The declarative drift check (`supabase db schema declarative sync
+--no-apply` must say "No schema changes found") stays a manual step, because
+it writes a migration file when there is drift. Each piece can also be run on
+its own, in any order.
+
+`tool/sync_it.sh` is the cross-app suite, on the LOCAL stack only (it refuses
+anything else). It provisions throw-away `it-*@arena.test` logins (Auth admin
+API with the local stack's service key), an arena via `bootstrap_owner` +
+`_seed_arena_catalog`, joins the staff login by invite → accept, and serves
+the `staff-admin` function locally. Then: a Flutter device listens live while
+dashboard phase 1 runs (the Angular data layer under `ng test
+--runner-config=vitest.it.config.mts`, Node environment: builds a game and its
+station availability, saves floor options, invites a new person by e-mail and
+accepts from the Mailpit link); the dashboard listens live while the Flutter
+`test/sync/` suite runs (two-device sync, cross-app, private-channel
+authorization, arena isolation); dashboard phase 2 checks that the owner's
+Sales shows the staff's bill with one payment and that another arena's owner
+sees nothing. It cleans up exactly the logins and arenas it created. The specs
+(`apps/admin/src/integration/*.it.spec.ts`, `apps/mobile/test/sync/*`) skip
+themselves outside `sync_it.sh`.
 
 **No reset is needed between suites, or before them.** Each one isolates its
 own data:
@@ -265,22 +362,18 @@ own data:
 |---|---|---|
 | pgTAP (`supabase/tests`) | each file creates its own arena (the `_seed_arena_catalog` test fixture, fixed id) inside its transaction; every lookup is pinned to it | nothing (rolled back) |
 | `concurrency_tests/run.sh`, `run_pads.sh` | a dedicated arena + owner per script (`fixture.sh`), created on start | nothing (deleted on exit, even on failure) |
-| `tool/sync_it.sh` | fresh `it-*@arena.test` accounts and an `IT …` arena per run | nothing (deleted on exit, even on failure) |
+| `tool/sync_it.sh` | fresh `it-*@arena.test` logins and the arenas they own, per run | nothing (removes exactly what the run created, on exit) |
 | `tool/pricing_parity.sh` | a throwaway arena inside one transaction | nothing (rolled back) |
 
-`verify_all.sh` also plants an *isolation canary* for the whole run: a second
-arena with the same station and controller names. A test that falls back to
-"the only arena" or "the station called HEX" therefore fails instead of
-passing by luck. At the end it checks that the database holds exactly what it
-held before.
+`supabase db reset --local` is still the way to rebuild the dev stack from the
+migrations. Use `--local` explicitly; never `--linked`.
 
-`supabase db reset --local` is still the way to apply edited migrations to the
-dev stack. Use `--local` explicitly; never `--linked`.
-
-`tool/dev_run.sh`, `tool/sync_it.sh` and `tool/verify_all.sh` read only the
-local API URL and anon key from `supabase status`. They never print them, and
-they refuse anything that is not a localhost URL. A release build refuses a
-non-https or loopback backend.
+`tool/dev_run.sh` reads only the local API URL and publishable (or anon) key
+from `supabase status` and writes them to `apps/mobile/dart_define.dev.json`;
+`tool/sync_it.sh` also reads the local stack's service-role key into a
+non-exported variable. Neither prints a key, and both refuse anything that is
+not a localhost URL. A release build refuses local mode and any non-https or
+development backend ([RELEASE.md](RELEASE.md)).
 
 ## Not done / known limits
 
@@ -288,14 +381,19 @@ Blocking production:
 
 1. **Hosted dev project:** linked (ref `ouxv…`) with 0001–0015 applied,
    one arena, the owner (role owner, all permissions) and one staff login
-   (start, bill, discount, members), checked from the database 2026-10-12.
-   **0016 is not pushed yet** — that needs the owner's go-ahead
-   ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md) §4a). No session or op has
-   reached it yet.
+   (start, bill, discount, members), checked from the database 2026-10-12;
+   not re-verified since. **Not pushed — needs the owner's go-ahead:** 0016
+   and the 18 generated migrations after it ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md)
+   §4a), so invitations, Realtime, the `private` schema and the narrower
+   money/customer reads exist only on the local stack. The hosted settings
+   invitations need (custom SMTP, URL configuration, the `staff-admin` deploy
+   with its secrets) are not done either. As of 2026-10-12 no session or op
+   had reached it.
 2. **Real-device, cross-network test** (two phones on different networks, one
    going offline mid-shift) has not been done. Every multi-device claim here
-   is proven against the local stack (`tool/sync_it.sh`: two real accounts,
-   two device databases, real PostgREST) — not on two phones.
+   is proven against the local stack (`tool/sync_it.sh`: real accounts, two
+   device databases, the dashboard's data layer, real PostgREST and Realtime)
+   — not on two phones.
 3. **Session times are device-asserted.** Server-side amount validation does
    not protect against forged or wrong timestamps (see *What is still
    trusted* above).
@@ -319,30 +417,30 @@ Known limits (by design or not yet built):
   once when opened; reopen them to see another device's edit.
 * Success messages ("Paid in full", "Saved") mean saved on this device; the
   status strip says whether it has reached the server.
-* All staff of an arena can read all of its rows through sync (payments,
-  charges, staff permissions — not e-mails). The app hides Money/Reports from
-  staff; the data is on their device.
+* **Every active member's device holds the arena's rows** through `sync_pull`
+  (SECURITY DEFINER): payments, charges, customers and staff permissions — not
+  e-mails. Direct reads are narrower (RLS: payment and charge rows need
+  `bill`, `money` or `reports`; customers `start`, `members`, `money` or
+  `reports`; `audit_log` owner level; `staff_invites` none), but the device
+  feed is unchanged. The app hides Money/Reports from staff; the data is on
+  their device. Whether floor devices should hold less (a time window, a
+  per-permission feed) is an open product decision.
 
 Worth doing next:
 
 * Server pricing (0013) is a hand port of the Dart engine; the rule and the
   check that enforces it are under *Changing pricing* above
-  (`tool/pricing_parity.sh`, also step 7 of `tool/verify_all.sh`). It is not
-  in a CI pipeline yet — there is no CI in this repo.
+  (`tool/pricing_parity.sh`, also step 8 of `tool/verify_all.sh --with-psql`).
+  It is not in a CI pipeline yet — there is no CI in this repo.
 
 * Booking overlap is checked server-side only for a *specific* station, and not
   against live sessions (the device checks both).
-* Other devices learn of changes by 10 s polling while the app is in front.
-  Supabase Realtime (a broadcast that nudges a pass) could cut that latency
-  and data use; the pull path would stay as it is.
 * Cloud mode has no PIN quick-unlock (the OS lock protects the device), and the
   staff editor still shows the device-only PIN field there.
 * There is no import of local-only history into a cloud arena (only test data
   exists today).
 * A refused op must be redone by hand. The Sync screen explains why, but offers
   no one-tap "redo".
-* The legacy single-purpose RPCs (`start_session`, `allocate_controllers`, …)
-  remain as internal, non-client functions; they could be dropped later.
 * In the local Supabase image, a superuser session that `SET ROLE`s to
   `authenticated` and calls a function it may not execute crashes the backend
   (supautils hint hook). The same call through PostgREST returns a clean 403. pgTAP

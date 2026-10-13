@@ -9,19 +9,22 @@ staff member only ever sees the arenas they are an active member of.
 | Path | What |
 |---|---|
 | `schemas/` | **Source of truth.** One file per object, the layout `supabase db schema declarative generate` writes. Each file holds the object plus its indexes, triggers, RLS policy, grants and `comment on` docs. |
-| `schemas/public/tables/` | 34 tables |
+| `schemas/public/tables/` | 35 tables |
 | `schemas/public/views/` | 4 `sync_v_*` views used by the change feed (server-only) |
-| `schemas/public/functions/` | Client API, sync ops, pricing, helpers, triggers (map below) |
+| `schemas/public/functions/` | Client API wrappers (`security invoker`), sync ops, pricing, helpers, triggers (map below) |
 | `schemas/public/default_privileges.sql` | New objects grant nothing to `anon` / `authenticated` |
+| `schemas/private/` | Schema `private` (`schema.sql`, `default_privileges.sql`, `functions/`): the client API's SECURITY DEFINER bodies and the RLS helpers. Not exposed by the Data API — never add it to `config.toml` `[api] schemas`. |
+| `schemas/realtime/policies.sql` | `realtime.messages` policies for the private arena channels |
 | `schemas/_cluster/extensions/` | `pgcrypto`, `uuid-ossp`, `btree_gist` |
+| `schemas/_cluster/publications.sql` | The 29 tables in the `supabase_realtime` publication |
 | `migrations/` | **Generated** by `supabase db schema declarative sync` — never edit. `0001`–`0016` are the original hand-written history. |
 | `tests/` | pgTAP (`supabase test db --local`) |
 | `seed.sql` | Intentionally empty: arenas start with no catalog (owners build it on the dashboard). |
-| `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station |
-| `audit/security_audit.sql` | Read-only report of the API surface (grants, SECURITY DEFINER, RLS) |
-| `functions/staff-admin/` | Edge Function: an owner creates a staff login (already confirmed, starting password) from the admin dashboard. Verifies the caller with `app_is_owner`, then links with `add_member_by_email` (role staff or owner) **as the caller**; deletes the login again if linking fails. The only place the service-role key is used. |
+| `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station; `run.sh` (station race), `run_pads.sh` (pad races), `fixture.sh` (their own arena, removed on exit). Use `docker exec psql` on the local container (`tool/verify_all.sh --with-psql`). |
+| `audit/security_audit.sql` | Read-only report of the API surface (grants, SECURITY DEFINER, RLS). Its allowlist of client functions predates the invitation/sales/pricing RPCs (it still names `add_staff_by_email`), so it reports the newer client API as `FAIL`; test 13 is the current assertion. |
+| `functions/staff-admin/` | Edge Function: an owner invites someone (staff or co-owner) from the admin dashboard. `POST {arena_id, email, name, role, perms}` — a `password` field is rejected. Creates the invitation with `invite_member` **as the caller**, then e-mails `<ADMIN_SITE_URL or Origin>/accept-invite?invite=<id>&token=<token>` through Supabase Auth (no login → Auth invite; unconfirmed login → password scrubbed, then invite; confirmed login → sign-in link). Same reply in every case (`{status:'sent', invite_id, expires_at}`); if the e-mail fails the invite is withdrawn. The only place the service-role key is used. Env: `ADMIN_SITE_URL`, optional `ADMIN_ORIGINS` (CORS; unset = any origin, local development only). |
 | `templates/confirmation.html` | Sign-up e-mail with the 6-digit `{{ .Token }}` the admin dashboard asks for |
-| `config.toml` | Local stack (ports 5443x). Sign-up on with e-mail code confirmation; pg-delta is on. |
+| `config.toml` | Local stack (ports 5443x). Sign-up on with e-mail code confirmation; pg-delta is on. `additional_redirect_urls` include `http://127.0.0.1:4200/**` and `http://localhost:4200/**` (`ng serve`, for `/accept-invite`); `email_sent` limit 30/h; local mail goes to Mailpit at `http://127.0.0.1:54434`. |
 
 ## Changing the schema
 
@@ -40,8 +43,26 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
 | Role | Can do |
 |---|---|
 | `anon` | Nothing. No table, view, sequence or function privilege. |
-| `authenticated` | `select` on tables, filtered by RLS to its own arenas (`arena_id in (select app_arena_ids())`). Execute only the client API below. No direct writes. |
-| `service_role` / `postgres` | Everything (dashboard, SQL editor, `bootstrap_owner`). Never shipped in an app. |
+| `authenticated` | `select` on tables, filtered by RLS to its own arenas (`arena_id in (select private.app_arena_ids())`), narrower for sensitive tables (below). Execute only the client API below. No direct writes. |
+| `service_role` / `postgres` | Everything (dashboard, SQL editor, `bootstrap_owner`, the `staff-admin` Edge Function's `invite_delivery_target`). Never shipped in an app. |
+
+- **Direct reads (RLS — dashboard queries and Realtime Postgres Changes).** Every arena table:
+  active members (`private.app_arena_ids()`). `payments`, `group_payments`, `session_charges`,
+  `group_charges`: members holding `bill`, `money` or `reports` (or role owner). `customers`:
+  `start`, `members`, `money` or `reports` (or owner). `audit_log`: owner level only.
+  `staff_invites`: no client access at all. These go through
+  `private.app_arena_ids_with(perms)`. The **device sync feed** (`sync_pull`, SECURITY DEFINER) is
+  unchanged: every active member's device still receives the arena's rows it needs offline,
+  payments and customers included. Whether floor devices should hold less is an open product
+  decision.
+- **Realtime.** One private channel per arena, topic `arena:<arena uuid>`. The
+  `realtime.messages` policies `arena_members_receive` (select) and `arena_members_send` (insert),
+  both `to authenticated`, admit only active members of that arena
+  (`private.can_use_arena_topic(topic)`). Realtime caches the decision per connection until the
+  JWT refreshes, so a revocation takes effect within `jwt_expiry` (3600 s). Postgres Changes are
+  subscribed for INSERT and UPDATE only (DELETE events are neither RLS-checked nor filtered);
+  deletions travel as the `sync` broadcast, sent only after the server committed ops. No business
+  data travels in Realtime: every event only triggers an authorized pull or refetch.
 
 - **One write path.** Devices push operations to `sync_push`; `_sync_apply` maps each op kind
   to an `op_*` function. Every `op_*` is `security definer` with a pinned `search_path`, checks
@@ -53,19 +74,30 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   reports, settings`. `role = 'owner'` implies all. Holding `money` or `reports` makes a member
   *owner level* (`app_is_owner`, same rule as the app). Only owner-level members grant or remove
   `money`/`reports` or edit an owner-level member; nobody changes their own perms.
-- **Two routes to ownership, none to staff access.** A new arena owner registers on the admin
+- **Two routes to ownership; everyone else joins by invitation.** A new arena owner registers on the admin
   dashboard (`apps/admin`), confirms the e-mail with a 6-digit code, and calls
   `create_my_arena()` (confirmed logins only, one owned arena per login). The operator can also
   attach an owner with `bootstrap_owner()` (SQL editor, no limit). Both go through
   `_create_arena_with_owner`, which creates the arena **empty**: no station types, prices,
   stations, games or controllers. The owner adds them on the dashboard through `sync_push`
   (`activity.upsert`, `rate.upsert`, `resource.upsert`, `controller.upsert`, `game.upsert`,
-  `game.set_compat`). `_seed_arena_catalog` is a pgTAP fixture only. A sign-up belongs to no
-  arena until then. Owners add staff from the
-  dashboard's Users screen, as staff or (owners only) as a co-owner: the `staff-admin` Edge
-  Function creates the login and links it with `add_member_by_email`; `arena_staff()` lists
-  owners and staff with e-mails; changes go through
-  `sync_push` (`staff.update`). The floor app (`apps/mobile`) only signs in.
+  `game.set_compat`). `_seed_arena_catalog` is a test fixture only (pgTAP, `tool/sync_it.sh`). A
+  sign-up belongs to no arena until then. Staff and co-owners join **only by accepting an
+  invitation**: dashboard Users → Invite (name, e-mail, role, permissions) → the `staff-admin`
+  Edge Function → `invite_member` as the caller (staff invites need `settings`; granting
+  `money`/`reports` needs owner level; inviting an owner needs an owner). `staff_invites` stores
+  only the SHA-256 of a random one-time token; an invite expires in 7 days, and there is one open
+  invite per (arena, address) — a newer one replaces the old link. The link opens the
+  dashboard's `/accept-invite`, which has a new login choose its own password, then calls
+  `accept_invite(p_invite, p_token)`: the token must match and be unused, unwithdrawn and
+  unexpired; the caller's **confirmed** auth e-mail must equal the invited address
+  (`invite_wrong_account`); the inviter must still hold the authority; an existing owner is never
+  demoted. It creates or reactivates the `staff_profiles` row for that arena only. Owners list
+  pending invites with `arena_invites()` and withdraw them with `revoke_invite()`.
+  `add_member_by_email` / `add_staff_by_email` (which linked an existing login without consent)
+  are removed. `arena_staff()` lists owners and staff with e-mails; changes go through
+  `sync_push` (`staff.update`; a field the op leaves out keeps its value). The floor app
+  (`apps/mobile`) only signs in, with the person's own e-mail and password.
 - **Sales are read through owner-level RPCs.** The dashboard's Sales screen lists closed bills
   (completed or voided sessions and groups, by close time, at most 93 days) with
   `arena_sales()` and opens one with `arena_sale()` (charge lines, payments, void record); both
@@ -78,7 +110,7 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
 
 | Area | Tables |
 |---|---|
-| Arena & people | `arenas`, `staff_profiles`, `customers` |
+| Arena & people | `arenas`, `staff_profiles`, `staff_invites` (no client access), `customers` |
 | Floor setup | `resources` (stations), `activities`, `resource_activities`, `games`, `game_categories`, `game_resources`, `game_controls`, `controllers` (physical pads) |
 | Pricing & rules | `rate_cards`, `rates`, `rate_bands`, `billing_policies`, `holidays`, `settings`, `pricing_catalog_history` |
 | Single sessions | `sessions` → `session_segments`, `session_extensions`, `session_charges`, `payments` |
@@ -95,9 +127,11 @@ cursor), stamped by the `sync_stamp` trigger; deletes leave a row in `sync_tombs
 
 | Group | Functions |
 |---|---|
-| **Client API** (`authenticated`) | `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `arena_pricing`, `app_arena_ids`, `app_has_perm`, `app_is_owner` |
+| **Client API** (`authenticated`) | `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `create_my_arena`, `invite_member`, `accept_invite`, `revoke_invite`, `arena_invites`, `arena_staff`, `arena_sales`, `arena_sale`, `arena_pricing`, `app_is_owner` — each a `security invoker` wrapper in `public` over its SECURITY DEFINER body in `private` |
+| RLS helpers (`private`, not client API) | `private.app_arena_ids`, `private.app_has_perm`, `private.app_is_owner`, `private.app_arena_ids_with(perms)`, `private.can_use_arena_topic(topic)` — executable by `authenticated` because policies run as the caller; `private` is not an exposed schema |
 | Operator only | `bootstrap_owner` |
-| Sync ops (`op_*`, via `sync_push`) | sessions: `op_session_start/_reconfigure/_extend/_end/_void`; groups: `op_group_create/_add/_switch/_end_player/_extend/_end/_void`; money: `op_payment`; pads: `op_controller_move/_upsert/_set_status`; customers & bookings: `op_customer_*`, `op_booking_*`; settings: `op_game_*`, `op_resource_*`, `op_rate_*`, `op_policy_save`, `op_settings_save`, `op_holiday_*`, `op_staff_update` |
+| `service_role` only | `invite_delivery_target` (used by the `staff-admin` Edge Function to choose which e-mail to send) |
+| Sync ops (`op_*`, via `sync_push`) | sessions: `op_session_start/_reconfigure/_extend/_end/_void`; groups: `op_group_create/_add/_switch/_end_player/_extend/_end/_void`; money: `op_payment`; pads: `op_controller_move/_upsert/_set_status`; customers & bookings: `op_customer_*`, `op_booking_*`; settings: `op_game_*`, `op_resource_*`, `op_rate_*`, `op_policy_save`, `op_settings_save` (keys `business_hours`, `floor_options` — validated by `_floor_options`), `op_holiday_*`, `op_staff_update`, `op_arena_update` (arena name, area, phone) |
 | Sync plumbing | `_sync_apply` (op kind → `op_*`), `_sync_sources` |
 | Server pricing | `_pr_*` (port of the app's PricingService / SegmentBilling / GroupBilling), `_pricing_snapshot`, `_pricing_canon`, `_pricing_grace`, `_assert_snapshot`, `_price_mismatch` |
 | Floor rules | `_need`, `_lock_resources`, `_lock_pads`, `_station_*`, `_group_*`, `_pad_*`, `_single_supply`, `_game_*`, `_booking_free`, `_free_pads_at`, `_usable_pads_at`, `_untracked_busy`, … |
@@ -115,12 +149,15 @@ checks and which errors it raises; the same summary is stored as `comment on fun
 | `01_rls_authorization_test.sql` | Owner vs staff authorization, retired functions are gone |
 | `07_sync_ops_test.sql` | `sync_push` → `op_*` → `sync_pull` end to end |
 | `08_server_pricing_test.sql` | Server re-prices bills and refuses mismatches |
-| `09_account_provisioning_test.sql` | `bootstrap_owner`, `create_my_arena` (confirmation, names, one-arena limit), `add_staff_by_email`, `add_member_by_email` (co-owners), `arena_staff` |
+| `09_account_provisioning_test.sql` | `bootstrap_owner`, `create_my_arena` (confirmation, names, one-arena limit), `arena_staff`; no function links an existing login silently |
 | `10_integrity_authz_test.sql` | Payments fit the bill, owner protection, pad-move permission |
 | `11_ported_floor_test.sql` | Sessions, payments and groups through `sync_push` |
 | `12_ported_pads_test.sql` | Controller allocation, borrowing and moves through `sync_push` |
 | `13_security_hardening_test.sql` | Client surface, RLS shape, owner-level perms, integrity checks |
 | `14_admin_sales_test.sql` | `arena_sales` / `arena_sale`: who may read, half-open close-time ranges, voided bills, group lines |
 | `15_catalog_from_scratch_test.sql` | An empty arena built only through `sync_push` (`activity.upsert` rules, rate, station, pad, game, compat) runs a session |
+| `16_admin_catalog_details_test.sql` | A game's age rating and media (`game.upsert`), the arena's name/area/phone (`arena.update`); edits from builds that do not send the new fields keep them |
+| `17_staff_invites_test.sql` | `invite_member` → `accept_invite`: works once, only for the confirmed invited login, only for its arena, only while the inviter keeps the authority; `revoke_invite`, `arena_invites` |
+| `18_realtime_and_sensitive_reads_test.sql` | Direct reads of money, customer and audit rows; who may use an arena's private Realtime channel; which tables Realtime announces |
 
 Every file creates and isolates its own arena and rolls back.

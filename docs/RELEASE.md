@@ -1,9 +1,13 @@
 # Release & data-safety runbook — arena_ops MVP
 
-One counter device, offline-first. Drift/SQLite on the device is the source of
-truth; there is no server, no sync and no network in the write path.
+Offline-first. Drift/SQLite on the device is the source of truth and there is
+no network in the write path. Release builds are **cloud-only**: every write
+also lands in a sync outbox that is pushed to Supabase, and other devices'
+changes are pulled ([SYNC.md](SYNC.md)). Local mode is for debug builds.
 
 Verified on 2026-10-11: `flutter analyze` clean, `flutter test` **274 passed**.
+Since then `bash tool/verify_all.sh` is the one entry point for every
+automated check.
 
 ---
 
@@ -13,12 +17,13 @@ Verified on 2026-10-11: `flutter analyze` clean, `flutter test` **274 passed**.
 
 | Where | What |
 |---|---|
-| On the device | `<app Documents>/arena_ops-backups/arena_ops-v<schema>-<timestamp>Z.sqlite` |
+| On the device | `<app Documents>/arena_ops-backups/arena_ops-v<schema>-<timestamp>Z.sqlite` (local mode); cloud mode backs up each `arena_ops_cloud_<arena>_<user>.sqlite` the same way, as `arena_ops_cloud_<arena>-v<schema>-<timestamp>Z.sqlite` |
 | On this Mac (manual, pre-release) | `~/Documents/arena_ops-backups/` + `MANIFEST.txt` with sha256s |
 
 ### How they are taken
 
-`main()` calls `DbSafety.protect` **before** the database is opened, because
+`DbSafety.protect` runs **before** the database is opened — from `main()` in
+local mode, and from the cloud root before it opens an arena's file — because
 Drift migrates the file the instant `AppDatabase` opens it. Each launch:
 
 1. copies `arena_ops.sqlite` **and its `-wal`/`-shm`** aside (the write-ahead log
@@ -55,7 +60,7 @@ cp ~/Documents/arena_ops-backups/<chosen>.sqlite "<app Documents>/arena_ops.sqli
 
 ## 2. Migrations
 
-`schemaVersion` is **11**. `onUpgrade` walks one step per version boundary
+`schemaVersion` is **15**. `onUpgrade` walks one step per version boundary
 (`_steps[n]` takes v`n` → v`n+1`) and steps must be additive — add a table, a
 column or an index, never drop or rewrite user rows.
 
@@ -83,13 +88,35 @@ step chain fails the build, because a gap silently falls through to the rebuild.
 flutter test && flutter analyze
 ```
 
+### Cloud-only (both platforms)
+
+A release build runs **only** in cloud mode. At start `AppConfig.problemFor`
+(`lib/core/config/app_config.dart`) refuses local mode, an unknown
+`AO_BACKEND`, a missing URL or key, a non-https or development host
+(`localhost`, `127.0.0.1`, `0.0.0.0`, `10.0.2.2`, `::1`, `*.local`,
+`*.localhost`, `*.test`), and any secret (`sb_secret_…`) or `service_role`
+key — the app shows a configuration error instead of starting. Debug builds
+without defines still run local mode (demo catalog and demo PINs 1111/2222);
+the demo seed itself refuses to run in a release build.
+
+`dart_define.prod.json` (git-ignored, like every `dart_define*.json`) holds
+`AO_BACKEND=supabase`, the hosted https URL and its publishable key — never a
+secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md) §0).
+
 ### Android
 
 ```bash
-flutter build apk --release --split-per-abi
+flutter build apk --release --split-per-abi --dart-define-from-file=dart_define.prod.json
+flutter build appbundle --release --dart-define-from-file=dart_define.prod.json
 ```
 
-Artifacts in `build/app/outputs/flutter-apk/`:
+Gradle (`android/app/build.gradle.kts`) refuses release tasks before building
+when the dart-defines do not contain `AO_BACKEND=supabase`, or when
+`android/key.properties` is missing (§4) — it never signs a release with the
+debug key. Verified: a release build without defines failed in 2 s listing
+both problems; with the cloud defines, only the signing problem.
+
+Artifacts in `build/app/outputs/flutter-apk/` (sizes from the 2026-10-11 build):
 
 | File | Size | For |
 |---|---|---|
@@ -112,12 +139,13 @@ to fetch it (`NoSuchFileException`), so it was installed by hand to
 ### iOS
 
 ```bash
-flutter build ios --release
+flutter build ios --release --dart-define-from-file=dart_define.prod.json
 ```
 
-`build/ios/iphoneos/Runner.app` — 24.0 MB. Bundle id `in.rorrim.arenaOps`.
-Builds clean today with `--no-codesign`; signing needs the Apple developer
-account (below).
+`build/ios/iphoneos/Runner.app` — 24.0 MB (2026-10-11). Bundle id `in.rorrim.arenaOps`.
+Builds clean with `--no-codesign`; signing needs the Apple developer
+account (below). Nothing at build time checks the defines on iOS: only the
+runtime configuration check above guards the backend.
 
 ---
 
@@ -125,13 +153,13 @@ account (below).
 
 Neither platform is signed for distribution yet, pending the developer account.
 
-**Android** currently signs the release build with the **debug** key
-(`android/app/build.gradle.kts` → `buildTypes.release.signingConfig =
-signingConfigs.getByName("debug")`, confirmed on the built APK as
-`CN=Android Debug`). The APK installs and runs for testing, but it is not a real
-release and **cannot be updated later with a different key** — an app signed
-with the debug key can only ever be replaced by uninstalling it, which deletes
-the database. Before the counter goes live:
+**Android** release signing comes **only** from `android/key.properties`
+(`storeFile`, `storePassword`, `keyAlias`, `keyPassword`; git-ignored). Without
+it Gradle refuses the release build instead of signing with the debug key: an
+app signed with the debug key **cannot be updated later with a different key**
+— it can only ever be replaced by uninstalling it, which deletes the database.
+(Builds before this guard were debug-signed, `CN=Android Debug`; replacing one
+on a device means uninstalling it.) Before the counter goes live:
 
 1. create the keystore (choose and keep the password; it cannot be recovered, and
    losing it means never being able to update the installed app):
@@ -149,20 +177,19 @@ the database. Before the counter goes live:
    keyAlias=upload
    ```
 
-3. point `buildTypes.release` at it instead of the debug config, and rebuild.
+3. rebuild with the release command in §3: `build.gradle.kts` picks the key up
+   from `key.properties` by itself.
 
 **iOS** needs the Apple developer account set as the signing team in Xcode
 (`ios/Runner.xcworkspace` → Runner → Signing & Capabilities), then
-`flutter build ipa`.
+`flutter build ipa --dart-define-from-file=dart_define.prod.json`.
 
 ---
 
 ## 5. What is deliberately not in this release
 
-- **No multi-device sync.** There is no server: no Supabase client, no HTTP
-  client, nothing network-shaped in `lib/`. `AppConfig` still carries a
-  `Backend.supabase` flag; with it set the UI says "Cloud not wired · Still saved
-  on this device only" rather than implying a sync that does not exist.
+- **Local mode.** A release build never runs the local-only backend, the demo
+  catalog or the demo PINs (§3 "Cloud-only").
 - The design-only modules with no data model behind them (shift open/close and
   cash drawer, checklists, issue/downtime log, void approval queue, member coins
   and plans) are still absent rather than faked with placeholder numbers.
