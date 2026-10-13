@@ -51,8 +51,8 @@
         [class.pl-4]="!rail()"
         [class.pr-3]="!rail()"
         [cdkMenuTriggerFor]="arenaMenu"
-        [title]="arenaContext.current().name + ' · ' + arenaContext.current().area"
-        [attr.aria-label]="'Arena: ' + arenaContext.current().area + '. Switch arena'"
+        [title]="arenaContext.current().name"
+        [attr.aria-label]="'Arena: ' + arenaContext.current().name + '. Switch arena'"
       >
         <span class="icon text-xl leading-none text-primary-text" aria-hidden="true"
           >storefront</span
@@ -61,7 +61,7 @@
           <span class="flex min-w-0 flex-1 flex-col gap-0.75">
             <span class="text-xs leading-none font-medium text-muted">Arena</span>
             <span class="truncate text-sm leading-[1.1] font-semibold">{{
-              arenaContext.current().area
+              arenaContext.current().name
             }}</span>
           </span>
           <span class="icon text-xl leading-none text-muted" aria-hidden="true">unfold_more</span>
@@ -85,10 +85,7 @@
               aria-hidden="true"
               >check</span
             >
-            <span class="flex flex-col gap-1">
-              <span class="text-sm leading-none font-medium">{{ arena.area }}</span>
-              <span class="text-xs leading-none text-muted">{{ arena.name }}</span>
-            </span>
+            <span class="text-sm leading-none font-medium">{{ arena.name }}</span>
           </button>
         }
       </div>
@@ -156,16 +153,14 @@
         type="button"
         class="grid size-10 flex-none place-items-center rounded-full bg-primary-soft text-caption leading-none font-semibold text-primary-text"
         title="Sign out"
-        [attr.aria-label]="'Sign out ' + (session.user()?.name ?? '')"
+        [attr.aria-label]="'Sign out ' + ownerName()"
         (click)="session.signOut()"
       >
-        {{ session.initials() }}
+        {{ ownerInitials() }}
       </button>
       @if (!rail()) {
         <div class="flex min-w-0 flex-1 flex-col gap-0.75">
-          <span class="truncate text-sm leading-[1.2] font-semibold">{{
-            session.user()?.name
-          }}</span>
+          <span class="truncate text-sm leading-[1.2] font-semibold">{{ ownerName() }}</span>
           <span class="truncate text-xs leading-[1.2] text-muted">{{ session.user()?.email }}</span>
         </div>
         <button

@@ -140,5 +140,75 @@ select lives_ok($$ select create_my_arena('Alan''s Arena', 'Alan') $$,
 select lives_ok($$ select bootstrap_owner('signup09@shop.invalid', 'Branch 2') $$,
   'the operator can still add a second arena for an owner');
 
+-- ----------------------------------------- arena_staff: the owner's staff list
+-- 02 (staff, never signed in) recorded a payment and a refund in the fixture.
+insert into customers(id, arena_id, name)
+  values ('c5000000-0000-4000-8000-000000000009', 'e0000000-0000-4000-8000-000000000009', 'Walk-in 09');
+insert into sessions(id, arena_id, customer_id, started_at, scheduled_end_at, pricing_snapshot, policy_snapshot)
+  values ('5e000000-0000-4000-8000-000000000009', 'e0000000-0000-4000-8000-000000000009',
+          'c5000000-0000-4000-8000-000000000009',
+          now() - interval '2 hours', now() - interval '1 hour', '{}', '{}');
+insert into payments(arena_id, session_id, amount_paise, method, kind, reason, created_by) values
+  ('e0000000-0000-4000-8000-000000000009', '5e000000-0000-4000-8000-000000000009', 30000, 'upi', 'payment', null,
+   '91000000-0000-4000-8000-000000000002'),
+  ('e0000000-0000-4000-8000-000000000009', '5e000000-0000-4000-8000-000000000009', -5000, 'cash', 'refund', 'Wrong amount',
+   '91000000-0000-4000-8000-000000000002');
+select set_config('request.jwt.claims',
+  '{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+create temp table staff09 as
+  select e from jsonb_array_elements(arena_staff('e0000000-0000-4000-8000-000000000009'::uuid)) e;
+select is((select array_agg(e ->> 'role') from staff09), array['owner', 'staff'],
+  'arena_staff lists the owner first, then staff');
+select is((select e ->> 'email' from staff09 where e ->> 'role' = 'staff'), 'staff09@shop.invalid',
+  'with the login e-mail');
+select is((select (e ->> 'invited')::boolean from staff09 where e ->> 'role' = 'staff'), true,
+  'a login that never signed in is flagged invited');
+select is((select (e ->> 'bills_30d') || '/' || (e ->> 'takings_30d_paise') || '/' || (e ->> 'refunds_30d_paise')
+             from staff09 where e ->> 'role' = 'staff'), '1/25000/5000',
+  'and the bills, net takings and refunds they recorded in 30 days');
+select set_config('request.jwt.claims',
+  '{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated"}', true);
+select throws_ok($$ select arena_staff('e0000000-0000-4000-8000-000000000009'::uuid) $$,
+  '42501', null, 'staff cannot list e-mails');
+select ok(not has_function_privilege('anon', 'arena_staff(uuid)', 'EXECUTE'),
+  'arena_staff is not callable signed out');
+
+-- --------------------------------- add_member_by_email: staff or co-owner
+-- 01 owns the fixture arena; 02 is staff there; 04 owns its own arena (signup09).
+select set_config('request.jwt.claims',
+  '{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select throws_ok($$ select add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
+    'signup09@shop.invalid', 'S', 'admin', array['start']) $$,
+  'invalid_role', 'role must be staff or owner');
+select is(add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
+    'signup09@shop.invalid', 'Sam', 'owner', null),
+  '91000000-0000-4000-8000-000000000004'::uuid, 'an owner adds a co-owner');
+select is((select role || '/' || array_length(perms, 1) || '/' || active from staff_profiles
+            where arena_id = 'e0000000-0000-4000-8000-000000000009'::uuid
+              and user_id = '91000000-0000-4000-8000-000000000004'),
+  'owner/8/true', 'the co-owner has every permission');
+select throws_ok($$ select add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
+    'signup09@shop.invalid', 'Sam', 'staff', array['start']) $$,
+  'owner_profile', 'an owner cannot be turned back into staff this way');
+select is(add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
+    'staff09@shop.invalid', 'Alan', 'owner', null),
+  '91000000-0000-4000-8000-000000000002'::uuid, 'existing staff are promoted to owner');
+select is((select role from staff_profiles
+            where arena_id = 'e0000000-0000-4000-8000-000000000009'::uuid
+              and user_id = '91000000-0000-4000-8000-000000000002'),
+  'owner', 'and are now an owner');
+-- An owner-level staff member (money) may add staff but not owners.
+insert into staff_profiles(arena_id, user_id, name, role, perms)
+  values ('e0000000-0000-4000-8000-000000000009'::uuid, '91000000-0000-4000-8000-000000000003',
+    'Manager', 'staff', array['start', 'money']);
+update auth.users set email_confirmed_at = now() where id = '91000000-0000-4000-8000-000000000003';
+select set_config('request.jwt.claims',
+  '{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated"}', true);
+select throws_ok($$ select add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
+    'owner09@shop.invalid', 'X', 'owner', null) $$,
+  '42501', null, 'owner-level staff cannot make owners');
+select ok(not has_function_privilege('anon', 'add_member_by_email(uuid,text,text,text,text[])', 'EXECUTE'),
+  'add_member_by_email is not callable signed out');
+
 select * from finish();
 rollback;

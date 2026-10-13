@@ -38,10 +38,10 @@ loopback URL.
 | `seed.sql` | **Do not apply to hosted.** It creates a dev arena with no owner. `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
 | RLS | Enabled on every public table; every policy is scoped to arena membership. Views are not client-readable (views bypass RLS). |
-| Client API | Signed-in users can call only: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena` (sign-up: confirmed logins, one arena each), and three read-only membership helpers. `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena` is dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
+| Client API | Signed-in users can call only: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena` (sign-up: confirmed logins, one arena each), `add_member_by_email` (staff or co-owner), `arena_staff` (owner's staff list with e-mails), `arena_sales` / `arena_sale` (owner's Sales screen), and three read-only membership helpers. `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena` is dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
 | SECURITY DEFINER | All pin `search_path`. |
 | Role limits | Same as hosted defaults: `authenticated` 8 s statement timeout, 8 s lock timeout. The two-device suite runs under them through PostgREST. Pulls are paged at 2,000 rows; pushes at 50 ops. |
-| Auth design | Per-person logins. A new arena owner signs up in the app and confirms the e-mail with a 6-digit code, then `create_my_arena` creates their one arena; the operator can also use `bootstrap_owner` (SQL editor). Staff logins are created by the owner in the dashboard; `add_staff_by_email` links an existing login with chosen permissions — it does **not** create logins (verified). People replace their starting password in the app (More → Change password). No service-role key anywhere in the app or repo. |
+| Auth design | Per-person logins. A new arena owner registers on the admin dashboard and confirms the e-mail with a 6-digit code, then `create_my_arena` creates their one arena; the operator can also use `bootstrap_owner` (SQL editor). Staff logins are created by the owner on the admin dashboard through the `staff-admin` Edge Function (the only holder of the service-role key); `add_staff_by_email` links an existing login with chosen permissions — it does **not** create logins (verified). People replace their starting password in the app (More → Change password). No service-role key anywhere in the app or repo. |
 | Mobile — Android | **Fixed:** the release manifest had no `INTERNET` permission (only debug/profile did), so a release build could not reach Supabase at all. Debug builds now allow cleartext only for the local dev stack. |
 | Mobile — iOS | No ATS exceptions; https works as is. Session (refresh token) stored in the Keychain via `flutter_secure_storage`. |
 | Settings that are NOT migrations | Everything under `[auth]` in `supabase/config.toml` applies to the LOCAL stack only. On hosted you set them in the dashboard (step 3). |
@@ -64,7 +64,7 @@ all of the above on the hosted database. It must return no `FAIL` row.
 
 1. **Authentication → Sign In / Providers → Email**: enabled.
    * Keep the **Email provider itself ENABLED** — it is how everyone signs in with e-mail + password.
-   * **Authentication → Sign In / Providers → User Signups → Allow new users to sign up**: **ON** — new arena owners create their account in the app. A sign-up belongs to no arena until it confirms its e-mail and creates one (`create_my_arena`, one per login).
+   * **Authentication → Sign In / Providers → User Signups → Allow new users to sign up**: **ON** — new arena owners register on the admin dashboard. A sign-up belongs to no arena until it confirms its e-mail and creates one (`create_my_arena`, one per login).
    * **Confirm email**: **ON**. The app asks for the 6-digit code, so:
      * **Authentication → Emails → Templates → Confirm signup**: replace the body with the one in `supabase/templates/confirmation.html` — it must contain `{{ .Token }}` (the default template only has a link the app cannot open).
      * **Project Settings → Authentication → SMTP**: set up your own SMTP sender. The built-in one sends only a few e-mails an hour to team addresses, so real sign-ups would never get their code.
@@ -176,7 +176,7 @@ still debug-signed until your developer account exists
 
 **Initial owner — either route:**
 
-* **In the app (self-serve):** *Create an account* → e-mail + password → enter the code from the e-mail → *Create your arena*. Needs steps 3.1's sign-up, confirmation, template and SMTP settings. Then continue at step 3 below.
+* **On the admin dashboard (self-serve):** *Create an account* → e-mail + password → enter the code from the e-mail → *Create your arena*. Needs steps 3.1's sign-up, confirmation, template and SMTP settings. Then continue at step 3 below.
 * **By the operator (dashboard + database access):**
 
 1. **Authentication → Users → Add user → Create new user**: your e-mail, a strong password (password manager), tick **Auto Confirm User**.
@@ -189,10 +189,10 @@ still debug-signed until your developer account exists
 
 **Each staff member (owner, any time):**
 
-4. **Authentication → Users → Add user → Create new user**: the staff member's e-mail, a *starting* password, **Auto Confirm User** ticked. (This dashboard step is what creates the login — the app cannot, by design: creating logins needs the service-role key, which never goes into the app.)
-5. **Owner phone**: Settings → Staff → **Add by e-mail** → their e-mail, name, and permissions (staff default, or *Owner access* for Money/Reports/Settings). This links the login to the arena; it fails with "No login uses that e-mail yet" if step 4 was skipped.
+4. **Deploy the Edge Function once** (your terminal): `supabase functions deploy staff-admin --no-verify-jwt` (it checks the caller's session itself). Its service-role key comes from the hosted environment automatically.
+5. **Admin dashboard** → Users → **Add** → Staff (or Owner, for a co-owner), name, e-mail and a *starting* password. The login is created already confirmed and added with the default floor permissions; adjust the toggles after. An e-mail that already has a login is linked with its existing password.
 6. Give them the starting password in person. On their phone: *Sign in* → More → **Change password** to one only they know.
-7. To remove access: Settings → Staff → turn them off (their device returns to sign-in). To remove the login entirely: Authentication → Users → delete.
+7. To remove a staff member's access: admin dashboard → Users → **Deactivate** (their device returns to sign-in). To remove the login entirely: Authentication → Users → delete.
 8. Run the multi-device checks on **different networks** (one on mobile data):
    * start a session on one phone, see it on the other within ~10 s;
    * put one phone in airplane mode, take a payment and start a session there; reconnect; confirm it syncs (or, if the other phone took the same station meanwhile, that it is refused and shown under Sync → Needs attention, money included);

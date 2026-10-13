@@ -32,7 +32,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     heading: 'People',
     items: [
       { path: 'members', label: 'Members', icon: 'group' },
-      { path: 'staff', label: 'Staff', icon: 'badge' },
+      { path: 'users', label: 'Users', icon: 'manage_accounts' },
     ],
   },
   { heading: 'Arena', items: [{ path: 'settings', label: 'Settings', icon: 'settings' }] },

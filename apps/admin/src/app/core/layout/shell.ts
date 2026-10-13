@@ -30,4 +30,17 @@ export class Shell {
   protected readonly navGroups = NAV_GROUPS;
   protected readonly rail = computed(() => !this.layout.compact() && this.layout.rail());
   protected readonly navShown = computed(() => !this.layout.compact() || this.layout.navOpen());
+  /** The name this arena knows the owner by, else the login's own name or e-mail. */
+  protected readonly ownerName = computed(
+    () => this.arenaContext.currentMembership()?.name || this.session.user()?.name || '',
+  );
+  protected readonly ownerInitials = computed(() =>
+    this.ownerName()
+      .split(/[\s@.]+/)
+      .filter(Boolean)
+      .map((word) => word[0])
+      .slice(0, 2)
+      .join('')
+      .toUpperCase(),
+  );
 }

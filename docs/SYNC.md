@@ -217,21 +217,23 @@ unsent work stays in that person's database file and goes after they sign in.
 
 ## Auth and roles
 
-* **New arena owners sign up in the app** (cloud mode): Create an account →
-  e-mail + password (10+, letters and digits) → the 6-digit code from the
-  confirmation e-mail (`verifyOTP`, no deep links) → Create your arena →
-  `create_my_arena(arena name, owner name)`. The server refuses unconfirmed
-  logins and a second arena per login (`arena_limit`), and seeds the starter
-  catalog. A login that signs in before confirming is sent to the code screen.
-  Screens: `lib/app/sync/cloud_account_screens.dart`; phases in `CloudRoot`.
+* **The floor app is staff-only: it only signs in.** New arena owners register
+  on the admin dashboard (`apps/admin`): e-mail + password (10+, letters and
+  digits) → the 6-digit code from the confirmation e-mail (`verifyOtp`) →
+  Create your arena → `create_my_arena(arena name, owner name)`. The server
+  refuses unconfirmed logins and a second arena per login (`arena_limit`), and
+  seeds the starter catalog.
 * **Operator route:** `select bootstrap_owner(email, arena name, owner name)`
   in the SQL editor still attaches an owner to a new arena (no limit; not
   callable by the app). The legacy `create_arena` / `claim_arena` stay dropped.
-* **Staff:** the owner creates the login in the dashboard the same way, then
-  Settings → Staff → *Add by e-mail* with the permissions.
-  `add_staff_by_email` only **links an existing login** — verified, it never
-  creates one (unknown e-mail → `no_account`, `auth.users` unchanged). The
-  person then replaces the starting password in More → *Change password*.
+* **Staff and co-owners:** the owner adds them on the admin dashboard (Users →
+  Add: Staff or Owner, name, e-mail, starting password; only an owner may add
+  an owner). The `staff-admin` Edge Function creates the confirmed login with
+  the service-role key (server-side only) and links it with
+  `add_member_by_email` as the owner; an e-mail that already has a login is
+  linked without touching its password. Permissions, rename and deactivate are
+  `staff.update` ops through `sync_push`. The person signs in on the floor app
+  and replaces the starting password in More → *Change password*.
 * No service-role key exists anywhere in the app or the repo's app code
   (`tool/sync_it.sh` uses the LOCAL stack's key in a non-exported shell
   variable to create test logins, the scripted equivalent of "Add user").

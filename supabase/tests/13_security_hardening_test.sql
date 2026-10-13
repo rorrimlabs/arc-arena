@@ -90,8 +90,8 @@ select is(
   (select array_agg(p.proname::text order by p.proname) from pg_proc p
     where p.pronamespace = 'public'::regnamespace
       and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['add_staff_by_email', 'app_arena_ids', 'app_has_perm', 'app_is_owner', 'create_my_arena',
-        'my_arenas', 'sync_fetch_entity', 'sync_pull', 'sync_push'],
+  array['add_member_by_email', 'add_staff_by_email', 'app_arena_ids', 'app_has_perm', 'app_is_owner', 'arena_sale',
+        'arena_sales', 'arena_staff', 'create_my_arena', 'my_arenas', 'sync_fetch_entity', 'sync_pull', 'sync_push'],
   'the client API is exactly these functions');
 
 -- ------------------------------------------- 3. secure by default

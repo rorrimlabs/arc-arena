@@ -1,13 +1,13 @@
 /// Today's money, derived read-only from stored payment rows (spec §20, §27).
 ///
 /// Presentation only — never recomputes pricing. Buckets the real payment
-/// records for the business day (Asia/Kolkata) by method and by hour.
+/// records (single sessions and groups) for the business day (Asia/Kolkata)
+/// by method and by hour.
 library;
 
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/time/ist.dart';
-import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:meta/meta.dart';
@@ -16,15 +16,56 @@ import 'package:meta/meta.dart';
 int istHourOf(DateTime utc) =>
     utc.toUtc().add(const Duration(hours: 5, minutes: 30)).hour;
 
-/// All of today's payment rows, newest first.
-final todayPaymentsProvider = FutureProvider.autoDispose<List<Payment>>((ref) async {
+/// One row of today's money: a single-session or a group payment (refunds
+/// negative). Both ledgers count — group bills are paid into their own table.
+@immutable
+class MoneyEntry {
+  const MoneyEntry({
+    required this.id,
+    required this.amountPaise,
+    required this.method,
+    required this.isRefund,
+    required this.createdAt,
+  });
+
+  final String id;
+  final int amountPaise;
+  final PaymentMethod method;
+  final bool isRefund;
+  final DateTime createdAt;
+}
+
+/// All of today's payment rows (single sessions and groups), newest first.
+final todayPaymentsProvider = FutureProvider.autoDispose<List<MoneyEntry>>((
+  ref,
+) async {
   ref.watch(activeSessionsProvider); // refresh as the floor changes
   final repo = ref.watch(sessionRepositoryProvider);
+  final groupRepo = ref.watch(groupSessionRepositoryProvider);
   final now = ref.watch(clockProvider).now();
   final date = IstDate.fromUtc(now);
-  final rows = await repo.paymentsInRange(date.startOfDayUtc(), date.endOfDayUtc());
-  rows.sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  return rows;
+  final from = date.startOfDayUtc();
+  final to = date.endOfDayUtc();
+  final single = repo.paymentsInRange(from, to);
+  final group = groupRepo.paymentsInRange(from, to);
+  return [
+    for (final p in await single)
+      MoneyEntry(
+        id: p.id,
+        amountPaise: p.amountPaise,
+        method: p.method,
+        isRefund: p.isRefund || p.amountPaise < 0,
+        createdAt: p.createdAt,
+      ),
+    for (final p in await group)
+      MoneyEntry(
+        id: p.id,
+        amountPaise: p.amountPaise,
+        method: p.method,
+        isRefund: p.isRefund || p.amountPaise < 0,
+        createdAt: p.createdAt,
+      ),
+  ]..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 });
 
 @immutable

@@ -3,7 +3,6 @@ import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_segmented.dart';
-import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/features/money/application/money_today.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -27,7 +26,7 @@ class _MoneyScreenState extends ConsumerState<MoneyScreen> {
   @override
   Widget build(BuildContext context) {
     final arena = context.arena;
-    final payments = ref.watch(todayPaymentsProvider).value ?? const <Payment>[];
+    final payments = ref.watch(todayPaymentsProvider).value ?? const <MoneyEntry>[];
     final total = payments.fold<int>(0, (a, p) => a + p.amountPaise);
 
     return Scaffold(
@@ -126,7 +125,7 @@ class _MethodCard extends StatelessWidget {
 
 class _PaymentLog extends StatelessWidget {
   const _PaymentLog({required this.payments});
-  final List<Payment> payments;
+  final List<MoneyEntry> payments;
 
   @override
   Widget build(BuildContext context) {
@@ -150,7 +149,7 @@ class _PaymentLog extends StatelessWidget {
 
 class _PaymentRow extends StatelessWidget {
   const _PaymentRow({required this.payment});
-  final Payment payment;
+  final MoneyEntry payment;
 
   @override
   Widget build(BuildContext context) {
@@ -159,7 +158,7 @@ class _PaymentRow extends StatelessWidget {
         .toUtc()
         .add(const Duration(hours: 5, minutes: 30));
     final time = DateFormat('HH:mm').format(ist);
-    final refund = payment.isRefund || payment.amountPaise < 0;
+    final refund = payment.isRefund;
 
     return Padding(
       padding: const EdgeInsets.symmetric(

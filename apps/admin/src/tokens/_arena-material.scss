@@ -1,0 +1,254 @@
+// Angular Material on the 404 Arena tokens.
+//
+// Material's system tokens (--mat-sys-*) are pointed at the semantic arena tokens in
+// tokens.css, so every Material component follows data-theme="dark" | "light" with no
+// colours of its own. Per-component adjustments go here as scoped `mat.<x>-overrides`.
+//
+// Material's component styles are not in a cascade layer, so they beat Tailwind utilities
+// (which are). Never put layout or spacing utilities on a Material host element (mat-card,
+// mat-dialog-content, mat-form-field, mat-*-button…): wrap its content in a plain element,
+// or add a scoped override class here.
+@use '@angular/material' as mat;
+
+@mixin apply-theme() {
+  @include mat.theme(
+    (
+      color: (
+        theme-type: dark,
+        primary: mat.$green-palette,
+      ),
+      typography: (
+        plain-family: var(--font-sans),
+        brand-family: var(--font-display),
+      ),
+      density: 0,
+    )
+  );
+
+  @include mat.theme-overrides(
+    (
+      primary: var(--arena-primary),
+      on-primary: var(--arena-on-primary),
+      primary-container: var(--arena-primary-soft),
+      on-primary-container: var(--arena-primary-text),
+      secondary-container: var(--arena-primary-soft),
+      on-secondary-container: var(--arena-primary-text),
+      inverse-primary: var(--arena-primary),
+      surface: var(--arena-bg),
+      on-surface: var(--arena-text),
+      on-surface-variant: var(--arena-text-muted),
+      surface-container-lowest: var(--arena-surface-sunken),
+      surface-container-low: var(--arena-surface),
+      surface-container: var(--arena-surface),
+      surface-container-high: var(--arena-surface-raised),
+      surface-container-highest: var(--arena-surface-raised),
+      outline: var(--arena-border-strong),
+      outline-variant: var(--arena-border),
+      error: var(--arena-danger),
+      on-error: var(--arena-on-danger),
+      inverse-surface: var(--arena-text),
+      inverse-on-surface: var(--arena-text-inverse),
+    )
+  );
+
+  // Buttons: the design's 40px pills, 500 14px labels; icons 20px with a 6px gap.
+  @include mat.button-overrides(
+    (
+      filled-container-height: 40px,
+      filled-label-text-size: 14px,
+      filled-label-text-weight: 500,
+      filled-horizontal-padding: 24px,
+      filled-icon-spacing: 6px,
+      filled-icon-offset: -6px,
+      outlined-container-height: 40px,
+      outlined-label-text-size: 14px,
+      outlined-label-text-weight: 500,
+      outlined-outline-color: var(--arena-border-strong),
+      outlined-icon-spacing: 6px,
+      outlined-icon-offset: -4px,
+      text-container-height: 40px,
+      text-label-text-size: 14px,
+      text-label-text-weight: 500,
+      text-label-text-color: var(--arena-primary-text),
+      text-icon-spacing: 6px,
+      text-icon-offset: -4px,
+    )
+  );
+
+  .mat-mdc-button-base .mat-icon {
+    font-size: 20px;
+    width: 20px;
+    height: 20px;
+  }
+
+  // Full-width call to action on the sign-in / register cards: 48px, 15px label.
+  .arena-cta {
+    @include mat.button-overrides(
+      (
+        filled-container-height: 48px,
+        filled-label-text-size: 15px,
+        outlined-container-height: 48px,
+        outlined-label-text-size: 15px,
+      )
+    );
+  }
+
+  // Detail-pane actions (Edit, Deactivate): the design's 36px buttons, 18px icons.
+  .arena-compact {
+    @include mat.button-overrides(
+      (
+        filled-container-height: 36px,
+        filled-horizontal-padding: 14px,
+        outlined-container-height: 36px,
+        outlined-horizontal-padding: 14px,
+        text-container-height: 36px,
+        text-horizontal-padding: 14px,
+        text-with-icon-horizontal-padding: 14px,
+      )
+    );
+
+    .mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  // Destructive text button (e.g. Deactivate): danger text and state layer.
+  .danger-action {
+    @include mat.button-overrides(
+      (
+        text-label-text-color: var(--arena-danger),
+        text-state-layer-color: var(--arena-danger),
+      )
+    );
+  }
+
+  // Destructive confirm (e.g. Void bill): danger fill, on-danger label.
+  .danger-fill {
+    @include mat.button-overrides(
+      (
+        filled-container-color: var(--arena-danger),
+        filled-label-text-color: var(--arena-on-danger),
+        filled-state-layer-color: var(--arena-on-danger),
+      )
+    );
+  }
+
+  // Filter chips (e.g. Today · 7 days · UPI): the design's 32px, 8px-corner chips; selected
+  // ones are primary-soft with a check.
+  @include mat.chips-overrides(
+    (
+      container-height: 32px,
+      container-shape-radius: 8px,
+      label-text-size: 13.5px,
+      label-text-weight: 500,
+      label-text-color: var(--arena-text),
+      outline-color: var(--arena-border-strong),
+      selected-label-text-color: var(--arena-primary-text),
+      flat-selected-outline-width: 0,
+      elevated-selected-container-color: var(--arena-primary-soft),
+      selected-hover-state-layer-color: var(--arena-primary),
+      with-icon-selected-icon-color: var(--arena-primary-text),
+    )
+  );
+
+  // Search pill above a list (design: 44px, surface fill, no outline).
+  .arena-search {
+    @include mat.form-field-overrides(
+      (
+        outlined-container-shape: 22px,
+        outlined-outline-color: transparent,
+        outlined-hover-outline-color: transparent,
+        outlined-focus-outline-color: var(--arena-primary),
+        container-height: 44px,
+        container-vertical-padding: 10px,
+        outlined-input-text-placeholder-color: var(--arena-text-muted),
+        leading-icon-color: var(--arena-text-muted),
+      )
+    );
+
+    &.mat-mdc-form-field {
+      width: 100%;
+    }
+
+    .mat-mdc-text-field-wrapper.mdc-text-field {
+      background: var(--arena-surface);
+      border-radius: 22px;
+    }
+  }
+
+  // Segmented switch (e.g. Staff | Owner): 36px, primary-soft when selected.
+  @include mat.button-toggle-overrides(
+    (
+      height: 40px,
+      shape: var(--radius-pill),
+      divider-color: var(--arena-border-strong),
+      text-color: var(--arena-text),
+      background-color: transparent,
+      selected-state-background-color: var(--arena-primary-soft),
+      selected-state-text-color: var(--arena-primary-text),
+      label-text-size: 14px,
+      label-text-weight: 500,
+    )
+  );
+
+  // Dialog: the design's 28px corners, raised surface, 24px body-font title.
+  @include mat.dialog-overrides(
+    (
+      container-shape: var(--radius-dialog),
+      container-color: var(--arena-surface-raised),
+      subhead-color: var(--arena-text),
+      subhead-font: var(--font-sans),
+      subhead-size: 24px,
+      subhead-weight: 400,
+      subhead-line-height: 1.2,
+      supporting-text-color: var(--arena-text),
+      supporting-text-size: 14px,
+      headline-padding: 24px 24px 8px,
+      content-padding: 0 24px,
+      with-actions-content-padding: 0 24px,
+      actions-padding: 20px 24px 24px,
+    )
+  );
+
+  // Outlined fields sit on the raised dialog / surface cards.
+  @include mat.form-field-overrides(
+    (
+      outlined-outline-color: var(--arena-border-strong),
+      outlined-focus-outline-color: var(--arena-primary),
+      outlined-label-text-color: var(--arena-text-muted),
+      outlined-focus-label-text-color: var(--arena-primary-text),
+      outlined-input-text-color: var(--arena-text),
+    )
+  );
+
+  // Detail sections and stat tiles: surface cards with a hairline border.
+  @include mat.card-overrides(
+    (
+      outlined-container-color: var(--arena-surface),
+      outlined-outline-color: var(--arena-border),
+      outlined-container-shape: var(--radius-card),
+    )
+  );
+
+  // Toggles: the design's off state sits on the sunken surface with a subtle thumb.
+  @include mat.slide-toggle-overrides(
+    (
+      unselected-track-color: var(--arena-surface-sunken),
+      unselected-handle-color: var(--arena-text-subtle),
+      unselected-hover-track-color: var(--arena-surface-sunken),
+      unselected-focus-track-color: var(--arena-surface-sunken),
+      unselected-pressed-track-color: var(--arena-surface-sunken),
+    )
+  );
+
+  // Snackbar: inverse text-on-surface, as in the design.
+  @include mat.snack-bar-overrides(
+    (
+      container-color: var(--arena-text),
+      supporting-text-color: var(--arena-text-inverse),
+      container-shape: 4px,
+    )
+  );
+}

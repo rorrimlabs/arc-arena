@@ -392,6 +392,12 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+# Owner creates a staff login from the admin dashboard. The function verifies the
+# caller's session itself (auth.getUser + app_is_owner), so the gateway JWT check
+# is off: publishable keys are not JWTs.
+[functions.staff-admin]
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54437

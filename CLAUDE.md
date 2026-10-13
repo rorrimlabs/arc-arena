@@ -6,13 +6,15 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 `arena_ops` — staff-first gaming-center operations app (404 Arena). One Flutter codebase, responsive on an Android phone and a counter tablet. Correctness of **timing, pricing and records** is the priority. Planning/phase checklist: `docs/PLAN.md`; unconfirmed business rules and their defaults: `docs/OWNER_CONFIRMATION.md`; backup/migration/release runbook: `docs/RELEASE.md`.
 
+**Product scope (SLC — simple, lovable, complete):** the Flutter app is **staff only** for now: the floor (start / switch / extend / end sessions, take payments, groups, bookings, controllers, members as their permissions allow). **Everything an owner does lives on the admin web dashboard** (`apps/admin/`): sales and reports, voids, stations, games, pricing, users, settings. Do not build owner features in the mobile app; owner screens there (Today, Money, Reports, Settings) are to be hidden later, not extended. Owner-side mobile comes back after the SLC.
+
 Repo layout:
 
 | Path | What |
 |---|---|
 | `apps/mobile/` (`lib/`, `test/`, platform dirs) | Flutter staff app — run every `flutter`/`dart` command from this folder |
 | `apps/admin/` | Angular 22 admin web app (standalone components, signals, Tailwind 4, Vitest). Its own rules live in `apps/admin/CLAUDE.md` (identical to its `AGENTS.md`) and load automatically when working in that folder — follow them for any Angular code. Run its commands from `apps/admin/` (`npm start`, `npm run build`, `npm test`). Prefer the `angular-cli` MCP server (root `.mcp.json`) over shelling out to `ng`. |
-| `supabase/` | Postgres backend: declarative schema (`schemas/`), generated migrations, pgTAP tests, seed. Map of tables/functions and the security model: `supabase/README.md` |
+| `supabase/` | Postgres backend: declarative schema (`schemas/`), generated migrations, pgTAP tests, seed, Edge Functions (`functions/`: `staff-admin` creates staff logins with the service-role key, server-side only). Map of tables/functions and the security model: `supabase/README.md` |
 | `design/` | Design references: `admin.html` = final admin design export (how to read it: `apps/admin/design/README.md`; build screens with `/design-build <screen>`); `404 Arena App (offline).html` = staff app design |
 | `.agents/skills/` (linked into `.claude/skills/`) | Agent skills installed with `npx skills add` (tracked in `skills-lock.json`): `supabase` and `supabase-postgres-best-practices`. Use them for any Supabase/Postgres work. |
 
@@ -47,7 +49,7 @@ To change the schema:
 
 Security conventions (asserted by `supabase/tests/13_security_hardening_test.sql`):
 - **Every object file states its client grants explicitly.** A new table/view/function/sequence file must end with `revoke all … from anon;` and `revoke all … from authenticated;` (then any deliberate grant). pg-delta's shadow database applies default privileges, so a missing explicit revoke turns into a generated `grant … to anon` — always check generated migrations for that.
-- `anon` can reach nothing. `authenticated` may only `select` tables (RLS: `to authenticated using (arena_id in (select app_arena_ids()))`) and execute the client API: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena`, `app_arena_ids`, `app_has_perm`, `app_is_owner`.
+- `anon` can reach nothing. `authenticated` may only `select` tables (RLS: `to authenticated using (arena_id in (select app_arena_ids()))`) and execute the client API: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `app_arena_ids`, `app_has_perm`, `app_is_owner`.
 - **All writes go through `sync_push`** → `_sync_apply` → an `op_*` function (`security definer`, `set search_path`, checks `_need(arena, perm)`). No insert/update/delete policies exist.
 - Views use `security_invoker = true`.
 
@@ -92,3 +94,7 @@ Local-first. The default build runs on Drift/SQLite only. `--dart-define-from-fi
 ## Tests
 
 `apps/mobile/test/` mirrors `lib/` (`domain/`, `data/local/`, `app/`, `features/`, plus `integration/`). Use `test/support/test_db.dart`: `seededMemoryDb()` for an in-memory seeded Drift DB and `testOverrides(db, clock: FakeClock(...), auth: TestStaffAuth.new)` for `ProviderScope` overrides (defaults to a signed-in owner and a no-op notification service). `test/support/pricing_fixtures.dart` holds pricing fixtures. Widget tests cover phone and desktop sizes.
+
+### Verification: automated only — the user does manual testing
+
+Verify changes with the automated checks only: `flutter analyze` + `flutter test` (mobile), `npm run build` + `npm test` (admin), `supabase test db --local` + advisors (backend). **Do not** do manual or visual testing yourself: no headless-browser/puppeteer screenshot scripts, no driving the running app, no inspecting build output (`dist/` bundles, chunk contents). The user tests the UI by hand; when a change is done, hand over the route/screen and a short checklist of what to click through instead.

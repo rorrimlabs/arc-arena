@@ -19,7 +19,9 @@ staff member only ever sees the arenas they are an active member of.
 | `seed.sql` | One owner-less dev arena with the starter catalog. Local only. |
 | `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station |
 | `audit/security_audit.sql` | Read-only report of the API surface (grants, SECURITY DEFINER, RLS) |
-| `config.toml` | Local stack (ports 5443x). Sign-up is off; pg-delta is on. |
+| `functions/staff-admin/` | Edge Function: an owner creates a staff login (already confirmed, starting password) from the admin dashboard. Verifies the caller with `app_is_owner`, then links with `add_member_by_email` (role staff or owner) **as the caller**; deletes the login again if linking fails. The only place the service-role key is used. |
+| `templates/confirmation.html` | Sign-up e-mail with the 6-digit `{{ .Token }}` the admin dashboard asks for |
+| `config.toml` | Local stack (ports 5443x). Sign-up on with e-mail code confirmation; pg-delta is on. |
 
 ## Changing the schema
 
@@ -51,11 +53,20 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   reports, settings`. `role = 'owner'` implies all. Holding `money` or `reports` makes a member
   *owner level* (`app_is_owner`, same rule as the app). Only owner-level members grant or remove
   `money`/`reports` or edit an owner-level member; nobody changes their own perms.
-- **Two routes to ownership, none to staff access.** A new arena owner signs up in the app,
-  confirms the e-mail with a 6-digit code, and calls `create_my_arena()` (confirmed logins only,
-  one owned arena per login). The operator can also attach an owner with `bootstrap_owner()`
-  (SQL editor, no limit). Both go through `_create_arena_with_owner`. A sign-up belongs to no
-  arena until then; owners link staff logins with `add_staff_by_email`.
+- **Two routes to ownership, none to staff access.** A new arena owner registers on the admin
+  dashboard (`apps/admin`), confirms the e-mail with a 6-digit code, and calls
+  `create_my_arena()` (confirmed logins only, one owned arena per login). The operator can also
+  attach an owner with `bootstrap_owner()` (SQL editor, no limit). Both go through
+  `_create_arena_with_owner`. A sign-up belongs to no arena until then. Owners add staff from the
+  dashboard's Users screen, as staff or (owners only) as a co-owner: the `staff-admin` Edge
+  Function creates the login and links it with `add_member_by_email`; `arena_staff()` lists
+  owners and staff with e-mails; changes go through
+  `sync_push` (`staff.update`). The floor app (`apps/mobile`) only signs in.
+- **Sales are read through owner-level RPCs.** The dashboard's Sales screen lists closed bills
+  (completed or voided sessions and groups, by close time, at most 93 days) with
+  `arena_sales()` and opens one with `arena_sale()` (charge lines, payments, void record); both
+  share the server-only `_sales()`. A void is a `session.void` / `group.void` op through
+  `sync_push`; it keeps the bill and its payments (voiding never refunds).
 - **History is append-only.** There are no delete policies; payments, moves, extensions and
   audit rows are only ever added.
 
@@ -80,7 +91,7 @@ cursor), stamped by the `sync_stamp` trigger; deletes leave a row in `sync_tombs
 
 | Group | Functions |
 |---|---|
-| **Client API** (`authenticated`) | `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena`, `app_arena_ids`, `app_has_perm`, `app_is_owner` |
+| **Client API** (`authenticated`) | `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `app_arena_ids`, `app_has_perm`, `app_is_owner` |
 | Operator only | `bootstrap_owner` |
 | Sync ops (`op_*`, via `sync_push`) | sessions: `op_session_start/_reconfigure/_extend/_end/_void`; groups: `op_group_create/_add/_switch/_end_player/_extend/_end/_void`; money: `op_payment`; pads: `op_controller_move/_upsert/_set_status`; customers & bookings: `op_customer_*`, `op_booking_*`; settings: `op_game_*`, `op_resource_*`, `op_rate_*`, `op_policy_save`, `op_settings_save`, `op_holiday_*`, `op_staff_update` |
 | Sync plumbing | `_sync_apply` (op kind → `op_*`), `_sync_sources` |
@@ -100,10 +111,11 @@ checks and which errors it raises; the same summary is stored as `comment on fun
 | `01_rls_authorization_test.sql` | Owner vs staff authorization, retired functions are gone |
 | `07_sync_ops_test.sql` | `sync_push` → `op_*` → `sync_pull` end to end |
 | `08_server_pricing_test.sql` | Server re-prices bills and refuses mismatches |
-| `09_account_provisioning_test.sql` | `bootstrap_owner`, `create_my_arena` (confirmation, names, one-arena limit), `add_staff_by_email` |
+| `09_account_provisioning_test.sql` | `bootstrap_owner`, `create_my_arena` (confirmation, names, one-arena limit), `add_staff_by_email`, `add_member_by_email` (co-owners), `arena_staff` |
 | `10_integrity_authz_test.sql` | Payments fit the bill, owner protection, pad-move permission |
 | `11_ported_floor_test.sql` | Sessions, payments and groups through `sync_push` |
 | `12_ported_pads_test.sql` | Controller allocation, borrowing and moves through `sync_push` |
 | `13_security_hardening_test.sql` | Client surface, RLS shape, owner-level perms, integrity checks |
+| `14_admin_sales_test.sql` | `arena_sales` / `arena_sale`: who may read, half-open close-time ranges, voided bills, group lines |
 
 Every file creates and isolates its own arena and rolls back.

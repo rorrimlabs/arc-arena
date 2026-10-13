@@ -1,5 +1,4 @@
-/// Cloud mode's root: sign in (or, for a new arena owner, sign up → confirm the
-/// e-mail code → create the arena) → pick the arena → open that arena's database on
+/// Cloud mode's root: sign in → pick the arena → open that arena's database on
 /// this device (downloading it the first time) → the normal app, with every
 /// repository recording sync ops and a sync engine running.
 ///
@@ -16,7 +15,6 @@ import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
-import 'package:arena_ops/app/sync/cloud_account_screens.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -41,17 +39,9 @@ typedef Membership = ({
   bool active,
 });
 
-enum _Phase {
-  checking,
-  signIn,
-  signUp,
-  verifyEmail,
-  createArena,
-  pickArena,
-  opening,
-  ready,
-  failed,
-}
+/// Staff-only app: there is no sign-up or arena creation here. Owners register
+/// and add staff logins on the admin dashboard (apps/admin).
+enum _Phase { checking, signIn, pickArena, opening, ready, failed }
 
 class CloudRoot extends StatefulWidget {
   const CloudRoot({required this.documentsPath, super.key});
@@ -67,16 +57,6 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   _Phase _phase = _Phase.checking;
   String? _message;
   List<Membership> _arenas = const [];
-
-  /// The login owns no arena yet, so create_my_arena may give it one.
-  bool _canCreateArena = false;
-
-  /// The e-mail waiting for its sign-up code.
-  String? _pendingEmail;
-
-  /// Just confirmed a new sign-up: with no arena yet, go straight to creating
-  /// one instead of the (empty) arena list.
-  bool _freshSignUp = false;
   ProviderContainer? _container;
   AppDatabase? _db;
   CloudBinding? _binding;
@@ -126,7 +106,6 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     _go(_Phase.checking);
     try {
       final rows = await _client.rpc('my_arenas') as List;
-      _canCreateArena = !rows.any((r) => (r as Map)['role'] == 'owner');
       _arenas = [
         for (final r in rows)
           (
@@ -139,8 +118,6 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       final active = _arenas.where((a) => a.active).toList();
       if (active.length == 1) {
         await _open(active.single);
-      } else if (_arenas.isEmpty && _freshSignUp && _canCreateArena) {
-        _go(_Phase.createArena);
       } else {
         _go(_Phase.pickArena);
       }
@@ -159,7 +136,9 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   Future<Membership?> _lastArenaOnDisk() async {
     final user = _client.auth.currentUser;
     if (user == null) return null;
-    final marker = File('${widget.documentsPath}/arena_ops_cloud_last_${user.id}');
+    final marker = File(
+      '${widget.documentsPath}/arena_ops_cloud_last_${user.id}',
+    );
     if (!marker.existsSync()) return null;
     final parts = marker.readAsStringSync().split('\n');
     if (parts.length < 2) return null;
@@ -181,43 +160,55 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       setState(() => _locked = safety);
       return;
     }
-    final db = AppDatabase(driftDatabase(
-      name: 'arena_ops_cloud',
-      native: DriftNativeOptions(databasePath: () async => dbPath),
-    ));
+    final db = AppDatabase(
+      driftDatabase(
+        name: 'arena_ops_cloud',
+        native: DriftNativeOptions(databasePath: () async => dbPath),
+      ),
+    );
     final clock = OffsetClock(const SystemClock(), Duration.zero);
     final engine = SyncEngine(
       db: db,
       transport: SupabaseSyncTransport(_client),
       arenaId: arena.arenaId,
     );
-    final recorder = SyncRecorder(db,
-        actor: () => user.id, clock: clock, onRecorded: engine.nudge);
+    final recorder = SyncRecorder(
+      db,
+      actor: () => user.id,
+      clock: clock,
+      onRecorded: engine.nudge,
+    );
 
     // First open on this device: the arena must come down before anything
     // can be shown (there is no local catalog to fall back on).
-    final cursor = await (db.select(db.syncMeta)
-          ..where((t) => t.key.equals(SyncEngine.cursorKey)))
-        .getSingleOrNull();
+    final cursor = await (db.select(
+      db.syncMeta,
+    )..where((t) => t.key.equals(SyncEngine.cursorKey))).getSingleOrNull();
     if (cursor == null) {
       _go(_Phase.opening, message: 'Downloading ${arena.arenaName}…');
       final first = await engine.syncNow();
       if (first.endedIn != SyncState.synced) {
         await engine.dispose();
         await db.close();
-        _go(_Phase.failed,
-            message: engine.status.message ??
-                'The first download needs a connection. Try again when online.');
+        _go(
+          _Phase.failed,
+          message:
+              engine.status.message ??
+              'The first download needs a connection. Try again when online.',
+        );
         return;
       }
     }
-    final me = await (db.select(db.users)..where((t) => t.id.equals(user.id)))
-        .getSingleOrNull();
+    final me = await (db.select(
+      db.users,
+    )..where((t) => t.id.equals(user.id))).getSingleOrNull();
     if (me == null || !me.active) {
       await engine.dispose();
       await db.close();
-      _go(_Phase.pickArena,
-          message: 'Your access to ${arena.arenaName} is turned off.');
+      _go(
+        _Phase.pickArena,
+        message: 'Your access to ${arena.arenaName} is turned off.',
+      );
       return;
     }
     File('${widget.documentsPath}/arena_ops_cloud_last_${user.id}')
@@ -232,30 +223,39 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       recorder: recorder,
       clock: clock,
       signOut: () => _signOut(),
-      addStaffByEmail: (email, name, perms) => _client.rpc('add_staff_by_email',
-          params: {
-            'p_arena': arena.arenaId,
-            'p_email': email,
-            'p_name': name,
-            'p_perms': perms,
-          }),
+      addStaffByEmail: (email, name, perms) => _client.rpc(
+        'add_staff_by_email',
+        params: {
+          'p_arena': arena.arenaId,
+          'p_email': email,
+          'p_name': name,
+          'p_perms': perms,
+        },
+      ),
       changePassword: (password) =>
           _client.auth.updateUser(UserAttributes(password: password)),
     );
-    final container = ProviderContainer(overrides: [
-      databaseProvider.overrideWithValue(db),
-      cloudBindingProvider.overrideWithValue(binding),
-      clockProvider.overrideWithValue(clock),
-      authControllerProvider.overrideWith(() => CloudAuthController(AppUser(
-            id: me.id,
-            name: me.name,
-            perms: Permission.parse(me.perms),
-          ))),
-      clockOffsetProvider.overrideWith((ref) {
-        final offset = ref.watch(_serverOffsetProvider).value ?? Duration.zero;
-        return ClockOffset(offset);
-      }),
-    ]);
+    final container = ProviderContainer(
+      overrides: [
+        databaseProvider.overrideWithValue(db),
+        cloudBindingProvider.overrideWithValue(binding),
+        clockProvider.overrideWithValue(clock),
+        authControllerProvider.overrideWith(
+          () => CloudAuthController(
+            AppUser(
+              id: me.id,
+              name: me.name,
+              perms: Permission.parse(me.perms),
+            ),
+          ),
+        ),
+        clockOffsetProvider.overrideWith((ref) {
+          final offset =
+              ref.watch(_serverOffsetProvider).value ?? Duration.zero;
+          return ClockOffset(offset);
+        }),
+      ],
+    );
     // Follow the server clock once it is off by more than the warning
     // threshold — then every device stamps sessions on the same clock.
     _statusSub = engine.statusStream.listen((s) {
@@ -273,52 +273,16 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     _go(_Phase.ready);
   }
 
-  // ------------------------------------------------ new arena owner sign-up
-
-  Future<void> _signUp(String email, String password) async {
-    final res = await _client.auth.signUp(email: email, password: password);
-    _pendingEmail = email;
-    if (res.session != null) {
-      // The server does not ask for confirmation: already signed in.
-      _freshSignUp = true;
-      await _loadArenas();
-      return;
-    }
-    _go(_Phase.verifyEmail);
-  }
-
-  Future<void> _verifyEmail(String code) async {
-    await _client.auth.verifyOTP(
-        type: OtpType.signup, email: _pendingEmail!, token: code);
-    _freshSignUp = true;
-    await _loadArenas();
-  }
-
-  Future<void> _createArena(String arenaName, String ownerName) async {
-    await _client.rpc('create_my_arena',
-        params: {'p_arena_name': arenaName, 'p_owner_name': ownerName});
-    _freshSignUp = false;
-    await _loadArenas(); // one active membership: opens it
-  }
-
-  /// Signs out from a screen before an arena is open (nothing to tear down).
-  Future<void> _leave() async {
-    try {
-      await _client.auth.signOut();
-    } on Object catch (_) {
-      // Offline: the local session is cleared regardless.
-    }
-    _freshSignUp = false;
-    _pendingEmail = null;
-    _go(_Phase.signIn);
-  }
-
   Future<void> _applyClockOffset(AppDatabase db, OffsetClock clock) async {
-    final row = await (db.select(db.syncMeta)
-          ..where((t) => t.key.equals(SyncEngine.clockOffsetKey)))
-        .getSingleOrNull();
-    final measured = Duration(milliseconds: int.tryParse(row?.value ?? '') ?? 0);
-    clock.offset = ClockOffset(measured).isSignificant ? measured : Duration.zero;
+    final row = await (db.select(
+      db.syncMeta,
+    )..where((t) => t.key.equals(SyncEngine.clockOffsetKey))).getSingleOrNull();
+    final measured = Duration(
+      milliseconds: int.tryParse(row?.value ?? '') ?? 0,
+    );
+    clock.offset = ClockOffset(measured).isSignificant
+        ? measured
+        : Duration.zero;
   }
 
   Future<void> _initReminders(ProviderContainer container) async {
@@ -375,47 +339,27 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       themeMode: ThemeMode.dark,
       home: switch (_phase) {
         _Phase.signIn => CloudSignInScreen(
-            signIn: (email, password) =>
-                _client.auth.signInWithPassword(email: email, password: password),
-            onSignedIn: _loadArenas,
-            notice: _message,
-            onCreateAccount: () => _go(_Phase.signUp),
-            onUnconfirmed: (email) {
-              _pendingEmail = email;
-              _go(_Phase.verifyEmail);
-            },
-          ),
-        _Phase.signUp => CloudSignUpScreen(
-            signUp: _signUp,
-            onBack: () => _go(_Phase.signIn),
-          ),
-        _Phase.verifyEmail => CloudVerifyEmailScreen(
-            email: _pendingEmail ?? '',
-            verify: _verifyEmail,
-            resend: () =>
-                _client.auth.resend(type: OtpType.signup, email: _pendingEmail),
-            onBack: () => _go(_Phase.signIn),
-          ),
-        _Phase.createArena => CloudCreateArenaScreen(
-            email: _client.auth.currentUser?.email ?? '',
-            createArena: _createArena,
-            onBack: () => _go(_Phase.pickArena),
-          ),
+          signIn: (email, password) =>
+              _client.auth.signInWithPassword(email: email, password: password),
+          onSignedIn: _loadArenas,
+          notice: _message,
+        ),
         _Phase.pickArena => CloudArenaPickScreen(
-            arenas: _arenas,
-            message: _message,
-            email: _client.auth.currentUser?.email ?? '',
-            onPick: _open,
-            onRefresh: _loadArenas,
-            onSignOut: _leave,
-            onCreateArena:
-                _canCreateArena ? () async => _go(_Phase.createArena) : null,
-          ),
+          arenas: _arenas,
+          message: _message,
+          email: _client.auth.currentUser?.email ?? '',
+          onPick: _open,
+          onRefresh: _loadArenas,
+          onSignOut: () async {
+            await _client.auth.signOut();
+            _go(_Phase.signIn);
+          },
+        ),
         _Phase.failed => _Message(
-            text: _message ?? 'Something went wrong.',
-            action: 'Try again',
-            onAction: _loadArenas,
-          ),
+          text: _message ?? 'Something went wrong.',
+          action: 'Try again',
+          onAction: _loadArenas,
+        ),
         _ => _Message(text: _message ?? 'Checking your account…'),
       },
     );
@@ -434,28 +378,19 @@ final _serverOffsetProvider = StreamProvider<Duration>((ref) async* {
 
 // ------------------------------------------------------------------ screens
 
-/// The cloud-mode entry screen. Staff sign in with the login their owner
-/// created and linked (Settings → Staff); a new arena owner can create an
-/// account instead ([onCreateAccount], cloud_account_screens.dart).
+/// The cloud-mode entry screen: sign in, nothing else. Staff use the login
+/// their owner created for them on the admin dashboard (Staff → Add).
 class CloudSignInScreen extends StatefulWidget {
   const CloudSignInScreen({
     required this.signIn,
     required this.onSignedIn,
     this.notice,
-    this.onCreateAccount,
-    this.onUnconfirmed,
     super.key,
   });
 
   /// Signs in with e-mail + password (Supabase in the app; a fake in tests).
   final Future<void> Function(String email, String password) signIn;
   final Future<void> Function() onSignedIn;
-
-  /// Opens sign-up for a new arena owner; no link when null.
-  final VoidCallback? onCreateAccount;
-
-  /// The login exists but its e-mail was never confirmed: go enter the code.
-  final void Function(String email)? onUnconfirmed;
 
   /// Why the device came back here (e.g. access turned off), if it was not
   /// the person's own choice.
@@ -487,11 +422,6 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
       await widget.signIn(_email.text.trim(), _password.text);
       await widget.onSignedIn();
     } on AuthException catch (e) {
-      final unconfirmed = widget.onUnconfirmed;
-      if (e.code == 'email_not_confirmed' && unconfirmed != null) {
-        unconfirmed(_email.text.trim());
-        return;
-      }
       if (mounted) setState(() => _error = e.message);
     } on Object catch (e) {
       if (mounted) setState(() => _error = 'Could not reach the server ($e).');
@@ -512,20 +442,22 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
               shrinkWrap: true,
               padding: const EdgeInsets.all(AppSpacing.xl),
               children: [
-                Text('Sign in', style: ArenaType.h1.copyWith(color: arena.text)),
+                Text(
+                  'Sign in',
+                  style: ArenaType.h1.copyWith(color: arena.text),
+                ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  widget.onCreateAccount == null
-                      ? 'Use the login the owner created for you. No account '
-                          'yet? Ask the owner.'
-                      : 'Staff: use the login your owner created for you. '
-                          'Opening a new arena? Create an account.',
+                  'Use the login the owner created for you. No account yet? '
+                  'Ask the owner.',
                   style: ArenaType.body.copyWith(color: arena.textMuted),
                 ),
                 if (widget.notice != null) ...[
                   const SizedBox(height: AppSpacing.md),
-                  Text(widget.notice!,
-                      style: ArenaType.label.copyWith(color: arena.warning)),
+                  Text(
+                    widget.notice!,
+                    style: ArenaType.label.copyWith(color: arena.warning),
+                  ),
                 ],
                 const SizedBox(height: AppSpacing.xl),
                 TextField(
@@ -547,21 +479,16 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
                 ),
                 if (_error != null) ...[
                   const SizedBox(height: AppSpacing.md),
-                  Text(_error!, style: ArenaType.label.copyWith(color: arena.danger)),
+                  Text(
+                    _error!,
+                    style: ArenaType.label.copyWith(color: arena.danger),
+                  ),
                 ],
                 const SizedBox(height: AppSpacing.xl),
                 FilledButton(
                   onPressed: _busy ? null : _submit,
                   child: const Text('Sign in'),
                 ),
-                if (widget.onCreateAccount != null) ...[
-                  const SizedBox(height: AppSpacing.md),
-                  TextButton(
-                    key: const Key('cloud-create-account'),
-                    onPressed: _busy ? null : widget.onCreateAccount,
-                    child: const Text('Create an account'),
-                  ),
-                ],
               ],
             ),
           ),
@@ -571,8 +498,8 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
   }
 }
 
-/// The arenas this login belongs to. A login that owns no arena may create
-/// one ([onCreateArena], create_my_arena); staff are added by their owner.
+/// The arenas this login belongs to. Arenas are not created here: owners
+/// register and create their arena on the admin dashboard.
 class CloudArenaPickScreen extends StatelessWidget {
   const CloudArenaPickScreen({
     required this.arenas,
@@ -581,7 +508,6 @@ class CloudArenaPickScreen extends StatelessWidget {
     required this.onRefresh,
     required this.onSignOut,
     this.message,
-    this.onCreateArena,
     super.key,
   });
 
@@ -592,10 +518,6 @@ class CloudArenaPickScreen extends StatelessWidget {
   final Future<void> Function() onRefresh;
   final Future<void> Function() onSignOut;
 
-  /// Starts creating this login's own arena; hidden when null (it already
-  /// owns one).
-  final Future<void> Function()? onCreateArena;
-
   @override
   Widget build(BuildContext context) {
     final arena = context.arena;
@@ -604,13 +526,21 @@ class CloudArenaPickScreen extends StatelessWidget {
         child: ListView(
           padding: const EdgeInsets.all(AppSpacing.xl),
           children: [
-            Text('Your arenas', style: ArenaType.h1.copyWith(color: arena.text)),
+            Text(
+              'Your arenas',
+              style: ArenaType.h1.copyWith(color: arena.text),
+            ),
             const SizedBox(height: AppSpacing.sm),
-            Text('Signed in as $email',
-                style: ArenaType.caption.copyWith(color: arena.textMuted)),
+            Text(
+              'Signed in as $email',
+              style: ArenaType.caption.copyWith(color: arena.textMuted),
+            ),
             if (message != null) ...[
               const SizedBox(height: AppSpacing.md),
-              Text(message!, style: ArenaType.label.copyWith(color: arena.warning)),
+              Text(
+                message!,
+                style: ArenaType.label.copyWith(color: arena.warning),
+              ),
             ],
             const SizedBox(height: AppSpacing.lg),
             for (final a in arenas)
@@ -624,21 +554,11 @@ class CloudArenaPickScreen extends StatelessWidget {
             if (arenas.isEmpty)
               Text(
                 'This login has no arena access yet. Ask the owner to add '
-                '$email in Settings → Staff, then refresh.',
+                '$email on the owner dashboard (Staff), then refresh.',
                 style: ArenaType.body.copyWith(color: arena.textMuted),
               ),
             const SizedBox(height: AppSpacing.md),
             OutlinedButton(onPressed: onRefresh, child: const Text('Refresh')),
-            if (onCreateArena != null) ...[
-              const SizedBox(height: AppSpacing.xl),
-              Text('Opening your own arena?',
-                  style: ArenaType.body.copyWith(color: arena.textMuted)),
-              const SizedBox(height: AppSpacing.sm),
-              FilledButton(
-                onPressed: onCreateArena,
-                child: const Text('Create a new arena'),
-              ),
-            ],
             const SizedBox(height: AppSpacing.xxl),
             TextButton(onPressed: onSignOut, child: const Text('Sign out')),
           ],
@@ -669,9 +589,11 @@ class _Message extends StatelessWidget {
                   const CircularProgressIndicator(),
                   const SizedBox(height: AppSpacing.lg),
                 ],
-                Text(text,
-                    textAlign: TextAlign.center,
-                    style: ArenaType.body.copyWith(color: arena.text)),
+                Text(
+                  text,
+                  textAlign: TextAlign.center,
+                  style: ArenaType.body.copyWith(color: arena.text),
+                ),
                 if (action != null) ...[
                   const SizedBox(height: AppSpacing.lg),
                   FilledButton(onPressed: onAction, child: Text(action!)),
