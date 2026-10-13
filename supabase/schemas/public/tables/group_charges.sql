@@ -105,11 +105,12 @@ create trigger t_same_arena
     public._assert_same_arena('assignment_id', 'group_assignments', 'group_id', 'group_sessions',
     'resource_id', 'resources');
 
--- Members read their arenas' rows. No write policy: clients change data only through sync_push.
+-- Readable by an active member holding bill, or owner level (money/reports): bill lines are financial records.
+-- No write policy: clients change data only through sync_push.
 create policy "p_sel_group_charges" on "public"."group_charges"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids_with(ARRAY['bill'::text, 'money'::text, 'reports'::text]) as app_arena_ids_with)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_charges"

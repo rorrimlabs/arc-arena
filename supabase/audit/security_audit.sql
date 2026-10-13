@@ -45,8 +45,15 @@ unexpected_api as (  -- anything signed-in users can call beyond the known API
    where n.nspname = 'public' and has_function_privilege('authenticated', p.oid, 'EXECUTE')
      and p.oid not in (select objid from pg_depend where deptype = 'e')
      and p.proname not in ('sync_push', 'sync_pull', 'sync_fetch_entity', 'my_arenas',
-       'add_staff_by_email', 'app_arena_ids', 'app_owner_arena_ids',
-       'app_is_owner', 'app_has_perm')),
+       'create_my_arena', 'invite_member', 'accept_invite', 'revoke_invite', 'arena_invites',
+       'arena_staff', 'arena_sales', 'arena_sale', 'arena_pricing', 'app_is_owner')),
+definer_api as (     -- Security Advisor 0028/0029: client API bodies live in `private`
+  select 'FAIL', 'SECURITY DEFINER function in public executable by a client role',
+         p.oid::regprocedure::text
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public' and p.prosecdef
+     and (has_function_privilege('authenticated', p.oid, 'EXECUTE')
+          or has_function_privilege('anon', p.oid, 'EXECUTE'))),
 open_policy as (     -- every policy must key off arena membership
   select 'FAIL', 'policy not scoped to arena membership', c.relname || '.' || pol.polname
     from pg_policy pol join pg_class c on c.oid = pol.polrelid
@@ -64,6 +71,6 @@ ext as (
     from pg_extension)
 select * from writable union all select * from no_rls union all select * from views
 union all select * from definer_path union all select * from anon_exec
-union all select * from unexpected_api union all select * from open_policy
+union all select * from unexpected_api union all select * from definer_api union all select * from open_policy
 union all select * from api union all select * from ext
 order by 1, 2, 3;

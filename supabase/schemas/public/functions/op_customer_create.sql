@@ -3,7 +3,8 @@
 --
 -- Permission: start OR members.
 -- Payload: id, name, phone?, notes, last_visit_at?, is_guest? (default false), created_at?
---   (default server time).
+--   (default server time), birth_year? (1900 to the current year).
+-- Checks / errors: invalid_birth_year (before 1900 or in the future).
 -- Checks / errors: forbidden; duplicate (id reused, or a concurrent insert of the same phone). A
 --   phone already on another customer is not an error: the row is kept without the phone and the
 --   clash audited.
@@ -24,18 +25,23 @@ declare
   v_phone text := nullif(btrim(p->>'phone'), '');
   v_other uuid;
 begin
-  if not (app_has_perm(p_arena, 'start') or app_has_perm(p_arena, 'members')) then
+  if not (private.app_has_perm(p_arena, 'start') or private.app_has_perm(p_arena, 'members')) then
     raise exception 'forbidden' using errcode = '42501', hint = 'needs start or members';
   end if;
   -- A phone already in use (two devices registering the same person offline) must not sink
   -- the sessions that reference this customer: keep the row phone-less and audit the clash.
+  if (p->>'birth_year') is not null and ((p->>'birth_year')::int < 1900
+      or (p->>'birth_year')::int > extract(year from v_now at time zone 'Asia/Kolkata')) then
+    raise exception 'invalid_birth_year' using hint = '1900 to this year';
+  end if;
   if v_phone is not null then
     select id into v_other from customers where arena_id = p_arena and phone = v_phone;
   end if;
-  insert into customers(id, arena_id, name, phone, notes, last_visit_at, is_guest, created_at, updated_at)
+  insert into customers(id, arena_id, name, phone, notes, last_visit_at, is_guest, created_at, updated_at,
+      birth_year)
     values ((p->>'id')::uuid, p_arena, p->>'name', case when v_other is null then v_phone end,
       p->>'notes', (p->>'last_visit_at')::timestamptz, coalesce((p->>'is_guest')::boolean, false),
-      coalesce((p->>'created_at')::timestamptz, v_now), v_now);
+      coalesce((p->>'created_at')::timestamptz, v_now), v_now, (p->>'birth_year')::smallint);
   if v_other is not null then
     insert into audit_log(arena_id, entity_type, entity_id, action, reason, after, created_by, created_at)
       values (p_arena, 'customer', (p->>'id')::uuid, 'duplicate_phone_on_sync',

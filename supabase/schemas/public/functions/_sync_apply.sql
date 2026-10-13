@@ -66,6 +66,7 @@ begin
       when 'holiday.upsert'       then op_holiday_upsert(p_arena, p)
       when 'holiday.delete'       then op_holiday_delete(p_arena, p)
       when 'staff.update'         then op_staff_update(p_arena, p)
+      when 'arena.update'         then op_arena_update(p_arena, p)
       else null
     end;
 

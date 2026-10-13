@@ -1,7 +1,7 @@
 -- Account provisioning. Two routes to ownership: bootstrap_owner (operator, SQL
 -- editor, database access only) and create_my_arena (app sign-up: a confirmed
--- login creates one arena). Staff logins are never created by the database:
--- add_staff_by_email only links an existing login.
+-- login creates one arena). Everyone else joins by accepting an invitation
+-- (17_staff_invites_test.sql): no function links an existing login silently.
 begin;
 create extension if not exists pgtap;
 select * from no_plan();
@@ -43,8 +43,10 @@ select ok(not has_function_privilege('authenticated', 'bootstrap_owner(text,text
   'bootstrap_owner is not callable by a signed-in login');
 select ok(not has_function_privilege('anon', 'bootstrap_owner(text,text,text)', 'EXECUTE'),
   'bootstrap_owner is not callable by anon');
-select ok(has_function_privilege('authenticated', 'add_staff_by_email(uuid,text,text,text[])', 'EXECUTE'),
-  'add_staff_by_email stays the client API (it checks owner itself)');
+select hasnt_function('public', f, f || ' is gone: an existing login is never linked without consent')
+from unnest(array['add_staff_by_email', 'add_member_by_email']) f;
+select hasnt_function('private', f, f || ' is gone from private too')
+from unnest(array['add_staff_by_email', 'add_member_by_email']) f;
 
 -- ------------------------------------------ initial owner (database access)
 select throws_ok($$ select bootstrap_owner('nobody09@shop.invalid', 'X') $$,
@@ -59,43 +61,40 @@ select is((select role || '/' || array_length(perms, 1) from staff_profiles sp j
 select is(pg_temp.catalog_rows((select id from arenas where name = 'Shop 09')), 0,
   'the new arena starts empty: no types, prices, stations, games or controllers');
 
--- ---------------------------------------------- staff: link, never create
--- The fixture arena's owner is the dashboard login 01.
+-- ------------------------------------- staff join only through invitations
+-- The fixture arena's owner is the dashboard login 01; 02 joined as staff
+-- (inserted directly here — the invitation flow itself is 17's subject).
 insert into staff_profiles(arena_id, user_id, name, role, perms)
   values ('e0000000-0000-4000-8000-000000000009'::uuid, '91000000-0000-4000-8000-000000000001',
-    'Owner', 'owner', array['start','bill','discount','members','stations','money','reports','settings']);
-select set_config('request.jwt.claims',
-  '{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+    'Owner', 'owner', array['start','bill','discount','members','stations','money','reports','settings']),
+  ('e0000000-0000-4000-8000-000000000009'::uuid, '91000000-0000-4000-8000-000000000002',
+    'Alan', 'staff', array['start','bill','discount','members']);
 
 create temp table n_users as select count(*) as n from auth.users;
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'never-made09@shop.invalid', 'Ghost', array['start']) $$,
-  'no_account', 'an unknown e-mail is refused');
+select set_config('request.jwt.claims',
+  '{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
+select lives_ok($$ select invite_member('e0000000-0000-4000-8000-000000000009'::uuid,
+    'never-made09@shop.invalid', 'Ghost', 'staff', array['start']) $$,
+  'an owner can invite an address that has no login');
 select is((select count(*) from auth.users), (select n from n_users),
-  'add_staff_by_email never creates a login');
-select is(add_staff_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    ' Staff09@Shop.Invalid ', 'Alan', array['start','bill','discount','members']),
-  '91000000-0000-4000-8000-000000000002'::uuid, 'an owner links an existing login (trimmed, any case)');
-select is((select role || ':' || array_to_string(perms, ',') from staff_profiles
-            where arena_id = 'e0000000-0000-4000-8000-000000000009'::uuid
-              and user_id = '91000000-0000-4000-8000-000000000002'),
-  'staff:start,bill,discount,members', 'with exactly the permissions the owner chose');
-select is((select count(*) from auth.users), (select n from n_users),
-  'still no login created');
+  'inviting never creates (or touches) a login in the database');
+select is((select count(*)::int from staff_profiles
+            where arena_id = 'e0000000-0000-4000-8000-000000000009'::uuid),
+  2, 'and adds nobody to the arena until the invite is accepted');
 
--- A staff login cannot add people, even to its own arena.
+-- A staff login cannot invite people, even to its own arena.
 select set_config('request.jwt.claims',
   '{"sub":"91000000-0000-4000-8000-000000000002","role":"authenticated"}', true);
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'pending09@shop.invalid', 'X', array['money']) $$,
-  '42501', null, 'staff cannot add (or promote) anyone');
+select throws_ok($$ select invite_member('e0000000-0000-4000-8000-000000000009'::uuid,
+    'pending09@shop.invalid', 'X', 'staff', array['money']) $$,
+  '42501', null, 'staff without Settings cannot invite (or promote) anyone');
 -- And a login with no membership at all sees and changes nothing.
 select set_config('request.jwt.claims',
   '{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated"}', true);
 select is(my_arenas(), '[]'::jsonb, 'a login with no membership belongs to no arena');
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'pending09@shop.invalid', 'X', array['money']) $$,
-  '42501', null, 'a non-member cannot add anyone');
+select throws_ok($$ select invite_member('e0000000-0000-4000-8000-000000000009'::uuid,
+    'pending09@shop.invalid', 'X', 'staff', array['start']) $$,
+  '42501', null, 'a non-member cannot invite anyone');
 select throws_ok($$ select sync_pull('e0000000-0000-4000-8000-000000000009'::uuid) $$,
   '42501', null, 'a non-member cannot read the arena');
 
@@ -183,43 +182,6 @@ select throws_ok($$ select arena_staff('e0000000-0000-4000-8000-000000000009'::u
   '42501', null, 'staff cannot list e-mails');
 select ok(not has_function_privilege('anon', 'arena_staff(uuid)', 'EXECUTE'),
   'arena_staff is not callable signed out');
-
--- --------------------------------- add_member_by_email: staff or co-owner
--- 01 owns the fixture arena; 02 is staff there; 04 owns its own arena (signup09).
-select set_config('request.jwt.claims',
-  '{"sub":"91000000-0000-4000-8000-000000000001","role":"authenticated"}', true);
-select throws_ok($$ select add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'signup09@shop.invalid', 'S', 'admin', array['start']) $$,
-  'invalid_role', 'role must be staff or owner');
-select is(add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'signup09@shop.invalid', 'Sam', 'owner', null),
-  '91000000-0000-4000-8000-000000000004'::uuid, 'an owner adds a co-owner');
-select is((select role || '/' || array_length(perms, 1) || '/' || active from staff_profiles
-            where arena_id = 'e0000000-0000-4000-8000-000000000009'::uuid
-              and user_id = '91000000-0000-4000-8000-000000000004'),
-  'owner/8/true', 'the co-owner has every permission');
-select throws_ok($$ select add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'signup09@shop.invalid', 'Sam', 'staff', array['start']) $$,
-  'owner_profile', 'an owner cannot be turned back into staff this way');
-select is(add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'staff09@shop.invalid', 'Alan', 'owner', null),
-  '91000000-0000-4000-8000-000000000002'::uuid, 'existing staff are promoted to owner');
-select is((select role from staff_profiles
-            where arena_id = 'e0000000-0000-4000-8000-000000000009'::uuid
-              and user_id = '91000000-0000-4000-8000-000000000002'),
-  'owner', 'and are now an owner');
--- An owner-level staff member (money) may add staff but not owners.
-insert into staff_profiles(arena_id, user_id, name, role, perms)
-  values ('e0000000-0000-4000-8000-000000000009'::uuid, '91000000-0000-4000-8000-000000000003',
-    'Manager', 'staff', array['start', 'money']);
-update auth.users set email_confirmed_at = now() where id = '91000000-0000-4000-8000-000000000003';
-select set_config('request.jwt.claims',
-  '{"sub":"91000000-0000-4000-8000-000000000003","role":"authenticated"}', true);
-select throws_ok($$ select add_member_by_email('e0000000-0000-4000-8000-000000000009'::uuid,
-    'owner09@shop.invalid', 'X', 'owner', null) $$,
-  '42501', null, 'owner-level staff cannot make owners');
-select ok(not has_function_privilege('anon', 'add_member_by_email(uuid,text,text,text,text[])', 'EXECUTE'),
-  'add_member_by_email is not callable signed out');
 
 select * from finish();
 rollback;

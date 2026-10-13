@@ -1,90 +1,137 @@
-// staff-admin — an arena owner creates a user's login (staff or co-owner) from the admin dashboard.
+// staff-admin — an owner invites someone (staff or co-owner) to the arena from the admin dashboard.
 //
-// POST { arena_id, email, name, password, role: 'staff' | 'owner', perms } with the owner's
-// session as the Bearer token.
+// POST { arena_id, email, name, role: 'staff' | 'owner', perms } with the caller's session as the
+// Bearer token. Nobody is attached to an arena here and nobody's password is chosen by an owner:
 //
-// 1. Verifies the caller's session and that they are owner level in arena_id (app_is_owner,
-//    called as the caller, so RLS and the database's own rules decide).
-// 2. Creates the login with the service-role key: already confirmed, with the starting password
-//    the owner chose. If a login with that e-mail already exists it is left untouched (its
-//    password is never changed: the person may belong to other arenas) and only linked.
-// 3. Links it to the arena with add_member_by_email, again called AS THE OWNER, so every
-//    database check (owner level; only an owner adds an owner; known perms; settings holder)
-//    still applies.
-//    If linking fails, a login created in step 2 is deleted again.
+// 1. Verifies the caller's session (auth.getUser — a real check against Auth, which is why the
+//    function is deployed with --no-verify-jwt).
+// 2. Creates the invitation with invite_member, called AS THE CALLER, so the database decides
+//    (Settings to invite staff, owner level for money/reports, an owner to invite an owner). It
+//    returns a one-time token; only its SHA-256 is stored.
+// 3. E-mails the link <ADMIN_SITE_URL or Origin>/accept-invite?invite=<id>&token=<token> to the
+//    invited address through Supabase Auth, so only the address's owner receives it:
+//      no login uses the address  → Auth invite e-mail (creates the login, unconfirmed until the
+//                                    link is opened; the person sets their own password);
+//      an unconfirmed login        → its password is scrubbed first (whoever signed it up may not
+//                                    own the address), then the invite e-mail;
+//      a confirmed login           → a sign-in (magic) link, so they accept as themselves.
+//    If the e-mail cannot be sent the invite is withdrawn again.
+// 4. Replies the same way whichever case applied, so the response says nothing about whether an
+//    address has an account: 200 { status: 'sent', invite_id, expires_at }.
+// Membership is created only by accept_invite, when the invited, confirmed login presents the
+// token (admin /accept-invite page).
 //
-// The service-role key lives only in this function's environment; it never reaches a browser
-// or the app. Responses: 200 { user_id, created }, or 4xx/5xx { error: <code>, message }.
-import { createClient } from 'npm:@supabase/supabase-js@2';
+// The service-role key lives only in this function's environment and is used for exactly three
+// things: invite_delivery_target (which e-mail to send), scrubbing an unconfirmed login's
+// password, and sending the Auth invite. Errors: 4xx/5xx { error: <code>, message }; database
+// details are never echoed. Optional env: ADMIN_SITE_URL (base of the link), ADMIN_ORIGINS
+// (comma-separated origins allowed by CORS; unset = any origin, for local development).
+import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 
-const CORS = {
-  'Access-Control-Allow-Origin': '*',
-  'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
-  'Access-Control-Allow-Methods': 'POST, OPTIONS',
-};
-
-const MIN_PASSWORD = 10;
 const MAX_NAME = 80;
 
-function reply(status: number, body: Record<string, unknown>): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { ...CORS, 'Content-Type': 'application/json' },
-  });
+function allowedOrigin(origin: string | null): string | null {
+  const list = (Deno.env.get('ADMIN_ORIGINS') ?? '')
+    .split(',')
+    .map((o) => o.trim())
+    .filter((o) => o.length > 0);
+  if (list.length === 0) return origin ?? '*';
+  return origin !== null && list.includes(origin) ? origin : null;
 }
 
-const fail = (status: number, error: string, message: string) => reply(status, { error, message });
+function corsHeaders(origin: string | null): Record<string, string> {
+  const allow = allowedOrigin(origin);
+  return {
+    ...(allow ? { 'Access-Control-Allow-Origin': allow } : {}),
+    'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    Vary: 'Origin',
+  };
+}
 
-interface CreateStaff {
+interface Invite {
   arena_id: string;
   email: string;
   name: string;
-  password: string;
   role: 'staff' | 'owner';
   perms: string[];
 }
 
-function parse(body: unknown): CreateStaff | string {
+function parse(body: unknown): Invite | string {
   if (typeof body !== 'object' || body === null) return 'Send a JSON object.';
   const b = body as Record<string, unknown>;
+  if ('password' in b) return 'Owners no longer set passwords: the invited person chooses their own.';
   const arena = typeof b.arena_id === 'string' ? b.arena_id : '';
   const email = typeof b.email === 'string' ? b.email.trim().toLowerCase() : '';
   const name = typeof b.name === 'string' ? b.name.trim() : '';
-  const password = typeof b.password === 'string' ? b.password : '';
-  const perms = Array.isArray(b.perms) && b.perms.every((p) => typeof p === 'string') ? b.perms : null;
+  const perms =
+    Array.isArray(b.perms) && b.perms.every((p) => typeof p === 'string') ? b.perms : null;
   const role = b.role === undefined ? 'staff' : b.role;
   if (role !== 'staff' && role !== 'owner') return 'role must be staff or owner.';
   if (!/^[0-9a-f-]{36}$/i.test(arena)) return 'arena_id must be a uuid.';
-  if (!/^\S+@\S+\.\S+$/.test(email)) return 'Enter a valid email';
-  if (name.length < 2 || name.length > MAX_NAME) return 'Enter a name';
-  if (password.length < MIN_PASSWORD || !/[A-Za-z]/.test(password) || !/[0-9]/.test(password)) {
-    return `Use at least ${MIN_PASSWORD} characters with letters and digits`;
-  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return 'Enter a valid email';
+  if (name.length < 1 || name.length > MAX_NAME) return 'Enter a name';
   if (perms === null) return 'perms must be a list of permission codes.';
-  return { arena_id: arena, email, name, password, role, perms: perms as string[] };
+  return { arena_id: arena, email, name, role, perms: perms as string[] };
+}
+
+/** The page the invitation link opens (the admin dashboard's /accept-invite). */
+function acceptUrl(req: Request, inviteId: string, token: string): string | null {
+  const base = Deno.env.get('ADMIN_SITE_URL') ?? req.headers.get('Origin') ?? '';
+  let url: URL;
+  try {
+    url = new URL('/accept-invite', base);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return null;
+  url.searchParams.set('invite', inviteId);
+  url.searchParams.set('token', token);
+  return url.toString();
+}
+
+function randomSecret(): string {
+  const bytes = crypto.getRandomValues(new Uint8Array(32));
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('') + 'Aa1';
 }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: CORS });
+  const cors = corsHeaders(req.headers.get('Origin'));
+  const reply = (status: number, body: Record<string, unknown>) =>
+    new Response(JSON.stringify(body), {
+      status,
+      headers: { ...cors, 'Content-Type': 'application/json' },
+    });
+  const fail = (status: number, error: string, message: string) =>
+    reply(status, { error, message });
+
+  if (req.method === 'OPTIONS') return new Response(null, { status: 204, headers: cors });
   if (req.method !== 'POST') return fail(405, 'method_not_allowed', 'Use POST.');
+  if (allowedOrigin(req.headers.get('Origin')) === null) {
+    return fail(403, 'origin_not_allowed', 'This site may not call the function.');
+  }
 
   const url = Deno.env.get('SUPABASE_URL');
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
-  if (!url || !anonKey || !serviceKey) return fail(500, 'misconfigured', 'Function environment is incomplete.');
+  if (!url || !anonKey || !serviceKey) {
+    return fail(500, 'misconfigured', 'Function environment is incomplete.');
+  }
 
   const auth = req.headers.get('Authorization') ?? '';
   if (!auth.startsWith('Bearer ')) return fail(401, 'unauthorized', 'Sign in first.');
 
-  // Everything the owner does runs as the owner; only createUser/deleteUser use the admin client.
-  const asOwner = createClient(url, anonKey, {
+  // Everything the caller decides runs as the caller; the admin client only delivers e-mail.
+  const asCaller = createClient(url, anonKey, {
     global: { headers: { Authorization: auth } },
     auth: { persistSession: false, autoRefreshToken: false },
   });
-  const { data: who, error: whoErr } = await asOwner.auth.getUser(auth.slice('Bearer '.length));
-  if (whoErr || !who.user) return fail(401, 'unauthorized', 'Your session has expired. Sign in again.');
+  const { data: who, error: whoErr } = await asCaller.auth.getUser(auth.slice('Bearer '.length));
+  if (whoErr || !who.user) {
+    return fail(401, 'unauthorized', 'Your session has expired. Sign in again.');
+  }
 
-  let input: CreateStaff | string;
+  let input: Invite | string;
   try {
     input = parse(await req.json());
   } catch {
@@ -92,40 +139,81 @@ Deno.serve(async (req) => {
   }
   if (typeof input === 'string') return fail(400, 'invalid_input', input);
 
-  const { data: isOwner, error: ownerErr } = await asOwner.rpc('app_is_owner', { p_arena: input.arena_id });
-  if (ownerErr) return fail(500, 'server_error', ownerErr.message);
-  if (isOwner !== true) return fail(403, 'forbidden', 'Only an owner of this arena can add users.');
-
-  const admin = createClient(url, serviceKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  let createdId: string | null = null;
-  const { data: made, error: makeErr } = await admin.auth.admin.createUser({
-    email: input.email,
-    password: input.password,
-    email_confirm: true,
-    user_metadata: { name: input.name },
-  });
-  if (makeErr) {
-    // An existing login is linked as it is; anything else is a real failure.
-    if (makeErr.code !== 'email_exists' && makeErr.code !== 'user_already_exists') {
-      return fail(400, makeErr.code ?? 'create_failed', makeErr.message);
-    }
-  } else {
-    createdId = made.user.id;
-  }
-
-  const { data: userId, error: linkErr } = await asOwner.rpc('add_member_by_email', {
+  const { data: made, error: inviteErr } = await asCaller.rpc('invite_member', {
     p_arena: input.arena_id,
     p_email: input.email,
     p_name: input.name,
     p_role: input.role,
     p_perms: input.perms,
   });
-  if (linkErr) {
-    if (createdId) await admin.auth.admin.deleteUser(createdId);
-    const status = linkErr.code === '42501' ? 403 : 400;
-    return fail(status, linkErr.message, linkErr.hint ?? linkErr.message);
+  if (inviteErr) {
+    if (inviteErr.code === '42501') {
+      return fail(403, 'forbidden', inviteErr.hint ?? 'You cannot invite people to this arena.');
+    }
+    if (inviteErr.code === 'P0001' && /^[a-z_]+$/.test(inviteErr.message)) {
+      return fail(400, inviteErr.message, inviteErr.hint ?? inviteErr.message);
+    }
+    return fail(500, 'server_error', 'Could not create the invitation. Try again.');
   }
-  return reply(200, { user_id: userId, created: createdId !== null });
+  const invite = made as { invite_id: string; token: string; expires_at: string };
+  const withdraw = () =>
+    asCaller.rpc('revoke_invite', { p_arena: input.arena_id, p_invite: invite.invite_id });
+
+  const redirectTo = acceptUrl(req, invite.invite_id, invite.token);
+  if (redirectTo === null) {
+    await withdraw();
+    return fail(500, 'misconfigured', 'Set ADMIN_SITE_URL for the invitation link.');
+  }
+
+  const admin = createClient(url, serviceKey, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+  const signInLink = () =>
+    createClient(url, anonKey, {
+      auth: { persistSession: false, autoRefreshToken: false, flowType: 'implicit' },
+    }).auth.signInWithOtp({
+      email: input.email,
+      options: { shouldCreateUser: false, emailRedirectTo: redirectTo },
+    });
+
+  const { data: target, error: targetErr } = await admin.rpc('invite_delivery_target', {
+    p_email: input.email,
+  });
+  let sendErr: { code?: string; status?: number } | null = null;
+  if (targetErr) {
+    sendErr = { code: 'lookup_failed' };
+  } else if (target === null) {
+    ({ error: sendErr } = await admin.auth.admin.inviteUserByEmail(input.email, {
+      redirectTo,
+      data: { name: input.name },
+    }));
+  } else {
+    const t = target as { user_id: string; confirmed: boolean };
+    if (!t.confirmed) {
+      // Whoever signed this address up may not own it: their password must not survive the
+      // owner of the address confirming it through our link.
+      const { error: scrubErr } = await admin.auth.admin.updateUserById(t.user_id, {
+        password: randomSecret(),
+      });
+      if (scrubErr) {
+        sendErr = { code: 'scrub_failed' };
+      } else {
+        ({ error: sendErr } = await admin.auth.admin.inviteUserByEmail(input.email, {
+          redirectTo,
+          data: { name: input.name },
+        }));
+        if (sendErr?.code === 'email_exists') ({ error: sendErr } = await signInLink());
+      }
+    } else {
+      ({ error: sendErr } = await signInLink());
+    }
+  }
+  if (sendErr) {
+    await withdraw();
+    const limited = sendErr.status === 429 || /rate_limit/.test(sendErr.code ?? '');
+    return limited
+      ? fail(429, 'email_rate_limited', 'Too many e-mails right now. Try again in a while.')
+      : fail(502, 'email_failed', 'The invitation e-mail could not be sent. Try again.');
+  }
+  return reply(200, { status: 'sent', invite_id: invite.invite_id, expires_at: invite.expires_at });
 });

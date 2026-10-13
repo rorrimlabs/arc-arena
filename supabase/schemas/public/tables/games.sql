@@ -19,6 +19,10 @@ create table "public"."games" (
   "created_at"        timestamp with time zone not null default now(),
   "updated_at"        timestamp with time zone not null default now(),
   "sync_xid"          xid8                     not null default pg_current_xact_id(),
+  "age_rating"        smallint,
+  "media"             text,
+  constraint "games_age_rating_check"
+    check ((age_rating = ANY (ARRAY[3, 7, 12, 16, 18]))),
   constraint "games_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade,
   constraint "games_arena_id_name_key" unique (arena_id, name),
@@ -27,6 +31,8 @@ create table "public"."games" (
     references public.game_categories(id) on delete set null,
   constraint "games_max_local_players_check"
     check (((max_local_players >= 1) AND (max_local_players <= 8))),
+  constraint "games_media_check"
+    check ((media = ANY (ARRAY['digital'::text, 'disc'::text]))),
   constraint "games_pkey" primary key (id),
   constraint "games_player_mode_check"
     check ((player_mode = ANY (ARRAY['single'::text, 'local'::text, 'online'::text, 'both'::text])))
@@ -35,6 +41,10 @@ create table "public"."games" (
 comment on table public.games is 'Game titles in an arena''s library, with search aliases, platforms, player limits and an active flag.';
 
 comment on column public.games.arena_id is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
+
+comment on column public.games.age_rating is 'Minimum age the title is rated for (PEGI-style 3, 7, 12, 16 or 18); null when not set. Shown on the admin dashboard; the floor app does not read it yet.';
+
+comment on column public.games.media is 'How the arena owns the title: digital or disc; null when not set. Shown on the admin dashboard; the floor app does not read it yet.';
 
 comment on column public.games.aliases is 'Alternative names used for search (e.g. FIFA for EA SPORTS FC 25).';
 
@@ -86,7 +96,7 @@ create trigger t_same_arena
 create policy "p_sel_games" on "public"."games"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."games"

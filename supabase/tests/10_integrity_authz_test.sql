@@ -29,7 +29,7 @@ insert into staff_profiles(arena_id,user_id,name,role,perms,active) values
   -- the hosted staff default
   ('e0000000-0000-4000-8000-000000000010','10000000-0000-0000-0000-000000000002','Staff','staff',
     array['start','bill','discount','members'], true),
-  -- holds money, so the server counts them as an owner for add_staff_by_email
+  -- holds money (owner level) but not settings
   ('e0000000-0000-4000-8000-000000000010','10000000-0000-0000-0000-000000000003','Cashier','staff',
     array['start','bill','money'], true),
   ('e0000000-0000-4000-8000-000000000010','10000000-0000-0000-0000-000000000004','Nobody','staff',
@@ -130,27 +130,38 @@ select is(pg_temp.push('controller.move', jsonb_build_object('controller_id', pg
   'but re-homing a pad still needs settings');
 
 -- ------------------------------------------- 3. staff profiles
+-- People join by invitation only (17_staff_invites_test.sql). The old route
+-- that linked logins by e-mail with owner level alone, skipping Settings
+-- (add_staff_by_email / add_member_by_email), is gone.
 select pg_temp.as_user('10000000-0000-0000-0000-000000000003');
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000010',
-    'owner10@test.local', 'Owner', '{}') $$, 'P0001', 'owner_profile',
-  'add_staff_by_email cannot overwrite the owner''s profile');
+select throws_ok($$ select invite_member('e0000000-0000-4000-8000-000000000010',
+    'later10@test.local', 'Later', 'staff', array['start']) $$, '42501', 'forbidden',
+  'owner level (money) without Settings cannot invite: the same rule as staff.update');
 select ok((select active and perms @> _known_perms() from staff_profiles
             where user_id = '10000000-0000-0000-0000-000000000001'),
   'the owner keeps every permission');
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000010',
-    'later10@test.local', 'Later', array['start','superuser']) $$, 'P0001', 'invalid_permission',
+select pg_temp.as_user('10000000-0000-0000-0000-000000000001');
+select throws_ok($$ select invite_member('e0000000-0000-4000-8000-000000000010',
+    'later10@test.local', 'Later', 'staff', array['start','superuser']) $$, 'P0001', 'invalid_permission',
   'unknown permission codes are refused');
-select is(add_staff_by_email('e0000000-0000-4000-8000-000000000010',
-    'later10@test.local', 'Later', array['start']),
-  '10000000-0000-0000-0000-000000000005'::uuid, 'an existing login is linked as staff');
 select pg_temp.as_user('10000000-0000-0000-0000-000000000002');
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000010',
-    'later10@test.local', 'Later', array['start','settings']) $$, '42501', 'forbidden',
-  'plain staff cannot add or promote anyone');
+select throws_ok($$ select invite_member('e0000000-0000-4000-8000-000000000010',
+    'later10@test.local', 'Later', 'staff', array['start','settings']) $$, '42501', 'forbidden',
+  'plain staff cannot invite or promote anyone');
 select pg_temp.as_user('10000000-0000-0000-0000-000000000001');
 select is(pg_temp.push('staff.update', jsonb_build_object('user_id','10000000-0000-0000-0000-000000000002',
     'name','Staff','perms','["start","root"]'::jsonb,'active',true))->>'error', 'invalid_permission',
   'staff.update refuses unknown permission codes');
+-- A partial staff.update keeps what it leaves out: it never wipes someone's
+-- permissions or silently reactivates them.
+update staff_profiles set active = false, perms = array['start']
+ where user_id = '10000000-0000-0000-0000-000000000004';
+select is(pg_temp.push('staff.update', jsonb_build_object(
+    'user_id', '10000000-0000-0000-0000-000000000004', 'name', 'Nobody Two'))->>'status', 'applied',
+  'a rename-only staff.update is applied');
+select is((select name || ':' || active || ':' || array_to_string(perms, ',') from staff_profiles
+            where user_id = '10000000-0000-0000-0000-000000000004'), 'Nobody Two:false:start',
+  'and leaves active and perms exactly as they were');
 
 -- ------------------------------------------- 4. nothing reaches another arena
 select pg_temp.as_user('10000000-0000-0000-0000-000000000002');
@@ -188,10 +199,10 @@ select ok(not has_function_privilege('authenticated', f, 'execute'), 'not client
     'op_resource_upsert(uuid,jsonb)',
     '_sync_apply(uuid,text,jsonb)',
     '_assert_same_arena()', '_known_perms()', '_assert_known_perms(text[])', '_rupees(bigint)']) f;
-select ok(not has_function_privilege('anon', 'add_staff_by_email(uuid,text,text,text[])', 'execute'),
-  'anon cannot call add_staff_by_email');
-select ok(has_function_privilege('authenticated', 'add_staff_by_email(uuid,text,text,text[])', 'execute'),
-  'signed-in owners still can');
+select ok(not has_function_privilege('anon', 'invite_member(uuid,text,text,text,text[])', 'execute'),
+  'anon cannot call invite_member');
+select ok(has_function_privilege('authenticated', 'invite_member(uuid,text,text,text,text[])', 'execute'),
+  'signed-in members can (it checks Settings itself)');
 
 select * from finish();
 rollback;

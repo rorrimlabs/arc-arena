@@ -17,6 +17,8 @@ create table "public"."customers" (
   "created_at"    timestamp with time zone not null default now(),
   "updated_at"    timestamp with time zone not null default now(),
   "sync_xid"      xid8                     not null default pg_current_xact_id(),
+  "birth_year"    smallint,
+  constraint "customers_birth_year_check" check (((birth_year >= 1900) AND (birth_year <= 2100))),
   constraint "customers_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade,
   constraint "customers_pkey" primary key (id)
@@ -29,6 +31,8 @@ comment on column public.customers.arena_id is 'Owning arena (tenant). RLS limit
 comment on column public.customers.phone is 'Contact number, trimmed; null when unknown. Unique per arena when set (ux_customer_phone).';
 
 comment on column public.customers.last_visit_at is 'Start time of the customer''s latest session or group session (UTC); set by op_session_start / op_group_create.';
+
+comment on column public.customers.birth_year is 'Year of birth given at registration, for age checks (age ratings); null when not given. Written by customer.create / customer.update only when the key is sent; ops refuse a future year.';
 
 comment on column public.customers.is_guest is 'True for a walk-in started without registering: one record per visit, kept out of the members directory.';
 
@@ -65,10 +69,12 @@ create trigger t_customers_updated
   for each row
   execute function public.set_updated_at();
 
+-- Readable by an active member holding start or members (check-in, member records), or owner level (money/reports).
+-- No write policy: clients change data only through sync_push.
 create policy "p_sel_customers" on "public"."customers"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids_with(ARRAY['start'::text, 'members'::text, 'money'::text, 'reports'::text]) as app_arena_ids_with)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."customers"

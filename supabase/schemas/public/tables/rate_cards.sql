@@ -52,7 +52,7 @@ create trigger t_rate_cards_updated
 create policy "p_sel_rate_cards" on "public"."rate_cards"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."rate_cards"

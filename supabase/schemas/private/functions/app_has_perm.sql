@@ -1,11 +1,16 @@
 -- app_has_perm(arena, perm) — does the caller hold this permission in the arena?
 --
+-- Lives in `private`, which the Data API does not expose: SECURITY DEFINER
+-- code never sits in an API schema. Used by RLS policies and server functions;
+-- not part of the client API.
+--
 -- True when auth.uid() has an active staff profile in p_arena that either has
 -- role 'owner' (owners implicitly hold every permission) or lists p_perm in
 -- perms. Used by _need and directly by op_* functions for either-of checks.
 -- SECURITY DEFINER so it reads staff_profiles regardless of the caller's RLS.
--- Client API: callable by signed-in users (authenticated).
-create or replace function public.app_has_perm (
+-- Executable by authenticated because RLS policies run as the caller; not
+-- reachable over the Data API (private is not an exposed schema).
+create or replace function private.app_has_perm (
   p_arena uuid,
   p_perm  text
 )
@@ -22,12 +27,12 @@ create or replace function public.app_has_perm (
   );
 $function$;
 
-comment on function public.app_has_perm(uuid, text) is 'True when the signed-in user is an active member of the arena and is an owner or holds the given permission.';
+comment on function private.app_has_perm(uuid, text) is 'True when the signed-in user is an active member of the arena and is an owner or holds the given permission.';
 
 grant execute
-  on function "public"."app_has_perm"(uuid, text)
+  on function "private"."app_has_perm"(uuid, text)
   to "authenticated", "postgres", "service_role";
 
-revoke all on function "public"."app_has_perm"(uuid, text) from public;
+revoke all on function "private"."app_has_perm"(uuid, text) from public;
 
-revoke all on function "public".app_has_perm(p_arena uuid, p_perm text) from anon;
+revoke all on function "private".app_has_perm(p_arena uuid, p_perm text) from anon;

@@ -102,11 +102,12 @@ create trigger t_session_charges_tomb
   for each row
   execute function public.sync_record_delete();
 
--- Members read their arenas' rows. No write policy: clients change data only through sync_push.
+-- Readable by an active member holding bill, or owner level (money/reports): bill lines are financial records.
+-- No write policy: clients change data only through sync_push.
 create policy "p_sel_session_charges" on "public"."session_charges"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids_with(ARRAY['bill'::text, 'money'::text, 'reports'::text]) as app_arena_ids_with)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."session_charges"

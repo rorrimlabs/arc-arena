@@ -66,7 +66,7 @@ create trigger t_resources_updated
 create policy "p_sel_resources" on "public"."resources"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."resources"

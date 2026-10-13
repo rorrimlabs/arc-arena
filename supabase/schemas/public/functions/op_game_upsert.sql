@@ -2,7 +2,9 @@
 --
 -- Permission: settings.
 -- Payload: id, name, aliases[], category_id?, platforms[], player_mode? (default 'single'),
---   max_local_players? (default 1), active? (default true).
+--   max_local_players? (default 1), active? (default true), age_rating? (3/7/12/16/18 or null),
+--   media? ('digital' / 'disc' or null). age_rating and media are written only when their key is
+--   present, so edits from builds that do not send them (the floor app) keep the stored values.
 -- Checks / errors: forbidden; not_found (id belongs to another arena); constraint failures map to
 --   invalid / missing_reference.
 -- Writes: games. Returns: {}.
@@ -23,17 +25,21 @@ begin
     raise exception 'not_found' using hint = 'game';
   end if;
   insert into games(id, arena_id, name, aliases, category_id, platforms, player_mode,
-      max_local_players, active)
+      max_local_players, active, age_rating, media)
     values ((p->>'id')::uuid, p_arena, p->>'name',
       array(select jsonb_array_elements_text(coalesce(p->'aliases', '[]'::jsonb))),
       nullif(p->>'category_id','')::uuid,
       array(select jsonb_array_elements_text(coalesce(p->'platforms', '[]'::jsonb))),
       coalesce(p->>'player_mode', 'single'), coalesce((p->>'max_local_players')::int, 1),
-      coalesce((p->>'active')::boolean, true))
+      coalesce((p->>'active')::boolean, true),
+      (p->>'age_rating')::smallint, p->>'media')
   on conflict (id) do update set name = excluded.name, aliases = excluded.aliases,
       category_id = excluded.category_id, platforms = excluded.platforms,
       player_mode = excluded.player_mode, max_local_players = excluded.max_local_players,
-      active = excluded.active, updated_at = statement_timestamp()
+      active = excluded.active,
+      age_rating = case when p ? 'age_rating' then excluded.age_rating else games.age_rating end,
+      media = case when p ? 'media' then excluded.media else games.media end,
+      updated_at = statement_timestamp()
     where games.arena_id = p_arena;
   return '{}'::jsonb;
 end;

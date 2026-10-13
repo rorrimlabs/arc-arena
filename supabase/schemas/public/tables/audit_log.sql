@@ -3,7 +3,8 @@
 -- Written by op_session_void / op_group_void (entity session / group_session,
 -- action void, with the owner's reason) and op_customer_create (entity customer,
 -- action duplicate_phone_on_sync, when a phone already belongs to another customer
--- and the new row is kept without it). Members can read it; it has no sync_xid,
+-- and the new row is kept without it). Only owner-level members (money /
+-- reports) can read it; it has no sync_xid,
 -- so it is not part of the sync_pull change feed.
 create table "public"."audit_log" (
   "id"          uuid                     not null default gen_random_uuid(),
@@ -48,11 +49,12 @@ create index ix_audit_entity on public.audit_log using btree (arena_id, entity_t
 -- Foreign-key index (joins and cascading deletes).
 create index ix_audit_log_created_by on public.audit_log using btree (created_by);
 
--- Members read their arenas' rows. No write policy: entries are written only by op_* functions.
+-- Readable by an active member holding owner level (money/reports) only: voids and sync adjustments are an owner's record.
+-- No write policy: clients change data only through sync_push.
 create policy "p_sel_audit_log" on "public"."audit_log"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids_with(ARRAY['money'::text, 'reports'::text]) as app_arena_ids_with)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."audit_log"

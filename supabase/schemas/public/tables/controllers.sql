@@ -91,7 +91,7 @@ create trigger t_same_arena
 create policy "p_sel_controllers" on "public"."controllers"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."controllers"

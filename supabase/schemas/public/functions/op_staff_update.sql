@@ -12,18 +12,23 @@ declare
   -- AppUser.isOwner). Only an owner-level member may hand them out or take them away.
   c_owner_perms constant text[] := array['money', 'reports'];
   v_user   uuid    := (p->>'user_id')::uuid;
-  v_perms  text[]  := array(select jsonb_array_elements_text(coalesce(p->'perms', '[]'::jsonb)));
-  v_active boolean := coalesce((p->>'active')::boolean, true);
+  -- A field the op leaves out keeps its current value: a partial update must
+  -- never wipe someone's permissions or silently reactivate them.
+  v_perms  text[]  := case when p ? 'perms'
+                        then array(select jsonb_array_elements_text(coalesce(p->'perms', '[]'::jsonb))) end;
+  v_active boolean := (p->>'active')::boolean;
   v_role   text;
   v_old_perms  text[];
   v_old_active boolean;
   v_adj    boolean := false;
 begin
   perform _need(p_arena, 'settings');
-  perform _assert_known_perms(v_perms);
   select role, perms, active into v_role, v_old_perms, v_old_active from staff_profiles
     where arena_id = p_arena and user_id = v_user for update;
   if not found then raise exception 'not_found' using hint = 'staff'; end if;
+  v_perms := coalesce(v_perms, v_old_perms);
+  v_active := coalesce(v_active, v_old_active);
+  perform _assert_known_perms(v_perms);
 
   if v_role = 'owner' then
     if not exists (select 1 from staff_profiles where arena_id = p_arena
@@ -46,7 +51,7 @@ begin
         hint = 'you cannot change your own permissions';
     end if;
     -- Owner-level perms, and owner-level members, are managed by owners only.
-    if not app_is_owner(p_arena)
+    if not private.app_is_owner(p_arena)
        and (v_old_perms && c_owner_perms
             or ('money' = any(v_perms)) <> ('money' = any(v_old_perms))
             or ('reports' = any(v_perms)) <> ('reports' = any(v_old_perms))) then
@@ -55,7 +60,8 @@ begin
     end if;
   end if;
 
-  update staff_profiles set name = p->>'name', perms = v_perms, active = v_active,
+  update staff_profiles set name = coalesce(nullif(btrim(p->>'name'), ''), name),
+      perms = v_perms, active = v_active,
       sort_order = coalesce((p->>'sort_order')::int, sort_order),
       updated_at = statement_timestamp()
     where arena_id = p_arena and user_id = v_user;

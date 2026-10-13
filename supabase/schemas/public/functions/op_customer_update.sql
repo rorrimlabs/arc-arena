@@ -1,9 +1,11 @@
--- op_customer_update — sync op 'customer.update': edit a customer's name, phone and notes.
+-- op_customer_update — sync op 'customer.update': edit a customer's name, phone, notes and birth
+--   year.
 --
 -- Permission: start OR members.
--- Payload: id, base_version (sync_xid the device last pulled), name, phone?, notes.
+-- Payload: id, base_version (sync_xid the device last pulled), name, phone?, notes, birth_year?
+--   (1900 to the current year, or null to clear; absent keeps the stored value).
 -- Checks / errors: forbidden; not_found (hint customer); stale (row changed since base_version);
---   phone_taken (phone already belongs to another customer in the arena).
+--   phone_taken (phone already belongs to another customer in the arena); invalid_birth_year.
 -- Writes: customers. Returns: {}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_customer_update (
@@ -17,8 +19,12 @@ create or replace function public.op_customer_update (
   AS $function$
 declare v_xid xid8;
 begin
-  if not (app_has_perm(p_arena, 'start') or app_has_perm(p_arena, 'members')) then
+  if not (private.app_has_perm(p_arena, 'start') or private.app_has_perm(p_arena, 'members')) then
     raise exception 'forbidden' using errcode = '42501', hint = 'needs start or members';
+  end if;
+  if (p->>'birth_year') is not null and ((p->>'birth_year')::int < 1900
+      or (p->>'birth_year')::int > extract(year from statement_timestamp() at time zone 'Asia/Kolkata')) then
+    raise exception 'invalid_birth_year' using hint = '1900 to this year';
   end if;
   select sync_xid into v_xid from customers where id = (p->>'id')::uuid and arena_id = p_arena for update;
   if not found then raise exception 'not_found' using hint = 'customer'; end if;
@@ -27,7 +33,10 @@ begin
   end if;
   begin
     update customers set name = p->>'name', phone = nullif(btrim(p->>'phone'), ''),
-        notes = p->>'notes', updated_at = statement_timestamp()
+        notes = p->>'notes',
+        -- Builds that do not send birth_year keep the stored one.
+        birth_year = case when p ? 'birth_year' then (p->>'birth_year')::smallint else birth_year end,
+        updated_at = statement_timestamp()
       where id = (p->>'id')::uuid;
   exception when unique_violation then
     raise exception 'phone_taken';

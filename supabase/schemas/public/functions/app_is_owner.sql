@@ -1,31 +1,24 @@
--- app_is_owner(arena) — is the caller "owner level" in the arena?
+-- app_is_owner() — client API entry point: a SECURITY INVOKER wrapper
 --
--- True when auth.uid() has an active staff profile in p_arena with role 'owner'
--- or holding money or reports (holding either makes a member owner level, the
--- same rule as the app's AppUser.isOwner). Gates add_staff_by_email and the
--- owner-only branches of op_staff_update. SECURITY DEFINER (reads staff_profiles).
--- Client API: callable by signed-in users (authenticated).
+-- The Data API exposes `public`, so nothing here runs with raised privileges:
+-- this runs as the caller and hands over to private.app_is_owner, which holds the
+-- SECURITY DEFINER body and its checks (private/functions/app_is_owner.sql). Same
+-- name, arguments and result as before, so the apps call it unchanged.
 create or replace function public.app_is_owner (
   p_arena uuid
 )
   returns boolean
   language sql
   stable
-  security definer
-  set search_path to 'public'
+  security invoker
+  set search_path to ''
   AS $function$
-  select exists (
-    select 1 from staff_profiles
-     where user_id = auth.uid() and arena_id = p_arena and active
-       and (role = 'owner' or perms && array['money','reports'])
-  );
+  select private.app_is_owner(p_arena);
 $function$;
 
 comment on function public.app_is_owner(uuid) is 'True when the signed-in user is owner level in the arena: an active profile with role owner, or holding the money or reports permission.';
 
-grant execute
-  on function "public"."app_is_owner"(uuid)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "public"."app_is_owner"(uuid) to "authenticated", "postgres", "service_role";
 
 revoke all on function "public"."app_is_owner"(uuid) from public;
 

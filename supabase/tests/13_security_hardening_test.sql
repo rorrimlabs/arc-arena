@@ -90,9 +90,28 @@ select is(
   (select array_agg(p.proname::text order by p.proname) from pg_proc p
     where p.pronamespace = 'public'::regnamespace
       and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['add_member_by_email', 'add_staff_by_email', 'app_arena_ids', 'app_has_perm', 'app_is_owner', 'arena_pricing', 'arena_sale',
-        'arena_sales', 'arena_staff', 'create_my_arena', 'my_arenas', 'sync_fetch_entity', 'sync_pull', 'sync_push'],
+  array['accept_invite', 'app_is_owner', 'arena_invites', 'arena_pricing', 'arena_sale',
+        'arena_sales', 'arena_staff', 'create_my_arena', 'invite_member', 'my_arenas', 'revoke_invite',
+        'sync_fetch_entity', 'sync_pull', 'sync_push'],
   'the client API is exactly these functions');
+-- Security Advisor lints 0028/0029: no SECURITY DEFINER function in an exposed
+-- schema is executable by a client role. The bodies live in `private`; public
+-- holds SECURITY INVOKER wrappers.
+select is((select array_agg(p.proname::text order by p.proname) from pg_proc p
+            where p.pronamespace = 'public'::regnamespace and p.prosecdef
+              and (has_function_privilege('authenticated', p.oid, 'execute')
+                   or has_function_privilege('anon', p.oid, 'execute'))),
+  null, 'no client-executable SECURITY DEFINER function in public (lints 0028/0029)');
+select ok(has_function_privilege('authenticated', 'private.' || f, 'execute')
+          and not has_function_privilege('anon', 'private.' || f, 'execute'),
+  'private.' || f || ' is reachable by the invoker wrapper / RLS, never by anon')
+from unnest(array['my_arenas()', 'sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
+  'app_arena_ids()', 'app_has_perm(uuid,text)', 'app_is_owner(uuid)']) f;
+select ok(has_schema_privilege('authenticated', 'private', 'usage')
+          and not has_schema_privilege('anon', 'private', 'usage'),
+  'private: usage for authenticated (policies run as the caller), none for anon');
+select hasnt_function('public', f, f || ' is an RLS helper, not client API')
+from unnest(array['app_arena_ids', 'app_has_perm']) f;
 
 -- ------------------------------------------- 3. secure by default
 select is((select count(*)::int from pg_default_acl d, aclexplode(d.defaclacl) a
@@ -142,10 +161,10 @@ select is(pg_temp.push('staff.update', pg_temp.staff('13000000-0000-0000-0000-00
     'Cashier', array['start','bill','money','settings']))->>'error', 'forbidden',
   'an owner-level member cannot change their own perms');
 
--- …and cannot rewrite them by re-adding themselves by e-mail either.
-select throws_ok($$ select add_staff_by_email('e0000000-0000-4000-8000-000000000130'::uuid,
-    'cashier13@test.local', 'Cashier', array['start','bill','money','settings']) $$,
-  '42501', null, 'add_staff_by_email refuses to change the caller''s own perms');
+-- …and cannot rewrite them by inviting themselves either.
+select throws_ok($$ select invite_member('e0000000-0000-4000-8000-000000000130'::uuid,
+    'cashier13@test.local', 'Cashier', 'staff', array['start','bill','money','settings']) $$,
+  '42501', null, 'invite_member refuses a route to the caller''s own perms');
 select is(pg_temp.perms('13000000-0000-0000-0000-000000000003'), array['start','bill','money'],
   'and their perms are unchanged');
 

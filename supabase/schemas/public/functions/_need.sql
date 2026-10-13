@@ -15,7 +15,7 @@ create or replace function public._need (
   set search_path to 'public'
   AS $function$
 begin
-  if not app_has_perm(p_arena, p_perm) then
+  if not private.app_has_perm(p_arena, p_perm) then
     raise exception 'forbidden' using errcode = '42501', hint = 'needs ' || p_perm;
   end if;
 end;

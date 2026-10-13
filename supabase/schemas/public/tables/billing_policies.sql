@@ -113,7 +113,7 @@ create trigger t_billing_policies_updated
 create policy "p_sel_billing_policies" on "public"."billing_policies"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."billing_policies"

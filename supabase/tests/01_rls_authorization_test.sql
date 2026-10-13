@@ -73,8 +73,8 @@ from unnest(array[
 select ok(has_function_privilege('authenticated', f, 'EXECUTE'), 'client API: ' || f)
 from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
   'sync_fetch_entity(uuid,jsonb)', 'my_arenas()',
-  'add_staff_by_email(uuid,text,text,text[])', 'create_my_arena(text,text)',
-  'arena_staff(uuid)', 'add_member_by_email(uuid,text,text,text,text[])',
+  'invite_member(uuid,text,text,text,text[])', 'create_my_arena(text,text)',
+  'arena_staff(uuid)', 'accept_invite(uuid,text)', 'revoke_invite(uuid,uuid)', 'arena_invites(uuid)',
   'arena_sales(uuid,timestamptz,timestamptz)', 'arena_sale(uuid,uuid)', 'arena_pricing(uuid)']) f;
 -- The only app route to ownership is create_my_arena (confirmed login, one arena
 -- each); the operator tool and the shared body stay server-only.
@@ -82,9 +82,11 @@ select ok(not has_function_privilege('authenticated', f, 'EXECUTE'), 'not client
 from unnest(array['bootstrap_owner(text,text,text)', '_create_arena_with_owner(uuid,text,text)',
   '_sales(uuid,timestamptz,timestamptz,uuid)']) f;
 
+-- my_arenas included: a 42501 on it means the app called without a sign-in
+-- (refused refresh → publishable key only); the fix is the app, never a grant.
 select ok(not has_function_privilege('anon', f, 'EXECUTE'), 'anon cannot call ' || f)
 from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
-  'bootstrap_owner(text,text,text)', 'create_my_arena(text,text)']) f;
+  'bootstrap_owner(text,text,text)', 'create_my_arena(text,text)', 'my_arenas()']) f;
 
 -- ===================== as STAFF (reads) =====================
 set local role authenticated;

@@ -35,7 +35,7 @@ begin
   -- Carrying a pad (loan / return) is floor work: it needs start or settings
   -- (0016). Re-homing it (permanent) changes the inventory: settings.
   if v_kind in ('loan', 'returnHome')
-     and not (app_has_perm(p_arena, 'start') or app_has_perm(p_arena, 'settings')) then
+     and not (private.app_has_perm(p_arena, 'start') or private.app_has_perm(p_arena, 'settings')) then
     raise exception 'forbidden' using errcode = '42501', hint = 'needs start or settings';
   end if;
   if v_kind = 'permanent' then perform _need(p_arena, 'settings'); end if;

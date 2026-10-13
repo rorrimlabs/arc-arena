@@ -13,7 +13,7 @@ declare
   v_at timestamptz := coalesce((p->>'at')::timestamptz, v_now);
   v_status text;
 begin
-  if not app_is_owner(p_arena) then
+  if not private.app_is_owner(p_arena) then
     raise exception 'forbidden' using errcode = '42501', hint = 'void is owner-only';
   end if;
   select status into v_status from sessions where id = v_session and arena_id = p_arena for update;

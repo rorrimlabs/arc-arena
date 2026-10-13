@@ -114,7 +114,7 @@ create trigger t_same_arena
 create policy "p_sel_group_assignments" on "public"."group_assignments"
   for select
   to authenticated
-  using ((arena_id in ( select public.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_assignments"
