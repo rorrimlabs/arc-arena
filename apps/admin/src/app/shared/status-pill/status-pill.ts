@@ -1,6 +1,7 @@
 import { Component, input } from '@angular/core';
 
-export type PillTone = 'primary' | 'info' | 'warning' | 'danger' | 'success';
+/** `age16` / `age18`: the design's age badges (`--bd-16`, `--bd-18`). */
+export type PillTone = 'primary' | 'info' | 'warning' | 'danger' | 'success' | 'age16' | 'age18';
 
 /** The design's 24px status pill (`pill(bg, c)`): soft background, strong text. */
 @Component({
@@ -18,6 +19,10 @@ export type PillTone = 'primary' | 'info' | 'warning' | 'danger' | 'success';
     '[class.text-danger]': "tone() === 'danger'",
     '[class.bg-success-soft]': "tone() === 'success'",
     '[class.text-success]': "tone() === 'success'",
+    '[class.bg-bd-16-bg]': "tone() === 'age16'",
+    '[class.text-bd-16]': "tone() === 'age16'",
+    '[class.bg-bd-18-bg]': "tone() === 'age18'",
+    '[class.text-bd-18]': "tone() === 'age18'",
   },
   template: '<ng-content />',
 })

@@ -29,8 +29,9 @@ describe('Pricing', () => {
   let harness: RouterTestingHarness;
   let api: SamplePricingApi;
 
-  async function start(url: string, empty = false) {
+  async function start(url: string, empty = false, failWith: string | null = null) {
     api = new SamplePricingApi(empty);
+    api.failNext = failWith;
     TestBed.configureTestingModule({
       providers: [
         provideRouter(routes, withComponentInputBinding()),
@@ -80,8 +81,9 @@ describe('Pricing', () => {
     input.dispatchEvent(new Event('input'));
   }
 
+  /** A field by label, inside the open dialog if there is one. */
   function field(label: string): HTMLInputElement {
-    const f = [...doc().querySelectorAll('mat-form-field')].find((x) =>
+    const f = [...(dialog() ?? doc()).querySelectorAll('mat-form-field')].find((x) =>
       x.querySelector('mat-label')?.textContent?.includes(label),
     );
     return f?.querySelector('input') as HTMLInputElement;
@@ -100,7 +102,37 @@ describe('Pricing', () => {
       'VR | 1 station | ₹200 | per 30 min',
       'Pool | Off | No price',
     ]);
-    expect(rowText(rows('pricing-happy')[0])).toBe('Happy hour | Tue–Fri · 2:00 pm–5:00 pm | On');
+    expect(rowText(rows('pricing-rules')[0])).toBe('Happy hour | Tue–Fri · 2:00 pm–5:00 pm | On');
+  });
+
+  it('a type shows its base rate with the Enabled switch, and the happy-hour price', async () => {
+    await start('/pricing?id=t-ps5');
+    const sections = [...detail()!.querySelectorAll('app-detail-section h3')].map((h) =>
+      h.textContent?.trim(),
+    );
+    expect(sections).toEqual(['Base rate', 'With rules applied']);
+    const applied = [...detail()!.querySelectorAll('app-detail-row')].map((r) =>
+      [...r.querySelectorAll('span')].map((x) => x.textContent?.trim()).join(' | '),
+    );
+    expect(applied).toEqual([
+      'Base | ₹150 per hour',
+      'Happy hour · Tue–Fri · 2:00 pm–5:00 pm | ₹120 per hour',
+    ]);
+  });
+
+  it('a load failure keeps the layout and shows the server error', async () => {
+    await start('/pricing', false, 'function_missing');
+    expect(doc().querySelector('[role="alert"]')?.textContent).toContain('function_missing');
+    expect(section('pricing-types')?.textContent).toContain('Not loaded.');
+    expect(section('pricing-rules')?.textContent).toContain('Not loaded.');
+    expect(detail()).toBeNull();
+    const pane = doc().querySelector('app-detail-pane');
+    expect(
+      [...(pane?.querySelectorAll('app-detail-section h3') ?? [])].map((h) =>
+        h.textContent?.trim(),
+      ),
+    ).toEqual(['Base rate', 'With rules applied']);
+    expect(pane?.textContent).toContain("Prices couldn't load: function_missing");
   });
 
   it('a new arena starts with no types and says what to do', async () => {
@@ -110,7 +142,7 @@ describe('Pricing', () => {
 
   it('adds a type with a code that follows its name, then opens it', async () => {
     await start('/pricing', true);
-    button('Add type')?.click();
+    button('Type')?.click();
     await settle();
     type(field('Name'), 'PlayStation 5');
     await settle();
@@ -128,7 +160,7 @@ describe('Pricing', () => {
 
   it('a taken code is refused in the dialog', async () => {
     await start('/pricing');
-    button('Add type')?.click();
+    button('Type')?.click();
     await settle();
     type(field('Name'), 'Another');
     type(field('Code'), 'PS5');
@@ -182,12 +214,20 @@ describe('Pricing', () => {
     expect(api.types.find((t) => t.id === 't-ps5')?.active).toBe(true);
   });
 
+  it('happy hour previews each enabled type', async () => {
+    await start('/pricing?id=happy');
+    const preview = [...detail()!.querySelectorAll('app-detail-row')].map((r) =>
+      [...r.querySelectorAll('span')].map((s) => s.textContent?.trim()).join(' | '),
+    );
+    expect(preview).toEqual(['PlayStation 5 | ₹150 → ₹120/h', 'VR | Not included']);
+  });
+
   it('happy hour saves the weekly windows and keeps opening hours', async () => {
     await start('/pricing?id=happy');
     const toggles = [
       ...detail()!.querySelectorAll('mat-slide-toggle button'),
     ] as HTMLButtonElement[];
-    toggles[5].click(); // Saturday on
+    toggles[6].click(); // Saturday on (after the Active switch)
     await settle();
     button('Save', doc().querySelector('app-unsaved-bar')!)?.click();
     await settle();

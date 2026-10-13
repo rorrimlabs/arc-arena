@@ -23,9 +23,11 @@ export class SalesStore {
   readonly revision = signal(0);
   /** Arena + range + its start: a new day (or arena, or range) loads again. */
   private loadedKey: string | null = null;
+  private currentRange: SalesRange = 'today';
   private latest = 0;
 
   async load(range: SalesRange, force = false): Promise<void> {
+    this.currentRange = range;
     const arenaId = this.arena.current().id;
     if (!arenaId) return;
     const { from, to } = rangeBounds(range, this.clock.now());
@@ -57,5 +59,11 @@ export class SalesStore {
     await this.api.void(this.arena.current().id, bill, reason);
     this.revision.update((n) => n + 1);
     await this.load(range, true);
+  }
+
+  async refresh(): Promise<void> {
+    if (this.loadedKey) {
+      await this.load(this.currentRange, true);
+    }
   }
 }

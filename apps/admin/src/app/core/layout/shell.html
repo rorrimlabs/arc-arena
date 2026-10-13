@@ -25,7 +25,11 @@
     (keydown.escape)="layout.closeNav()"
   >
     <!-- Brand -->
-    <div class="flex h-topbar flex-none items-center gap-3 px-3">
+    <div
+      class="flex h-topbar flex-none items-center gap-3"
+      [class.justify-center]="rail()"
+      [class.px-3]="!rail()"
+    >
       <div
         class="grid size-10 flex-none place-items-center rounded-card bg-primary font-display text-[15px] leading-none font-extrabold text-on-primary"
         aria-hidden="true"
@@ -92,15 +96,20 @@
     </ng-template>
 
     <!-- Destinations -->
-    <nav class="flex min-h-0 flex-1 flex-col gap-3.5 overflow-y-auto pt-1 pb-4" aria-label="Main">
+    <nav
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-1 pb-4 [scrollbar-width:none]"
+      [class.gap-1]="rail()"
+      [class.gap-3]="!rail()"
+      aria-label="Main"
+    >
       @for (group of navGroups; track group.heading) {
-        <div class="flex flex-col gap-0.5">
+        <div class="flex flex-col gap-1">
           @if (!rail()) {
             <h2 class="px-4 pt-2 pb-1.5 text-xs leading-none font-semibold text-subtle">
               {{ group.heading }}
             </h2>
           }
-          <ul class="flex flex-col gap-0.5" [attr.aria-label]="group.heading">
+          <ul class="flex flex-col gap-1" [attr.aria-label]="group.heading">
             @for (item of group.items; track item.path) {
               <li>
                 <a
@@ -110,12 +119,12 @@
                   ariaCurrentWhenActive="page"
                   [title]="item.label"
                   (click)="layout.closeNav()"
-                  class="flex items-center no-underline"
+                  class="flex w-full flex-none items-center no-underline"
                   [class.h-11]="!rail()"
                   [class.gap-3]="!rail()"
                   [class.px-4]="!rail()"
                   [class.rounded-pill]="!rail()"
-                  [class.h-14]="rail()"
+                  [class.h-13]="rail()"
                   [class.flex-col]="rail()"
                   [class.justify-center]="rail()"
                   [class.gap-1]="rail()"
@@ -127,7 +136,7 @@
                   [class.font-medium]="!rla.isActive"
                 >
                   <span
-                    class="icon text-[22px] leading-none"
+                    class="icon grid size-6 flex-none place-items-center text-[22px] leading-none"
                     [class.icon-filled]="rla.isActive"
                     aria-hidden="true"
                     >{{ item.icon }}</span
@@ -148,7 +157,11 @@
     </nav>
 
     <!-- Signed-in owner. As in the design, the initials avatar also signs out. -->
-    <div class="flex flex-none items-center gap-3 border-t border-border px-1 py-3">
+    <div
+      class="flex flex-none items-center gap-3 border-t border-border py-3"
+      [class.justify-center]="rail()"
+      [class.px-3]="!rail()"
+    >
       <button
         type="button"
         class="grid size-10 flex-none place-items-center rounded-full bg-primary-soft text-caption leading-none font-semibold text-primary-text"

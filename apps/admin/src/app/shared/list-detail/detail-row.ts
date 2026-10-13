@@ -2,7 +2,8 @@ import { Component, input } from '@angular/core';
 
 /**
  * A label / value row inside a detail section (design: `F.row`): muted label left, tabular value
- * right, baseline aligned. `strong` is the bill total style (700 16px).
+ * right, baseline aligned. `strong` is the bill total style (700 16px); `muted` is the design's
+ * "not applicable" value (400, subtle).
  */
 @Component({
   selector: 'app-detail-row',
@@ -11,7 +12,8 @@ import { Component, input } from '@angular/core';
     <span class="text-muted">{{ label() }}</span>
     <span
       class="text-right tabular-nums"
-      [class.font-medium]="!strong()"
+      [class.font-medium]="!strong() && !muted()"
+      [class.text-subtle]="muted()"
       [class.text-base]="strong()"
       [class.leading-none]="strong()"
       [class.font-bold]="strong()"
@@ -23,4 +25,5 @@ export class DetailRow {
   readonly label = input.required<string>();
   readonly value = input.required<string>();
   readonly strong = input(false);
+  readonly muted = input(false);
 }

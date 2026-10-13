@@ -2,11 +2,12 @@ import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { UsersApi } from './users-api';
-import { ArenaUser, NewUser, UserChange } from './user.models';
+import { ArenaUser, NewUser, PendingInvite, UserChange } from './user.models';
 
 /**
- * The current arena's users. Every change goes to the server first; the list then shows what
- * the server accepted (a refusal leaves it unchanged and is reported to the caller).
+ * The current arena's users and open invitations. Every change goes to the server first; the
+ * lists then show what the server accepted (a refusal leaves them unchanged and is reported to
+ * the caller).
  */
 @Service()
 export class UsersStore {
@@ -17,21 +18,29 @@ export class UsersStore {
   readonly owners = computed(() => this.users().filter((u) => u.role === 'owner'));
   readonly staff = computed(() => this.users().filter((u) => u.role === 'staff'));
   readonly byId = computed(() => new Map(this.users().map((u) => [u.userId, u])));
+  /** Open invitations, newest first. */
+  readonly invites = signal<readonly PendingInvite[]>([]);
   readonly loading = signal(false);
   readonly loadError = signal('');
-  /** userId of a user with a change in flight (their controls are disabled). */
+  /** The invitations could not be read (the people list still shows). */
+  readonly invitesError = signal('');
+  /** userId of a user (or inviteId of an invitation) with a change in flight. */
   readonly saving = signal<string | null>(null);
   private loadedArena: string | null = null;
 
-  /** Loads the current arena's users (again when the arena changed, or when forced). */
+  /** Loads the current arena's users and invitations (again on an arena switch, or forced). */
   async load(force = false): Promise<void> {
     const arenaId = this.arena.current().id;
     if (!arenaId || (!force && this.loadedArena === arenaId)) return;
-    if (this.loadedArena !== arenaId) this.users.set([]);
+    if (this.loadedArena !== arenaId) {
+      this.users.set([]);
+      this.invites.set([]);
+    }
     this.loading.set(true);
     this.loadError.set('');
     try {
-      this.users.set(await this.api.list(arenaId));
+      const [users] = await Promise.all([this.api.list(arenaId), this.loadInvites(arenaId)]);
+      this.users.set(users);
       this.loadedArena = arenaId;
     } catch (e) {
       this.loadError.set(toAppError(e).message);
@@ -40,10 +49,29 @@ export class UsersStore {
     }
   }
 
-  async add(user: NewUser): Promise<{ userId: string; created: boolean }> {
-    const result = await this.api.create(this.arena.current().id, user);
-    await this.load(true);
+  /** Reads both lists again if a screen has loaded them (live updates). */
+  async refresh(): Promise<void> {
+    if (this.loadedArena) await this.load(true);
+  }
+
+  /** E-mails the invitation, then shows it under the open invitations. */
+  async invite(user: NewUser): Promise<{ inviteId: string; expiresAt: string }> {
+    const arenaId = this.arena.current().id;
+    const result = await this.api.invite(arenaId, user);
+    await this.loadInvites(arenaId);
     return result;
+  }
+
+  async revoke(invite: PendingInvite): Promise<void> {
+    const arenaId = this.arena.current().id;
+    this.saving.set(invite.inviteId);
+    try {
+      await this.api.revokeInvite(arenaId, invite.inviteId);
+    } finally {
+      // Withdrawn, or gone already: either way show what is still open.
+      await this.loadInvites(arenaId);
+      this.saving.set(null);
+    }
   }
 
   async change(user: ArenaUser, change: Partial<UserChange>): Promise<void> {
@@ -54,12 +82,27 @@ export class UsersStore {
     };
     this.saving.set(user.userId);
     try {
-      await this.api.update(this.arena.current().id, user.userId, next);
-      this.users.update((list) =>
-        list.map((u) => (u.userId === user.userId ? { ...u, ...next } : u)),
-      );
+      const { adjusted } = await this.api.update(this.arena.current().id, user.userId, next);
+      if (adjusted) {
+        // The server saved something else (e.g. kept a last Settings holder): show its version.
+        await this.load(true);
+      } else {
+        this.users.update((list) =>
+          list.map((u) => (u.userId === user.userId ? { ...u, ...next } : u)),
+        );
+      }
     } finally {
       this.saving.set(null);
+    }
+  }
+
+  private async loadInvites(arenaId: string): Promise<void> {
+    this.invitesError.set('');
+    try {
+      const invites = await this.api.listInvites(arenaId);
+      if (this.arena.current().id === arenaId) this.invites.set(invites);
+    } catch (e) {
+      this.invitesError.set(toAppError(e).message);
     }
   }
 }

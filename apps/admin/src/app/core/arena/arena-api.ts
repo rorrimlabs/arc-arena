@@ -1,7 +1,6 @@
 import { Service, inject } from '@angular/core';
-import type { PostgrestError } from '@supabase/supabase-js';
-import { AppError } from '../auth/auth-api';
 import { Supabase } from '../supabase/supabase';
+import { pushOps } from '../sync/push-ops';
 
 /** One staff_profiles row of the signed-in login, as my_arenas() reports it. */
 export interface Membership {
@@ -21,32 +20,39 @@ export function isOwnerLevel(m: Membership): boolean {
   );
 }
 
-const DB_MESSAGES: Readonly<Record<string, string>> = {
-  arena_limit: 'This login already owns an arena',
-  account_not_confirmed: 'Confirm your email first',
-  invalid_name: 'Names must be 1 to 80 characters',
-  forbidden: 'You do not have access to that. Sign in again',
-};
+import { dbError } from '../supabase/db-error';
 
-/** Database refusals raise their stable code as the message (`raise exception 'arena_limit'`). */
-export function dbError(e: PostgrestError | Error): AppError {
-  const code = e.message;
-  if ('code' in e && e.code === '42501') return new AppError('forbidden', DB_MESSAGES['forbidden']);
-  if (e instanceof TypeError || /fetch/i.test(code)) {
-    return new AppError(
-      'network',
-      'Could not reach the server. Check the connection and try again',
-    );
-  }
-  return new AppError(code, DB_MESSAGES[code] ?? code);
+// Kept here too: the data services import it from this file.
+export { dbError };
+
+/** The arena's own details (arenas row): shown on bills and the floor app. */
+export interface ArenaDetails {
+  readonly name: string;
+  /** Locality, e.g. Koramangala; empty when not set. */
+  readonly area: string;
+  readonly phone: string;
 }
 
-/** The signed-in login's arenas, and creating its own (create_my_arena: one per login). */
+/** Refusals of arena.update, worded for the Settings screen. */
+export const ARENA_MESSAGES: Readonly<Record<string, string>> = {
+  invalid_name: 'Names must be 1 to 80 characters',
+  invalid_area: 'Use up to 80 characters for the area',
+  invalid_phone: 'Use 6 to 20 digits, spaces, +, ( ) or - for the phone',
+  forbidden: 'You need the Settings permission for that',
+};
+
+/**
+ * The signed-in login's arenas, creating its own (create_my_arena: one per login), and the
+ * current arena's details: read from the arenas table (RLS), written as an arena.update op
+ * through sync_push.
+ */
 @Service({ factory: () => new SupabaseArenaApi() })
 export abstract class ArenaApi {
   abstract myArenas(): Promise<Membership[]>;
   /** Creates the arena with the starter catalog and makes the caller its owner. */
   abstract createArena(arenaName: string, ownerName: string): Promise<string>;
+  abstract details(arenaId: string): Promise<ArenaDetails>;
+  abstract saveDetails(arenaId: string, details: ArenaDetails): Promise<void>;
 }
 
 class SupabaseArenaApi extends ArenaApi {
@@ -74,5 +80,26 @@ class SupabaseArenaApi extends ArenaApi {
     });
     if (error) throw dbError(error);
     return String(data);
+  }
+
+  async details(arenaId: string): Promise<ArenaDetails> {
+    const client = await this.supabase.client();
+    const { data, error } = await client
+      .from('arenas')
+      .select('name, area, phone')
+      .eq('id', arenaId)
+      .single();
+    if (error) throw dbError(error);
+    const row = data as { name: string; area: string | null; phone: string | null };
+    return { name: row.name, area: row.area ?? '', phone: row.phone ?? '' };
+  }
+
+  async saveDetails(arenaId: string, details: ArenaDetails): Promise<void> {
+    await pushOps(
+      await this.supabase.client(),
+      arenaId,
+      [{ kind: 'arena.update', payload: { ...details } }],
+      ARENA_MESSAGES,
+    );
   }
 }

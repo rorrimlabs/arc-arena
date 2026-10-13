@@ -1,5 +1,5 @@
 import { Service, inject } from '@angular/core';
-import type { User } from '@supabase/supabase-js';
+import type { PostgrestError, User } from '@supabase/supabase-js';
 import { Supabase } from '../supabase/supabase';
 
 /** The signed-in person, as the dashboard shows them. */
@@ -17,6 +17,13 @@ export class AppError extends Error {
   ) {
     super(message);
   }
+}
+
+/** What accept_invite returns: the arena joined, and as what. */
+export interface AcceptedInvite {
+  readonly arenaId: string;
+  readonly arenaName: string;
+  readonly role: 'owner' | 'staff';
 }
 
 /** Shared with the server (minimum_password_length = 10, password_requirements = letters_digits). */
@@ -40,7 +47,12 @@ const AUTH_MESSAGES: Readonly<Record<string, string>> = {
   over_email_send_rate_limit: 'Too many emails sent. Wait a few minutes, then try again',
   over_request_rate_limit: 'Too many attempts. Wait a few minutes, then try again',
   signup_disabled: 'This server does not accept new accounts',
+  same_password: 'That is already your password. Choose a new one',
+  session_expired: 'This sign-in has expired. Open the link from the e-mail again',
+  refresh_token_not_found: 'This sign-in has expired. Open the link from the e-mail again',
 };
+
+const NETWORK_MESSAGE = 'Could not reach the server. Check the connection and try again';
 
 /** supabase-js auth errors (checked by shape: the library is loaded lazily). */
 function isAuthError(
@@ -55,25 +67,52 @@ export function toAppError(e: unknown): AppError {
   if (isAuthError(e)) {
     const code = e.code ?? (e.status === 0 ? 'network' : 'auth_error');
     if (code === 'network' || e.name === 'AuthRetryableFetchError') {
-      return new AppError(
-        'network',
-        'Could not reach the server. Check the connection and try again',
-      );
+      return new AppError('network', NETWORK_MESSAGE);
     }
     return new AppError(code, AUTH_MESSAGES[code] ?? e.message);
   }
   if (e instanceof TypeError) {
-    return new AppError(
-      'network',
-      'Could not reach the server. Check the connection and try again',
-    );
+    return new AppError('network', NETWORK_MESSAGE);
   }
   return new AppError('unknown', e instanceof Error ? e.message : String(e));
 }
 
 /**
- * Sign-in, owner sign-up (email + password, confirmed with the 6-digit code from the email) and
- * sign-out. The Supabase implementation is the default; tests provide a sample one.
+ * accept_invite refusals (PostgREST: the code is the message, `hint` is human text). The wrong
+ * account is worded by the page, which knows who is signed in.
+ */
+export const INVITE_ACCEPT_MESSAGES: Readonly<Record<string, string>> = {
+  invite_invalid:
+    'This invitation link is not valid. Open the whole link from the e-mail, or ask for a new invitation.',
+  invite_used:
+    'This invitation was already accepted. Sign in with your e-mail and password instead.',
+  invite_revoked:
+    'This invitation was withdrawn. Ask the arena for a new one if you still need access.',
+  invite_expired: 'This invitation has expired. Ask for a new invitation.',
+  email_not_confirmed:
+    'Your e-mail address is not confirmed yet. Open the link from the invitation e-mail again.',
+  owner_profile: 'You are already an owner of this arena. Open the dashboard instead.',
+  invite_wrong_account:
+    'You are signed in with a different e-mail address than the invitation was sent to.',
+  forbidden: 'Sign in first, then accept the invitation.',
+};
+
+function acceptError(e: PostgrestError | Error): AppError {
+  if (e instanceof TypeError || /fetch/i.test(e.message)) {
+    return new AppError('network', NETWORK_MESSAGE);
+  }
+  const forbidden = 'code' in e && e.code === '42501';
+  const code = /^[a-z_]+$/.test(e.message) ? e.message : forbidden ? 'forbidden' : 'unknown';
+  return new AppError(
+    code,
+    INVITE_ACCEPT_MESSAGES[code] ?? 'Could not accept the invitation. Try again.',
+  );
+}
+
+/**
+ * Sign-in, owner sign-up (email + password, confirmed with the 6-digit code from the email),
+ * accepting an e-mailed invitation, and sign-out. The Supabase implementation is the default;
+ * tests provide a sample one.
  */
 @Service({ factory: () => new SupabaseAuthApi() })
 export abstract class AuthApi {
@@ -88,6 +127,15 @@ export abstract class AuthApi {
   abstract resendCode(email: string): Promise<void>;
   /** Saves the owner's display name on their login (shown in the side nav). */
   abstract setName(name: string): Promise<void>;
+  /**
+   * Signs in with the tokens Supabase Auth put in an e-mailed link's fragment (the client does
+   * not read URLs itself: detectSessionInUrl is off).
+   */
+  abstract signInFromLink(accessToken: string, refreshToken: string): Promise<Account>;
+  /** Sets the signed-in login's password (an invited person choosing their own). */
+  abstract setPassword(password: string): Promise<void>;
+  /** accept_invite: the signed-in, invited login joins the arena with the one-time token. */
+  abstract acceptInvite(inviteId: string, token: string): Promise<AcceptedInvite>;
   abstract signOut(): Promise<void>;
 }
 
@@ -150,6 +198,36 @@ class SupabaseAuthApi extends AuthApi {
   async setName(name: string): Promise<void> {
     const { error } = await (await this.auth()).updateUser({ data: { name } });
     if (error) throw toAppError(error);
+  }
+
+  async signInFromLink(accessToken: string, refreshToken: string): Promise<Account> {
+    const { data, error } = await (
+      await this.auth()
+    ).setSession({ access_token: accessToken, refresh_token: refreshToken });
+    if (error) throw toAppError(error);
+    const account = toAccount(data.user ?? data.session?.user);
+    if (!account) throw new AppError('auth_error', 'Could not sign you in from this link');
+    return account;
+  }
+
+  async setPassword(password: string): Promise<void> {
+    const { error } = await (await this.auth()).updateUser({ password });
+    if (error) throw toAppError(error);
+  }
+
+  async acceptInvite(inviteId: string, token: string): Promise<AcceptedInvite> {
+    const client = await this.supabase.client();
+    const { data, error } = await client.rpc('accept_invite', {
+      p_invite: inviteId,
+      p_token: token,
+    });
+    if (error) throw acceptError(error);
+    const r = data as { arena_id: string; arena_name: string; role: string };
+    return {
+      arenaId: String(r.arena_id),
+      arenaName: String(r.arena_name ?? ''),
+      role: r.role === 'owner' ? 'owner' : 'staff',
+    };
   }
 
   async signOut(): Promise<void> {

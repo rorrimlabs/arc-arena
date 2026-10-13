@@ -1,7 +1,7 @@
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
-import { MatFormField, MatLabel, MatSuffix } from '@angular/material/form-field';
+import { MatFormField, MatHint, MatLabel, MatSuffix } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { MatSlideToggle, MatSlideToggleChange } from '@angular/material/slide-toggle';
@@ -11,13 +11,16 @@ import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailRow } from '../../../shared/list-detail/detail-row';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
 import { UnsavedBar } from '../../../shared/list-detail/unsaved-bar';
+import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import { PricingStore } from '../data/pricing-store';
 import {
   Band,
   RateChange,
   StationType,
-  billingLabel,
+  maxPlayers,
+  ratesFor,
+  summarizeWindows,
   findRate,
   rateRows,
   typeIcon,
@@ -48,6 +51,7 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
     MatButton,
     MatIcon,
     MatFormField,
+    MatHint,
     MatLabel,
     MatSuffix,
     MatInput,
@@ -59,7 +63,7 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
       [crumb]="'Pricing / ' + t.name"
       [icon]="icon()"
       [heading]="t.name"
-      [subtitle]="t.stations + (t.stations === 1 ? ' station' : ' stations') + ' · code ' + t.code"
+      [subtitle]="t.stations + (t.stations === 1 ? ' station' : ' stations')"
       (closed)="closed.emit()"
     >
       <div actions class="arena-compact flex gap-2">
@@ -71,7 +75,7 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
         t.active ? 'Enabled' : 'Off'
       }}</app-status-pill>
 
-      <app-detail-section [heading]="priceHeading()" [subtitle]="priceHelp()">
+      <app-detail-section heading="Base rate" [subtitle]="priceHelp()">
         @if (t.durationModel === 'unit') {
           <mat-form-field class="max-w-56">
             <mat-label>Block length</mat-label>
@@ -119,6 +123,13 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
             }
           }
         </div>
+        <mat-form-field class="max-w-56">
+          <mat-label>Max players</mat-label>
+          <input matInput readonly [value]="players()" aria-describedby="max-players-hint" />
+          <mat-hint id="max-players-hint">{{
+            t.usesControllers ? 'Set by the controller rows above' : 'Any number can play'
+          }}</mat-hint>
+        </mat-form-field>
         @if (!hasStandard()) {
           <p class="text-[13px] leading-[1.45] text-warning">
             No standard price yet: staff can't bill {{ t.name }} until it has one.
@@ -127,19 +138,12 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
         @if (error()) {
           <p role="alert" class="text-sm font-medium text-danger">{{ error() }}</p>
         }
-      </app-detail-section>
-
-      <app-detail-section heading="Settings">
-        <app-detail-row label="Billing" [value]="billing()" />
-        <app-detail-row label="Uses controllers" [value]="t.usesControllers ? 'Yes' : 'No'" />
-        <app-detail-row label="Uses games" [value]="t.usesGames ? 'Yes' : 'No'" />
-        <app-detail-row label="Happy-hour pricing" [value]="t.happyEligible ? 'On' : 'Off'" />
         <div class="flex items-center justify-between gap-4">
           <span class="flex flex-col gap-1">
             <span class="text-[15px] leading-[1.3]" id="type-enabled">Enabled</span>
-            <span class="text-[13px] leading-[1.3] text-muted">{{
-              t.active ? 'Staff can start sessions of this type' : 'Hidden from staff everywhere'
-            }}</span>
+            <span class="text-[13px] leading-[1.3] text-muted"
+              >Turn off to hide this type everywhere</span
+            >
           </span>
           <mat-slide-toggle
             hideIcon
@@ -149,6 +153,22 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
             (change)="setActive($event)"
           />
         </div>
+      </app-detail-section>
+
+      <app-detail-section
+        heading="With rules applied"
+        subtitle="What staff are charged in each pricing window, from the saved prices."
+      >
+        @if (applied(); as a) {
+          <app-detail-row label="Base" [value]="a.base" />
+          @if (a.happy) {
+            <app-detail-row [label]="'Happy hour · ' + a.happy.when" [value]="a.happy.value" />
+          } @else {
+            <p class="text-[13px] leading-[1.45] text-muted">No active rules cover this type.</p>
+          }
+        } @else {
+          <p class="text-[13px] leading-[1.45] text-muted">No standard price yet.</p>
+        }
       </app-detail-section>
 
       @if (dirty()) {
@@ -166,13 +186,33 @@ export class TypeDetail {
   readonly closed = output<void>();
 
   protected readonly icon = computed(() => typeIcon(this.type()));
-  protected readonly billing = computed(() => billingLabel(this.type().durationModel));
+  protected readonly players = computed(() => {
+    const n = maxPlayers(this.type(), this.store.rates());
+    return n ? String(n) : 'Any';
+  });
+  /**
+   * The design's "With rules applied": the headline standard price, and the happy-hour price for
+   * the same controller count when this type takes happy hour and a window is set.
+   */
+  protected readonly applied = computed(() => {
+    const t = this.type();
+    const rates = this.store.rates();
+    const standard = ratesFor(t, rates).filter((r) => r.band === 'standard');
+    if (!standard.length) return null;
+    const cheapest = standard.reduce((x, y) => (y.pricePaise < x.pricePaise ? y : x));
+    const per = cheapest.unitMinutes === 60 ? 'per hour' : `per ${cheapest.unitMinutes} min`;
+    const base = `${formatRupees(cheapest.pricePaise)} ${per}`;
+    const when = summarizeWindows(this.store.hours()?.happy ?? {});
+    if (!t.happyEligible || !when) return { base, happy: null };
+    const happy = findRate(rates, t.code, 'happy', cheapest.controllerCount);
+    return {
+      base,
+      happy: { when, value: happy ? `${formatRupees(happy.pricePaise)} ${per}` : 'Standard price' },
+    };
+  });
   protected readonly rows = computed(() => rateRows(this.type()));
   protected readonly bands = computed<Band[]>(() =>
     this.type().happyEligible ? ['standard', 'happy'] : ['standard'],
-  );
-  protected readonly priceHeading = computed(() =>
-    this.type().durationModel === 'unit' ? 'Price per block' : 'Price per hour',
   );
   protected readonly priceHelp = computed(() => {
     const t = this.type();

@@ -135,6 +135,19 @@ describe('Owner auth flow', () => {
     expect(body().textContent).toContain('late@arena.in');
   });
 
+  it('the invitation page opens for a signed-out visitor (no guard sends it away)', async () => {
+    await start('/accept-invite', false, true);
+    expect(url()).toBe('/accept-invite');
+    expect(heading()).toBe('Invitation link incomplete');
+  });
+
+  it('the invitation page also opens while signed in (not redirected to the dashboard)', async () => {
+    await start('/accept-invite', true, true);
+    expect(url()).toBe('/accept-invite');
+    expect(heading()).toBe('Invitation link incomplete');
+    expect(body().querySelector('nav[aria-label="Main"]')).toBeNull();
+  });
+
   it('a signed-in login without an arena goes to create one', async () => {
     await start('/users', true, false);
     expect(url()).toBe('/create-arena');

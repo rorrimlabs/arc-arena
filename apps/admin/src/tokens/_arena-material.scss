@@ -204,6 +204,26 @@
     )
   );
 
+  // Small header link (Overview's Live → Stations): 32px text button, 12px sides.
+  .arena-link {
+    @include mat.button-overrides(
+      (
+        text-container-height: 32px,
+        text-horizontal-padding: 12px,
+      )
+    );
+  }
+
+  // Period switch in a page header (design: `seg`): 36px, 13.5px labels.
+  .arena-seg {
+    @include mat.button-toggle-overrides(
+      (
+        height: 36px,
+        label-text-size: 13.5px,
+      )
+    );
+  }
+
   // Dialog: the design's 28px corners, raised surface, 24px body-font title.
   @include mat.dialog-overrides(
     (

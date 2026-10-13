@@ -60,6 +60,11 @@ import { initials, statusTone } from './user-format';
           <app-stat-tile label="Bills · 30 days" [value]="u.bills30d.toString()" />
           <app-stat-tile label="Takings · 30 days" [value]="rupees(u.takings30dPaise)" />
           <app-stat-tile label="Refunds · 30 days" [value]="rupees(u.refunds30dPaise)" />
+          <app-stat-tile
+            label="Discounts · 30 days"
+            value="—"
+            title="Discounts aren't recorded on bills yet"
+          />
         </div>
       }
       @if (u.role === 'staff') {
@@ -97,8 +102,8 @@ import { initials, statusTone } from './user-format';
       @if (u.invited && u.active) {
         <app-detail-section>
           <p class="text-[13px] leading-[1.45] text-muted">
-            {{ u.email }} has not signed in yet. Give them the starting password in person; they
-            choose their own after signing in.
+            {{ u.email }} has not signed in yet. They sign in with this email and the password they
+            chose.
           </p>
         </app-detail-section>
       }
@@ -150,6 +155,9 @@ export class UserDetail {
     const perms = event.checked ? [...u.perms, code] : u.perms.filter((p) => p !== code);
     try {
       await this.store.change(u, { perms });
+      // The server may have saved something else (an adjusted change): show what it holds.
+      const saved = this.store.byId().get(u.userId);
+      if (saved) event.source.checked = saved.perms.includes(code);
     } catch (e) {
       // Refused: put the switch back where the server left it.
       event.source.checked = !event.checked;

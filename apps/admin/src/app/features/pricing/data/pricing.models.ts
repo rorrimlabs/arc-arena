@@ -149,6 +149,26 @@ export function headlinePrice(
   return { price: formatRupees(cheapest.pricePaise), per };
 }
 
+/**
+ * Happy hour's preview row for a type (design: the rule's "Preview" section): the headline
+ * standard rate → the happy rate for the same controller count, or why there is none.
+ */
+export function happyPreview(
+  type: StationType,
+  rates: readonly Rate[],
+): { value: string; included: boolean } {
+  if (!type.happyEligible) return { value: 'Not included', included: false };
+  const standard = ratesFor(type, rates).filter((r) => r.band === 'standard');
+  if (!standard.length) return { value: 'No standard price', included: false };
+  const cheapest = standard.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a));
+  const per = cheapest.unitMinutes === 60 ? '/h' : `/${cheapest.unitMinutes} min`;
+  const happy = findRate(rates, type.code, 'happy', cheapest.controllerCount);
+  const value = happy
+    ? `${formatRupees(cheapest.pricePaise)} → ${formatRupees(happy.pricePaise)}${per}`
+    : `${formatRupees(cheapest.pricePaise)}${per} · standard price`;
+  return { value, included: true };
+}
+
 /** "2:00 pm" from minutes after IST midnight (1440 = midnight). */
 export function formatMinuteOfDay(minutes: number): string {
   const m = minutes % 1440;

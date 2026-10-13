@@ -5,12 +5,14 @@ import { MatIcon } from '@angular/material/icon';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
+import { isOwnerLevel } from '../../core/arena/arena-api';
 import { ArenaContext } from '../../core/arena/arena-context';
 import { Layout } from '../../core/layout/layout';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
 import { StatusPill } from '../../shared/status-pill/status-pill';
+import { InviteList } from './components/invite-list';
 import { UserDetail } from './components/user-detail';
 import { initials, statusTone } from './components/user-format';
 import { UsersStore } from './data/users-store';
@@ -19,8 +21,9 @@ import { UserDialog, UserDialogData, UserDialogResult } from './dialogs/user-dia
 
 /**
  * Users (design: `if (p === 'staff')`, extended to owners): owners and staff listed in their own
- * sections. The selected user is in the URL (`?id=`); on a wide screen the first one is shown
- * when none is chosen, as in the design.
+ * sections, then the open invitations (people join only by accepting an e-mailed invitation).
+ * The selected user is in the URL (`?id=`); on a wide screen the first one is shown when none is
+ * chosen, as in the design.
  */
 @Component({
   selector: 'app-users-page',
@@ -28,6 +31,7 @@ import { UserDialog, UserDialogData, UserDialogResult } from './dialogs/user-dia
     ListDetail,
     ListPaneHeader,
     ListRow,
+    InviteList,
     UserDetail,
     StatusPill,
     MatButton,
@@ -39,7 +43,7 @@ import { UserDialog, UserDialogData, UserDialogResult } from './dialogs/user-dia
       <ng-container list>
         <app-list-pane-header title="Users">
           <button actions mat-flat-button type="button" (click)="add()">
-            <mat-icon aria-hidden="true">add</mat-icon>Add
+            <mat-icon aria-hidden="true">person_add</mat-icon>Invite
           </button>
           <p class="text-[13px] leading-[1.3] text-muted">
             Owners manage the arena here. Staff sign in on the floor app.
@@ -82,6 +86,9 @@ import { UserDialog, UserDialogData, UserDialogResult } from './dialogs/user-dia
                 </ul>
               </section>
             }
+            @if (showInvites()) {
+              <app-invite-list />
+            }
           }
         </div>
       </ng-container>
@@ -116,9 +123,16 @@ export class UsersPage {
       key: 'staff',
       heading: 'Staff',
       users: this.store.staff(),
-      empty: 'No staff yet. Add the people who run the floor.',
+      empty: 'No staff yet. Invite the people who run the floor.',
     },
   ]);
+  /** Open invitations, for owner-level logins (arena_invites), when there are any. */
+  protected readonly showInvites = computed(() => {
+    const me = this.arena.currentMembership();
+    return (
+      !!me && isOwnerLevel(me) && (this.store.invites().length > 0 || !!this.store.invitesError())
+    );
+  });
   protected readonly selected = computed<ArenaUser | undefined>(() => {
     const id = this.id();
     if (id) return this.store.byId().get(id);
@@ -155,7 +169,7 @@ export class UsersPage {
       .subscribe((result) => {
         if (!result) return;
         this.snack.open(result.snack, undefined, { duration: 3200 });
-        void this.router.navigate([], { queryParams: { id: result.userId } });
+        if (result.userId) void this.router.navigate([], { queryParams: { id: result.userId } });
       });
   }
 }

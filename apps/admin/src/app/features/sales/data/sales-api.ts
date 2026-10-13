@@ -2,6 +2,7 @@ import { Service, inject } from '@angular/core';
 import { dbError } from '../../../core/arena/arena-api';
 import { AppError } from '../../../core/auth/auth-api';
 import { Supabase } from '../../../core/supabase/supabase';
+import { pushOps } from '../../../core/sync/push-ops';
 import {
   Bill,
   BillDetail,
@@ -118,23 +119,26 @@ class SupabaseSalesApi extends SalesApi {
 
   async void(arenaId: string, bill: Bill, reason: string): Promise<void> {
     const client = await this.supabase.client();
-    const { data, error } = await client.rpc('sync_push', {
-      p_arena: arenaId,
-      p_ops: [
-        {
-          op_id: crypto.randomUUID(),
-          kind: bill.kind === 'group' ? 'group.void' : 'session.void',
-          payload:
-            bill.kind === 'group' ? { group_id: bill.id, reason } : { session_id: bill.id, reason },
-        },
-      ],
-      p_device: 'admin-web',
-    });
-    if (error) throw salesError(error);
-    const result = (data as { results: { status: string; error?: string }[] }).results[0];
-    if (result?.status !== 'applied') {
-      const code = result?.error ?? 'rejected';
-      throw new AppError(code, SALES_MESSAGES[code] ?? code);
+    try {
+      // Through pushOps: the other devices hear of the void only once it is recorded.
+      await pushOps(
+        client,
+        arenaId,
+        [
+          {
+            kind: bill.kind === 'group' ? 'group.void' : 'session.void',
+            payload:
+              bill.kind === 'group'
+                ? { group_id: bill.id, reason }
+                : { session_id: bill.id, reason },
+          },
+        ],
+        SALES_MESSAGES,
+      );
+    } catch (e) {
+      throw e instanceof AppError && SALES_MESSAGES[e.code]
+        ? new AppError(e.code, SALES_MESSAGES[e.code])
+        : e;
     }
   }
 }

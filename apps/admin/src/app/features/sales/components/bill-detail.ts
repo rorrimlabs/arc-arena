@@ -91,6 +91,9 @@ import { VoidDialog, VoidDialogData } from '../dialogs/void-dialog';
           @if (rounding(); as r) {
             <app-detail-row label="Rounding" [value]="signed(r)" />
           }
+          <!-- Design rows the bills don't record yet (GST is not configured per arena). -->
+          <app-detail-row label="Discount" value="Not connected yet" [muted]="true" />
+          <app-detail-row label="GST" value="Not connected yet" [muted]="true" />
           <div class="h-px bg-border" role="presentation"></div>
           <app-detail-row label="Total" [value]="rupees(d.billedPaise ?? 0)" [strong]="true" />
           @if (d.paymentStatus === 'waived' && !d.voided) {

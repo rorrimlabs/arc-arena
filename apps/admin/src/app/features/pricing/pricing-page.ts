@@ -7,9 +7,12 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
 import { Layout } from '../../core/layout/layout';
+import { DetailPane } from '../../shared/list-detail/detail-pane';
+import { DetailSection } from '../../shared/list-detail/detail-section';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
+import { NotConnected } from '../../shared/not-connected/not-connected';
 import { StatusPill } from '../../shared/status-pill/status-pill';
 import { HappyHourDetail } from './components/happy-hour-detail';
 import { TypeDetail } from './components/type-detail';
@@ -39,6 +42,9 @@ const HAPPY = 'happy';
     StatusPill,
     TypeDetail,
     HappyHourDetail,
+    NotConnected,
+    DetailPane,
+    DetailSection,
     MatButton,
     MatIcon,
     MatProgressBar,
@@ -47,76 +53,89 @@ const HAPPY = 'happy';
     <app-list-detail
       listLabel="Pricing"
       detailLabel="Price details"
-      [open]="!!selectedId()"
+      [open]="!!selectedId() || failedWide()"
       (closed)="close()"
     >
       <ng-container list>
         <app-list-pane-header title="Pricing">
-          <button actions mat-flat-button type="button" (click)="add()">
-            <mat-icon aria-hidden="true">add</mat-icon>Add type
-          </button>
-          <p class="text-[13px] leading-[1.3] text-muted">
-            What staff can start, what it costs, and when happy hour runs.
-          </p>
+          <div actions class="flex gap-2">
+            <button mat-stroked-button type="button" (click)="add()">
+              <mat-icon aria-hidden="true">add</mat-icon>Type
+            </button>
+            <button
+              mat-flat-button
+              type="button"
+              disabled
+              aria-describedby="pricing-rules-note"
+              title="Pricing rules aren't connected yet"
+            >
+              <mat-icon aria-hidden="true">add</mat-icon>Rule
+            </button>
+          </div>
         </app-list-pane-header>
         @if (store.loading()) {
           <mat-progress-bar mode="indeterminate" aria-label="Loading prices" />
         }
         <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
           @if (store.loadError(); as error) {
-            <div class="flex flex-col items-center gap-3 px-4 py-12 text-center">
-              <p role="alert" class="text-sm text-danger">{{ error }}</p>
+            <div class="flex flex-col items-start gap-3 px-3 pt-3 pb-1">
+              <p role="alert" class="text-sm leading-[1.4] text-danger">{{ error }}</p>
               <button mat-stroked-button type="button" (click)="store.load(true)">Try again</button>
             </div>
-          } @else if (store.data()) {
-            <section aria-labelledby="pricing-types">
-              <h2
-                id="pricing-types"
-                class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
-              >
-                Station types
-              </h2>
-              <ul class="flex flex-col gap-0.5">
-                @for (t of store.types(); track t.id) {
-                  <li>
-                    <app-list-row
-                      [title]="t.name"
-                      [subtitle]="typeSub(t)"
-                      [icon]="icon(t)"
-                      [selected]="t.id === selectedId()"
-                      [queryParams]="{ id: t.id }"
-                    >
-                      @if (price(t); as p) {
-                        <span class="text-sm leading-none font-semibold tabular-nums">{{
-                          p.price
-                        }}</span>
-                        <span class="text-xs leading-none text-muted">{{ p.per }}</span>
-                      } @else {
-                        <app-status-pill tone="warning">No price</app-status-pill>
-                      }
-                    </app-list-row>
-                  </li>
-                } @empty {
-                  <li class="px-3 py-4 text-sm leading-[1.45] text-muted">
+          }
+          <section aria-labelledby="pricing-types">
+            <h2
+              id="pricing-types"
+              class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
+            >
+              Station types
+            </h2>
+            <ul class="flex flex-col gap-0.5">
+              @for (t of store.types(); track t.id) {
+                <li>
+                  <app-list-row
+                    [title]="t.name"
+                    [subtitle]="typeSub(t)"
+                    [icon]="icon(t)"
+                    [selected]="t.id === selectedId()"
+                    [queryParams]="{ id: t.id }"
+                  >
+                    @if (price(t); as p) {
+                      <span class="text-sm leading-none font-semibold tabular-nums">{{
+                        p.price
+                      }}</span>
+                      <span class="text-xs leading-none text-muted">{{ p.per }}</span>
+                    } @else {
+                      <app-status-pill tone="warning">No price</app-status-pill>
+                    }
+                  </app-list-row>
+                </li>
+              } @empty {
+                <li class="px-3 py-4 text-sm leading-[1.45] text-muted">
+                  @if (store.data()) {
                     No station types yet. Add what staff can start, e.g. PlayStation 5, VR or Pool,
                     then set its prices.
-                  </li>
-                }
-              </ul>
-            </section>
-            <section aria-labelledby="pricing-happy">
-              <h2
-                id="pricing-happy"
-                class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
-              >
-                Happy hour
-              </h2>
-              <ul>
+                  } @else if (!store.loading()) {
+                    Not loaded.
+                  }
+                </li>
+              }
+            </ul>
+          </section>
+          <section aria-labelledby="pricing-rules">
+            <h2
+              id="pricing-rules"
+              class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
+            >
+              Pricing rules
+            </h2>
+            <ul class="flex flex-col gap-0.5">
+              @if (store.data()) {
                 <li>
                   <app-list-row
                     title="Happy hour"
                     [subtitle]="happySummary() || 'Not set'"
-                    icon="schedule"
+                    icon="trending_down"
                     [selected]="selectedId() === happy"
                     [queryParams]="{ id: happy }"
                   >
@@ -125,13 +144,39 @@ const HAPPY = 'happy';
                     }}</app-status-pill>
                   </app-list-row>
                 </li>
-              </ul>
-            </section>
-          }
+              } @else if (!store.loading()) {
+                <li class="px-3 py-4 text-sm leading-[1.45] text-muted">Not loaded.</li>
+              }
+            </ul>
+            <div class="px-3 py-3">
+              <app-not-connected id="pricing-rules-note"
+                >Percentage and flat-rate rules (weekends, holidays) can't be saved
+                yet.</app-not-connected
+              >
+            </div>
+          </section>
         </div>
       </ng-container>
       <ng-container detail>
-        @if (selectedId() === happy && store.hours()) {
+        @if (failedWide()) {
+          <!-- The design's type detail, with nothing in it: the price list did not load. -->
+          <app-detail-pane
+            crumb="Pricing"
+            icon="sell"
+            heading="Station type"
+            subtitle="Not loaded"
+            (closed)="close()"
+          >
+            <app-detail-section heading="Base rate">
+              <p role="alert" class="text-[13px] leading-[1.45] text-danger">
+                Prices couldn't load: {{ store.loadError() }}
+              </p>
+            </app-detail-section>
+            <app-detail-section heading="With rules applied">
+              <p class="text-[13px] leading-[1.45] text-muted">Not loaded.</p>
+            </app-detail-section>
+          </app-detail-pane>
+        } @else if (selectedId() === happy && store.hours()) {
           <app-happy-hour-detail (closed)="close()" />
         } @else if (selectedType(); as t) {
           <app-type-detail [type]="t" (closed)="close()" />
@@ -162,6 +207,10 @@ export class PricingPage {
     if (!this.layout.wideDetail() || !this.store.data()) return undefined;
     return this.store.types()[0]?.id ?? HAPPY;
   });
+  /** Wide screen, price list failed: the detail side shows the empty type detail. */
+  protected readonly failedWide = computed(
+    () => !!this.store.loadError() && !this.store.data() && this.layout.wideDetail(),
+  );
   protected readonly selectedType = computed(() => {
     const id = this.selectedId();
     return id && id !== HAPPY ? this.store.byId().get(id) : undefined;

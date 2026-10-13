@@ -13,8 +13,8 @@ const CODE_LENGTH = 6;
 
 /**
  * New arena owner: email + password, then the 6-digit code from the confirmation email. A
- * confirmed login continues to create its arena. Staff never register here — their owner
- * creates their login from Staff.
+ * confirmed login continues to create its arena. Staff never register here — they join from
+ * the invitation an owner sends them from Users.
  */
 @Component({
   selector: 'app-register',
@@ -24,7 +24,7 @@ const CODE_LENGTH = 6;
     @if (currentStep() === 'details') {
       <app-auth-card
         heading="Create your account"
-        subtitle="For arena owners. Staff sign in on the floor app with the login you create for them."
+        subtitle="For arena owners. Staff join from the invitation you send them, then sign in on the floor app."
       >
         <form class="flex flex-col gap-5" novalidate (submit)="signUp($event)">
           <mat-form-field appearance="outline" subscriptSizing="dynamic">

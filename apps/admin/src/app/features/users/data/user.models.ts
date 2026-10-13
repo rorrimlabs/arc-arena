@@ -8,7 +8,7 @@ export interface ArenaUser {
   readonly role: UserRole;
   readonly perms: readonly string[];
   readonly active: boolean;
-  /** The login has never signed in (still on its starting password). */
+  /** The login has never signed in. */
   readonly invited: boolean;
   readonly bills30d: number;
   readonly takings30dPaise: number;
@@ -34,14 +34,35 @@ export function userStatus(u: ArenaUser): UserStatus {
   return u.role === 'owner' ? 'Owner' : 'Active';
 }
 
+/**
+ * An invitation to join the arena (staff-admin e-mails a one-time link; the person chooses their
+ * own password and joins when they accept it). Nobody chooses a password for anyone else.
+ */
 export interface NewUser {
   readonly role: UserRole;
   readonly name: string;
   readonly email: string;
-  readonly password: string;
   /** Staff only; owners always hold every permission. */
   readonly perms: readonly string[];
 }
+
+/** An invitation not yet accepted or withdrawn, as arena_invites() reports it. */
+export interface PendingInvite {
+  readonly inviteId: string;
+  readonly email: string;
+  readonly name: string;
+  readonly role: UserRole;
+  readonly perms: readonly string[];
+  readonly createdAt: string;
+  readonly expiresAt: string;
+  /** Past expires_at: the link no longer works (send a new invitation). */
+  readonly expired: boolean;
+  /** The inviter's name in this arena; null when they are no longer a member. */
+  readonly invitedByName: string | null;
+}
+
+/** How long an invitation link works (set by the server; shown in the copy). */
+export const INVITE_DAYS = 7;
 
 export interface UserChange {
   readonly name: string;
