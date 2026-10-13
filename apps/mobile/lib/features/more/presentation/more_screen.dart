@@ -163,7 +163,11 @@ class MoreScreen extends ConsumerWidget {
                     );
                     if (go != true) return;
                   }
-                  ref.read(authControllerProvider.notifier).signOut();
+                  if (cloud != null) {
+                    cloud.signOut();
+                  } else {
+                    ref.read(authControllerProvider.notifier).signOut();
+                  }
                 },
               ),
             ]),

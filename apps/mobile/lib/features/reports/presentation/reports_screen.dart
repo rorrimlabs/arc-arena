@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -107,9 +108,12 @@ class _RangePicker extends ConsumerWidget {
   }
 
   Future<void> _pickCustom(BuildContext context, WidgetRef ref) async {
-    final now = DateTime.now();
+    // The arena's (IST) today from the app clock, not the device's.
+    final today = IstDate.fromUtc(ref.read(clockProvider).now());
+    final now = DateTime(today.year, today.month, today.day);
     final picked = await showDateRangePicker(
       context: context,
+      currentDate: now,
       firstDate: DateTime(now.year - 3),
       lastDate: DateTime(now.year + 1),
       helpText: 'Report period',

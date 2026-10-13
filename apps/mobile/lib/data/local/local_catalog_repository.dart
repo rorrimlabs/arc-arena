@@ -16,6 +16,7 @@ import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/domain/value/floor_options.dart';
 import 'package:drift/drift.dart';
 
 class LocalCatalogRepository implements CatalogRepository {
@@ -208,7 +209,7 @@ class LocalCatalogRepository implements CatalogRepository {
               resourceId: resourceId,
               status: status.code,
               notes: Value(notes),
-              updatedAt: Value(DateTime.now().toUtc()),
+              updatedAt: Value(_clock.now()),
             ),
           );
       await _op('game.set_compat', gameId, {
@@ -300,6 +301,9 @@ class LocalCatalogRepository implements CatalogRepository {
   // --- owner configuration (brief §2, §8) -----------------------------------
 
   static const _hoursKey = 'business_hours';
+
+  /// Synced setting written by the admin dashboard (settings.save, key floor_options).
+  static const floorOptionsKey = 'floor_options';
 
   @override
   Future<Resource> upsertResource(Resource resource) async {
@@ -457,6 +461,21 @@ class LocalCatalogRepository implements CatalogRepository {
         .getSingleOrNull();
     if (row == null) return BusinessHours.current();
     return BusinessHours.fromJson(jsonDecode(row.json) as Map<String, dynamic>);
+  }
+
+  @override
+  Future<FloorOptions> floorOptions() async {
+    final row = await (_db.select(_db.settings)
+          ..where((t) => t.key.equals(floorOptionsKey)))
+        .getSingleOrNull();
+    if (row == null) return FloorOptions.defaults;
+    try {
+      return FloorOptions.fromJson(jsonDecode(row.json) as Map<String, dynamic>);
+    } on FormatException {
+      return FloorOptions.defaults;
+    } on TypeError {
+      return FloorOptions.defaults;
+    }
   }
 
   @override

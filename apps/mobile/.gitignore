@@ -107,3 +107,5 @@ supabase/.env.*
 *.sqlite-shm
 *.sqlite-journal
 arena_ops-backups/
+
+sentry.properties

@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/controllers/booking_actions.dart';
+import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
@@ -190,10 +191,15 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
               Expanded(
                 child: OutlinedButton.icon(
                   onPressed: () async {
-                    final now = DateTime.now();
+                    // Today is the arena's (IST) business day from the app
+                    // clock, never the device's wall clock.
+                    final today =
+                        IstDate.fromUtc(ref.read(clockProvider).now());
+                    final now = DateTime(today.year, today.month, today.day);
                     final d = await showDatePicker(
                       context: context,
                       initialDate: _date ?? now,
+                      currentDate: now,
                       firstDate: now.subtract(const Duration(days: 1)),
                       lastDate: now.add(const Duration(days: 60)),
                     );
@@ -228,7 +234,7 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
             ],
           )),
           _section('Duration', Builder(builder: (context) {
-            const presets = [30, 60, 90, 120];
+            final presets = ref.watch(startPresetsProvider);
             final isCustom = !presets.contains(_duration);
             return Wrap(
               spacing: AppSpacing.sm,

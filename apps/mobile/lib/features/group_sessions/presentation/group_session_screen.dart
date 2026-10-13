@@ -264,6 +264,7 @@ class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
           _Section(
             title: '4 · Duration',
             child: _DurationChips(
+              presets: ref.watch(startPresetsProvider),
               duration: _duration,
               openEnded: _openEnded,
               onPreset: (d) {
@@ -498,12 +499,15 @@ class _Stepper extends StatelessWidget {
 
 class _DurationChips extends StatelessWidget {
   const _DurationChips({
+    required this.presets,
     required this.duration,
     required this.openEnded,
     required this.onPreset,
     required this.onCustom,
     required this.onOpen,
   });
+  /// The arena's start durations (floor options).
+  final List<int> presets;
   final int duration;
   final bool openEnded;
   final ValueChanged<int> onPreset;
@@ -512,7 +516,6 @@ class _DurationChips extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    const presets = [30, 60, 90, 120];
     final isCustom = !openEnded && !presets.contains(duration);
     return Wrap(
       spacing: AppSpacing.sm,

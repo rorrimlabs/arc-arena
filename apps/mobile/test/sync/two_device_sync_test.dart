@@ -40,8 +40,8 @@ import '../support/sim_device.dart';
 void main() {
   final url = Platform.environment['AO_SUPABASE_URL'];
   final key = Platform.environment['AO_SUPABASE_ANON_KEY'];
-  // Provisioned by tool/sync_it.sh the way the operator does it: logins
-  // created by an admin, the owner attached by bootstrap_owner.
+  // Provisioned by tool/sync_it.sh: throw-away local logins (Auth admin API),
+  // the owner attached by bootstrap_owner, the arena given the test catalog.
   final ownerEmail = Platform.environment['AO_IT_OWNER_EMAIL'];
   final staffEmail = Platform.environment['AO_IT_STAFF_EMAIL'];
   final provisionedArena = Platform.environment['AO_IT_ARENA'];
@@ -57,14 +57,21 @@ void main() {
     if (skip != null) return;
     a = await SimDevice.signIn('A', url!, key!, ownerEmail!);
     arenaId = provisionedArena!;
-    // The owner gives the staff login access from the app (Settings → Staff).
-    await a.client.rpc('add_staff_by_email', params: {
+    // The staff login joins the only way there is: the owner invites it and
+    // it accepts with the one-time token (the e-mail delivery itself is
+    // covered by the dashboard suite; here the token comes back to the owner).
+    final invite = await a.client.rpc('invite_member', params: {
       'p_arena': arenaId,
       'p_email': staffEmail,
       'p_name': 'Staff B',
+      'p_role': 'staff',
       'p_perms': ['start', 'bill', 'discount', 'members'],
-    });
+    }) as Map;
     b = await SimDevice.signIn('B', url, key, staffEmail!);
+    await b.client.rpc('accept_invite', params: {
+      'p_invite': invite['invite_id'],
+      'p_token': invite['token'],
+    });
     a.bind(arenaId);
     b.bind(arenaId);
   });
@@ -155,16 +162,29 @@ void main() {
   }, skip: skip);
 
   test('staff replace the owner-issued password with their own', () async {
+    final startingPassword =
+        Platform.environment['AO_IT_PASSWORD'] ?? 'it-pass-$staffEmail';
+    var restored = false;
+    Future<void> restorePassword() async {
+      if (restored) return;
+      restored = true;
+      await b.client.auth.updateUser(UserAttributes(password: startingPassword));
+    }
+
+    addTearDown(restorePassword);
+
     await b.client.auth.updateUser(UserAttributes(password: 'staff-own-pass-42'));
     final again = SupabaseClient(url!, key!,
         authOptions: const AuthClientOptions(
             autoRefreshToken: false, authFlowType: AuthFlowType.implicit));
     addTearDown(again.dispose);
     await expectLater(
-        again.auth.signInWithPassword(email: staffEmail!, password: 'it-pass-$staffEmail'),
+        again.auth.signInWithPassword(email: staffEmail!, password: startingPassword),
         throwsA(isA<AuthException>()), reason: 'the starting password no longer works');
     final ok = await again.auth.signInWithPassword(email: staffEmail, password: 'staff-own-pass-42');
     expect(ok.session, isNotNull);
+
+    await restorePassword();
   }, skip: skip);
 
   test('both devices start from the server catalog (shared identity)', () async {
@@ -174,7 +194,12 @@ void main() {
       expect((await d.db.select(d.db.resources).get()).length, 6);
       expect((await d.db.select(d.db.controllers).get()).length, 8);
       expect((await d.db.select(d.db.rates).get()).length, 12);
-      expect((await d.db.select(d.db.users).get()).length, 2);
+      // Everyone the server lists as a member (the dashboard phase may have
+      // added an invited person), owner and staff among them.
+      final users = await d.db.select(d.db.users).get();
+      final members = await a.client.from('staff_profiles').select('user_id').eq('arena_id', arenaId);
+      expect(users.length, members.length);
+      expect(users.map((u) => u.id), containsAll([a.userId, b.userId]));
     }
     expect(await a.station('HEX'), await b.station('HEX'),
         reason: 'one id per station on every device');
@@ -657,6 +682,21 @@ void main() {
     await b.sync();
     final staff = await (a.db.select(a.db.users)..where((t) => t.id.equals(b.userId)))
         .getSingle();
+    var restored = false;
+    Future<void> restoreStaff() async {
+      if (restored) return;
+      restored = true;
+      await LocalUserRepository(a.db, a.clock, a.recorder).upsert(AppUser(
+        id: staff.id,
+        name: staff.name,
+        perms: Permission.parse(staff.perms),
+        active: true,
+      ));
+      expect((await a.sync()).rejected, 0);
+    }
+
+    addTearDown(restoreStaff);
+
     await LocalUserRepository(a.db, a.clock, a.recorder).upsert(AppUser(
       id: staff.id,
       name: staff.name,
@@ -670,5 +710,7 @@ void main() {
     expect(b.engine.status.accessRevoked, isTrue);
     expect((await b.outbox(OutboxStatus.pending)).length, 1,
         reason: 'nothing is thrown away');
+
+    await restoreStaff();
   }, skip: skip);
 }

@@ -64,6 +64,7 @@ void main() {
       sessions: sessionsRepo,
       catalog: catalog,
       clock: clock,
+      guard: staff,
       groups: groupsRepo,
       boards: boards,
     );

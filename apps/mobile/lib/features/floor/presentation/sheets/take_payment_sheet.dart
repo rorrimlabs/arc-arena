@@ -1,12 +1,14 @@
 import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/domain/value/floor_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -43,6 +45,10 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
   final _amountCtrl = TextEditingController();
   final _noteCtrl = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
+
+  /// The pick, or the first method the arena offers when the pick is not (floor options).
+  PaymentMethod _offered(PaymentMethod picked) =>
+      (ref.read(floorOptionsProvider).value ?? FloorOptions.defaults).methodOr(picked);
   bool _saving = false;
   bool _prefilled = false;
 
@@ -53,8 +59,13 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
     super.dispose();
   }
 
-  int get _enteredPaise =>
-      ((double.tryParse(_amountCtrl.text.trim()) ?? 0) * 100).round();
+  /// Exact paise for what is typed (never via a double); 0 when the text is
+  /// not a rupee amount, so Record stays disabled.
+  int get _enteredPaise => parseRupeesToPaise(_amountCtrl.text) ?? 0;
+
+  bool get _amountInvalid =>
+      _amountCtrl.text.trim().isNotEmpty &&
+      parseRupeesToPaise(_amountCtrl.text) == null;
 
   @override
   Widget build(BuildContext context) {
@@ -76,7 +87,7 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
     if (!_prefilled) {
       _prefilled = true;
       if (remaining > 0) {
-        _amountCtrl.text = (remaining / 100).toStringAsFixed(2);
+        _amountCtrl.text = paiseToRupeeInput(remaining);
       }
     }
 
@@ -108,10 +119,10 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
             Wrap(
               spacing: AppSpacing.sm,
               children: [
-                for (final m in PaymentMethod.values)
+                for (final m in ref.watch(offeredPaymentMethodsProvider))
                   ChoiceChip(
                     label: Text(_methodLabel(m)),
-                    selected: _method == m,
+                    selected: _offered(_method) == m,
                     onSelected: (_) => setState(() => _method = m),
                   ),
               ],
@@ -121,12 +132,13 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
               controller: _amountCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
               ],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Amount (₹)',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
                 prefixText: '₹ ',
+                errorText: _amountInvalid ? rupeeInputError : null,
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -221,7 +233,7 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
           RecordPaymentCommand(
             sessionId: widget.session.id,
             amountPaise: amount,
-            method: _method,
+            method: _offered(_method),
             note: note.isEmpty ? null : note,
           ),
         );
@@ -237,7 +249,7 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(
-          '${Paise(amount).display} recorded by ${_methodLabel(_method)}.'
+          '${Paise(amount).display} recorded by ${_methodLabel(_offered(_method))}.'
           '${change > 0 ? ' Return ${Paise(change).display} change.' : ''}',
         ),
       ),

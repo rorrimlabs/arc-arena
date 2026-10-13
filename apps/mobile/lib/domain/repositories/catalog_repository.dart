@@ -8,6 +8,7 @@ import 'package:arena_ops/domain/pricing/billing_policy.dart';
 import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/domain/value/floor_options.dart';
 
 /// A game paired with its availability on a particular resource (spec §4–§5).
 typedef GameOnResource = ({Game game, GameAvailability status});
@@ -100,6 +101,10 @@ abstract interface class CatalogRepository {
 
   Future<BusinessHours> businessHours();
   Future<void> saveBusinessHours(BusinessHours hours);
+
+  /// What the floor offers staff (payment methods, start durations, warning); set on the
+  /// admin dashboard, read-only here. [FloorOptions.defaults] until the arena sets them.
+  Future<FloorOptions> floorOptions();
 
   Future<List<Holiday>> holidays();
   Future<void> upsertHoliday(Holiday holiday);

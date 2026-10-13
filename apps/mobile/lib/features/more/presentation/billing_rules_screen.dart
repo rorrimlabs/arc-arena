@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -196,7 +197,15 @@ class _BillingRulesScreenState extends ConsumerState<BillingRulesScreen> {
 
   Future<void> _save() async {
     setState(() => _saving = true);
-    await ref.read(catalogRepositoryProvider).savePolicy(_policy!);
+    final r = await ref.read(catalogActionsProvider).savePolicy(_policy!);
+    if (r.isErr) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(r.failureOrNull!.display)),
+      );
+      return;
+    }
     ref.invalidate(pricingSnapshotProvider);
     if (!mounted) return;
     setState(() {

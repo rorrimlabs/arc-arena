@@ -26,6 +26,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:arena_ops/core/clock/clock.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/sync/sync_applier.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
@@ -88,15 +89,14 @@ class SyncStatus {
     DateTime? lastSyncedAt,
     String? message,
     bool? accessRevoked,
-  }) =>
-      SyncStatus(
-        state: state ?? this.state,
-        pending: pending ?? this.pending,
-        needsAttention: needsAttention ?? this.needsAttention,
-        lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
-        message: message,
-        accessRevoked: accessRevoked ?? this.accessRevoked,
-      );
+  }) => SyncStatus(
+    state: state ?? this.state,
+    pending: pending ?? this.pending,
+    needsAttention: needsAttention ?? this.needsAttention,
+    lastSyncedAt: lastSyncedAt ?? this.lastSyncedAt,
+    message: message,
+    accessRevoked: accessRevoked ?? this.accessRevoked,
+  );
 
   @override
   String toString() =>
@@ -112,7 +112,8 @@ class SyncReport {
   SyncState endedIn = SyncState.synced;
 
   @override
-  String toString() => 'SyncReport(applied: $applied, rejected: $rejected, '
+  String toString() =>
+      'SyncReport(applied: $applied, rejected: $rejected, '
       'rolledBack: $rolledBack, pulled: $pulledChanges, $endedIn)';
 }
 
@@ -124,6 +125,7 @@ class SyncEngine {
     this.clock = const SystemClock(),
     this.pollEvery = const Duration(seconds: 10),
     this.batchSize = 50,
+    this.onPushed,
   }) : _applier = SyncApplier(db);
 
   final AppDatabase db;
@@ -133,6 +135,12 @@ class SyncEngine {
   final Duration pollEvery;
   final int batchSize;
   final SyncApplier _applier;
+
+  /// Called after a push batch the server answered, with the kinds of the ops
+  /// it APPLIED (empty batches and refused ops are not reported). Cloud mode
+  /// broadcasts the nudge from here, so other devices hear about a change only
+  /// once it is committed on the server — never for a refused or unsent op.
+  final void Function(List<String> appliedKinds)? onPushed;
 
   static const _uuid = Uuid();
   static const cursorKey = 'pull_cursor';
@@ -216,6 +224,14 @@ class SyncEngine {
     });
   }
 
+  /// A remote nudge (Realtime): sync now unless the engine is stopped — paused
+  /// in the background, or halted because the sign-in ended or access was
+  /// turned off. Remote events must not restart a stopped engine.
+  Future<void> syncIfRunning() async {
+    if (_stopped) return;
+    await syncNow();
+  }
+
   /// One full pass. Concurrent calls share the running pass and schedule one
   /// more, so no change is missed and no two passes overlap.
   Future<SyncReport> syncNow() {
@@ -237,11 +253,14 @@ class SyncEngine {
 
   /// This device's id (sent with every push; created once).
   Future<String> deviceId() async {
-    final row = await (db.select(db.syncMeta)..where((t) => t.key.equals(deviceKey)))
-        .getSingleOrNull();
+    final row = await (db.select(
+      db.syncMeta,
+    )..where((t) => t.key.equals(deviceKey))).getSingleOrNull();
     if (row != null) return row.value;
     final id = _uuid.v4();
-    await db.into(db.syncMeta).insertOnConflictUpdate(SyncMetaRow(key: deviceKey, value: id));
+    await db
+        .into(db.syncMeta)
+        .insertOnConflictUpdate(SyncMetaRow(key: deviceKey, value: id));
     return id;
   }
 
@@ -254,12 +273,11 @@ class SyncEngine {
   }
 
   Future<SyncStatus> _counts(SyncStatus base) async => base.copyWith(
-        state: base.state,
-        message: base.message,
-        pending: await _count(OutboxStatus.pending),
-        needsAttention:
-            await _count(OutboxStatus.rejected, unresolvedOnly: true),
-      );
+    state: base.state,
+    message: base.message,
+    pending: await _count(OutboxStatus.pending),
+    needsAttention: await _count(OutboxStatus.rejected, unresolvedOnly: true),
+  );
 
   Future<void> _refreshCounts() async {
     try {
@@ -288,30 +306,54 @@ class SyncEngine {
       report.endedIn = pending == 0 ? SyncState.synced : SyncState.pending;
       final now = clock.now();
       if (pending == 0) await _setMeta(lastSyncKey, now.toIso8601String());
-      _emit(await _counts(SyncStatus(
-        state: report.endedIn,
-        lastSyncedAt: pending == 0 ? now : _status.lastSyncedAt,
-      )));
+      _emit(
+        await _counts(
+          SyncStatus(
+            state: report.endedIn,
+            lastSyncedAt: pending == 0 ? now : _status.lastSyncedAt,
+          ),
+        ),
+      );
     } on SyncOfflineException catch (e) {
       report.endedIn = SyncState.offline;
       _backoff();
-      _emit(await _counts(_status.copyWith(
-          state: SyncState.offline, message: 'Server unreachable ($e)')));
+      _emit(
+        await _counts(
+          _status.copyWith(
+            state: SyncState.offline,
+            message: 'Server unreachable ($e)',
+          ),
+        ),
+      );
     } on SyncAuthException catch (e) {
       report.endedIn = SyncState.authProblem;
       stop();
-      _emit(await _counts(_status.copyWith(
-        state: SyncState.authProblem,
-        accessRevoked: e.revoked,
-        message: e.revoked
-            ? 'Your access to this arena was turned off.'
-            : 'Sign in again to keep syncing.',
-      )));
-    } on Object catch (e) {
+      _emit(
+        await _counts(
+          _status.copyWith(
+            state: SyncState.authProblem,
+            accessRevoked: e.revoked,
+            message: e.revoked
+                ? 'Your access to this arena was turned off.'
+                : 'Sign in again to keep syncing.',
+          ),
+        ),
+      );
+    } on Object catch (e, st) {
       report.endedIn = SyncState.error;
       _backoff();
-      _emit(await _counts(
-          _status.copyWith(state: SyncState.error, message: 'Sync failed: $e')));
+      unawaited(
+        AppTelemetry.captureException(
+          e,
+          stackTrace: st,
+          operation: 'sync_engine_cycle',
+        ),
+      );
+      _emit(
+        await _counts(
+          _status.copyWith(state: SyncState.error, message: 'Sync failed: $e'),
+        ),
+      );
     }
     return report;
   }
@@ -327,21 +369,25 @@ class SyncEngine {
   Future<void> _push(SyncReport report) async {
     final device = await deviceId();
     while (true) {
-      final batch = await (db.select(db.syncOutbox)
-            ..where((t) => t.status.equals(OutboxStatus.pending))
-            ..orderBy([(t) => OrderingTerm(expression: t.seq)])
-            ..limit(batchSize))
-          .get();
+      final batch =
+          await (db.select(db.syncOutbox)
+                ..where((t) => t.status.equals(OutboxStatus.pending))
+                ..orderBy([(t) => OrderingTerm(expression: t.seq)])
+                ..limit(batchSize))
+              .get();
       if (batch.isEmpty) return;
 
       final attemptAt = clock.now();
       await db.transaction(() async {
         for (final o in batch) {
-          await (db.update(db.syncOutbox)..where((t) => t.seq.equals(o.seq)))
-              .write(SyncOutboxCompanion(
-            attempts: Value(o.attempts + 1),
-            lastAttemptAt: Value(attemptAt),
-          ));
+          await (db.update(
+            db.syncOutbox,
+          )..where((t) => t.seq.equals(o.seq))).write(
+            SyncOutboxCompanion(
+              attempts: Value(o.attempts + 1),
+              lastAttemptAt: Value(attemptAt),
+            ),
+          );
         }
       });
 
@@ -356,6 +402,7 @@ class SyncEngine {
       final byId = {for (final r in results) r.opId: r};
 
       var stop = false;
+      final appliedKinds = <String>[];
       await db.transaction(() async {
         final now = clock.now();
         for (final o in batch) {
@@ -367,25 +414,40 @@ class SyncEngine {
           }
           if (r.status == 'applied') {
             report.applied++;
-            await (db.update(db.syncOutbox)..where((t) => t.seq.equals(o.seq)))
-                .write(SyncOutboxCompanion(
-              status: const Value(OutboxStatus.applied),
-              result: Value(r.result == null ? null : jsonEncode(r.result)),
-              needsRefetch: Value(r.adjusted),
-              resolvedAt: Value(now),
-            ));
+            appliedKinds.add(o.kind);
+            await (db.update(
+              db.syncOutbox,
+            )..where((t) => t.seq.equals(o.seq))).write(
+              SyncOutboxCompanion(
+                status: const Value(OutboxStatus.applied),
+                result: Value(r.result == null ? null : jsonEncode(r.result)),
+                needsRefetch: Value(r.adjusted),
+                resolvedAt: Value(now),
+              ),
+            );
           } else {
             report.rejected++;
-            await (db.update(db.syncOutbox)..where((t) => t.seq.equals(o.seq)))
-                .write(SyncOutboxCompanion(
-              status: const Value(OutboxStatus.rejected),
-              errorCode: Value(r.error),
-              errorDetail: Value(r.detail),
-              needsRefetch: const Value(true),
-            ));
+            await (db.update(
+              db.syncOutbox,
+            )..where((t) => t.seq.equals(o.seq))).write(
+              SyncOutboxCompanion(
+                status: const Value(OutboxStatus.rejected),
+                errorCode: Value(r.error),
+                errorDetail: Value(r.detail),
+                needsRefetch: const Value(true),
+              ),
+            );
           }
         }
       });
+      if (appliedKinds.isNotEmpty) {
+        try {
+          onPushed?.call(appliedKinds);
+        } on Object catch (_) {
+          // A failed nudge only delays other devices until their next poll;
+          // it must never break this pass.
+        }
+      }
       if (stop) return;
     }
   }
@@ -437,10 +499,11 @@ class SyncEngine {
   }
 
   Future<void> _reconcile(SyncReport report) async {
-    final toRefetch = await (db.select(db.syncOutbox)
-          ..where((t) => t.needsRefetch.equals(true))
-          ..orderBy([(t) => OrderingTerm(expression: t.seq)]))
-        .get();
+    final toRefetch =
+        await (db.select(db.syncOutbox)
+              ..where((t) => t.needsRefetch.equals(true))
+              ..orderBy([(t) => OrderingTerm(expression: t.seq)]))
+            .get();
 
     final entityRefs = <({String type, String id})>[];
     var catalog = false;
@@ -455,8 +518,11 @@ class SyncEngine {
     }
     // Parents before pads, so a pad's open allocation from a refused session is
     // already gone when the pad's own rows are applied.
-    entityRefs.sort((a, b) =>
-        (a.type == 'controller' ? 1 : 0).compareTo(b.type == 'controller' ? 1 : 0));
+    entityRefs.sort(
+      (a, b) => (a.type == 'controller' ? 1 : 0).compareTo(
+        b.type == 'controller' ? 1 : 0,
+      ),
+    );
 
     final fetched = entityRefs.isEmpty
         ? const <EntityRows>[]
@@ -470,7 +536,10 @@ class SyncEngine {
         for (final ch in page.changes) {
           final t = ch['t'] as String;
           if (catalogTables.contains(t)) {
-            catalogRows.add((table: t, row: Map<String, dynamic>.from(ch['r'] as Map)));
+            catalogRows.add((
+              table: t,
+              row: Map<String, dynamic>.from(ch['r'] as Map),
+            ));
           }
         }
         c = page.cursor;
@@ -490,13 +559,17 @@ class SyncEngine {
           for (final e in fetched) {
             await _applier.replaceEntity(e.type, e.id, [
               for (final r in e.rows)
-                (table: r['t'] as String, row: Map<String, dynamic>.from(r['r'] as Map)),
+                (
+                  table: r['t'] as String,
+                  row: Map<String, dynamic>.from(r['r'] as Map),
+                ),
             ]);
           }
           if (catalogRows != null) await _applier.replaceCatalog(catalogRows);
           if (toRefetch.isNotEmpty) {
-            await (db.update(db.syncOutbox)
-                  ..where((t) => t.seq.isIn([for (final o in toRefetch) o.seq])))
+            await (db.update(
+                  db.syncOutbox,
+                )..where((t) => t.seq.isIn([for (final o in toRefetch) o.seq])))
                 .write(const SyncOutboxCompanion(needsRefetch: Value(false)));
             report.rolledBack += toRefetch.length;
           }
@@ -505,8 +578,10 @@ class SyncEngine {
         await _setMeta(cursorKey, page.cursor);
         final serverTime = page.serverTime;
         if (serverTime != null) {
-          await _setMeta(clockOffsetKey,
-              '${serverTime.difference(clock.now()).inMilliseconds}');
+          await _setMeta(
+            clockOffsetKey,
+            '${serverTime.difference(clock.now()).inMilliseconds}',
+          );
         }
         return true;
       });
@@ -518,10 +593,9 @@ class SyncEngine {
     }
   }
 
-  Future<String?> _meta(String key) async =>
-      (await (db.select(db.syncMeta)..where((t) => t.key.equals(key)))
-              .getSingleOrNull())
-          ?.value;
+  Future<String?> _meta(String key) async => (await (db.select(
+    db.syncMeta,
+  )..where((t) => t.key.equals(key))).getSingleOrNull())?.value;
 
   Future<void> _setMeta(String key, String value) => db
       .into(db.syncMeta)
@@ -529,8 +603,9 @@ class SyncEngine {
 
   /// Marks a refused op as seen by a person (it stays in the outbox as history).
   Future<void> acknowledge(String opId) async {
-    await (db.update(db.syncOutbox)..where((t) => t.opId.equals(opId)))
-        .write(SyncOutboxCompanion(resolvedAt: Value(clock.now())));
+    await (db.update(db.syncOutbox)..where((t) => t.opId.equals(opId))).write(
+      SyncOutboxCompanion(resolvedAt: Value(clock.now())),
+    );
     _emit(await _counts(_status));
   }
 }

@@ -91,6 +91,8 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
+    // customers.birth_year arrived in v15.
+    raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('PRAGMA user_version = 10');
     raw.close();
     return sessionId;
@@ -271,6 +273,8 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
+    // customers.birth_year arrived in v15.
+    raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('PRAGMA user_version = 11');
     raw.close();
     return sessionId;
@@ -376,6 +380,8 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
+    // customers.birth_year arrived in v15.
+    raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('PRAGMA user_version = 12');
     raw.close();
     return started.valueOrNull!.id;
@@ -466,6 +472,8 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
+    // customers.birth_year arrived in v15.
+    raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('PRAGMA user_version = 13');
     raw.close();
     return started.valueOrNull!.id;
@@ -526,6 +534,91 @@ void main() {
       addTearDown(db.close);
       expect(db.rebuiltFromVersion, 0);
       expect(await LocalSessionRepository(db).getById(sessionId), isNotNull);
+    });
+  });
+
+  /// A genuine v14 database: the current shape without customers.birth_year,
+  /// holding a member and a live session with a payment.
+  Future<({String sessionId, String customerId})> buildV14Database() async {
+    final db = AppDatabase(NativeDatabase(file));
+    await LocalSeed.apply(db);
+    final catalog = LocalCatalogRepository(db);
+    final sessions = LocalSessionRepository(db);
+    final who = await LocalCustomerRepository(db)
+        .create(name: 'Dev', phone: '9845012873');
+    final started = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: start,
+      scheduledEndAt: start.add(const Duration(hours: 1)),
+      snapshot: await catalog.currentSnapshot(),
+      resourceId: 'void',
+      resourceName: 'VOID',
+      activityCode: 'PS5',
+      controllerCount: 2,
+      controllerIds: ['ctl_void_1', 'ctl_void_2'],
+    ));
+    await sessions.recordPayment(RecordPaymentCommand(
+      sessionId: started.valueOrNull!.id,
+      amountPaise: 26000,
+      method: PaymentMethod.upi,
+    ));
+    await db.close();
+    final raw = sqlite3.open(file.path);
+    raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
+    raw.execute('PRAGMA user_version = 14');
+    raw.close();
+    return (sessionId: started.valueOrNull!.id, customerId: who.id);
+  }
+
+  group('v14 -> v15 (member birth year)', () {
+    test('customers, sessions and payments survive; birth year reads as not '
+        'given', () async {
+      final ids = await buildV14Database();
+      final before = sqlite3.open(file.path);
+      expect(before.userVersion, 14);
+      expect(
+          before
+              .select("SELECT name FROM pragma_table_info('customers') "
+                  "WHERE name='birth_year'")
+              .isEmpty,
+          isTrue);
+      before.close();
+
+      final db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0, reason: 'sequential, not a rebuild');
+      final customers = LocalCustomerRepository(db);
+      final dev = await customers.getById(ids.customerId);
+      expect(dev!.name, 'Dev');
+      expect(dev.phone, '9845012873');
+      expect(dev.birthYear, isNull);
+      final sessions = LocalSessionRepository(db);
+      expect((await sessions.getById(ids.sessionId))!.isActive, isTrue);
+      expect(
+          (await sessions.paymentsFor(ids.sessionId)).single.amountPaise, 26000);
+
+      // The new column is writable straight away.
+      final saved = await customers.update(dev.copyWith(birthYear: 2001));
+      expect(saved.birthYear, 2001);
+      final made = await customers.create(name: 'Diya', birthYear: 2009);
+      expect((await customers.getById(made.id))!.birthYear, 2009);
+
+      final check = sqlite3.open(file.path);
+      expect(check.userVersion, AppDatabase.expectedSchemaVersion);
+      check.close();
+    });
+
+    test('migrating twice is a no-op', () async {
+      final ids = await buildV14Database();
+      var db = AppDatabase(NativeDatabase(file));
+      expect(
+          await LocalCustomerRepository(db).getById(ids.customerId), isNotNull);
+      await db.close();
+      db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0);
+      expect(
+          await LocalCustomerRepository(db).getById(ids.customerId), isNotNull);
     });
   });
 }

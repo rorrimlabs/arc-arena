@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
@@ -10,9 +11,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Which games are playable on a system, before starting a session (spec §5).
 ///
-/// Availability is **per system**, so this is also where staff fix it: a disc
+/// Availability is **per system**, so this is also where it is fixed: a disc
 /// that stopped working on GHOST is marked there and nowhere else, with a note
-/// saying why. Opens the game's controls too, and starts a session.
+/// saying why. Changing it is a Settings job (game.set_compat), so someone
+/// without `settings` sees a read-only list — and the action refuses them
+/// anyway. Opens the game's controls too, and starts a session.
 Future<void> showViewGamesSheet(BuildContext context, Resource resource) {
   return showModalBottomSheet<void>(
     context: context,
@@ -43,6 +46,7 @@ class _ViewGamesSheet extends ConsumerWidget {
         return a.status.isPlayable ? -1 : 1;
       });
     final playable = sorted.where((g) => g.status.isPlayable).length;
+    final canEdit = ref.watch(catalogActionsProvider).canChangeSettings;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),
@@ -70,6 +74,7 @@ class _ViewGamesSheet extends ConsumerWidget {
                           resource: resource,
                           game: g.game,
                           status: g.status,
+                          canEdit: canEdit,
                         ),
                     ],
                   ),
@@ -100,11 +105,16 @@ class _GameRow extends ConsumerWidget {
     required this.resource,
     required this.game,
     required this.status,
+    required this.canEdit,
   });
 
   final Resource resource;
   final Game game;
   final GameAvailability status;
+
+  /// Whether to offer the status editor (the signed-in user holds
+  /// `settings`). Without it the row is read-only.
+  final bool canEdit;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -130,14 +140,15 @@ class _GameRow extends ConsumerWidget {
             icon: const Icon(Icons.sports_esports_outlined),
             onPressed: () => showControlsSheet(context, game.id),
           ),
-          IconButton(
-            tooltip: 'Set status on ${resource.name}',
-            icon: const Icon(Icons.edit_outlined),
-            onPressed: () => _editStatus(context, ref),
-          ),
+          if (canEdit)
+            IconButton(
+              tooltip: 'Set status on ${resource.name}',
+              icon: const Icon(Icons.edit_outlined),
+              onPressed: () => _editStatus(context, ref),
+            ),
         ],
       ),
-      onTap: () => _editStatus(context, ref),
+      onTap: canEdit ? () => _editStatus(context, ref) : null,
       textColor: status.isPlayable ? null : theme.disabledColor,
     );
   }
@@ -154,19 +165,22 @@ class _GameRow extends ConsumerWidget {
       ),
     );
     if (result == null) return;
-    await ref.read(catalogRepositoryProvider).setCompatibility(
+    final r = await ref.read(catalogActionsProvider).setCompatibility(
           game.id,
           resource.id,
           result.s,
           notes: result.n,
         );
-    ref.invalidate(gamesForResourceProvider(resource.id));
-    ref.invalidate(resourcesForGameProvider(game.id));
+    if (r.isOk) {
+      ref.invalidate(gamesForResourceProvider(resource.id));
+      ref.invalidate(resourcesForGameProvider(game.id));
+    }
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${game.name} on ${resource.name}: ${result.s.label}.',
+            r.failureOrNull?.display ??
+                '${game.name} on ${resource.name}: ${result.s.label}.',
           ),
         ),
       );

@@ -16,6 +16,7 @@ import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/auth/permission_guard.dart';
@@ -54,8 +55,11 @@ class GroupPlayerDraft {
     ControllerChoice? controllers,
     int? controllerCount,
     List<String>? controllerIds,
-  }) : controllers =
-            resolveControllerChoice(controllers, controllerCount, controllerIds);
+  }) : controllers = resolveControllerChoice(
+         controllers,
+         controllerCount,
+         controllerIds,
+       );
 
   final int playerNumber;
   final String? playerLabel;
@@ -81,17 +85,16 @@ class GroupPlayerDraft {
     String? gameName,
     ControllerChoice? controllers,
     bool clearGame = false,
-  }) =>
-      GroupPlayerDraft(
-        playerNumber: playerNumber,
-        playerLabel: playerLabel ?? this.playerLabel,
-        resourceId: resourceId ?? this.resourceId,
-        resourceName: resourceName ?? this.resourceName,
-        activityCode: activityCode ?? this.activityCode,
-        gameId: clearGame ? null : (gameId ?? this.gameId),
-        gameName: clearGame ? null : (gameName ?? this.gameName),
-        controllers: controllers ?? this.controllers,
-      );
+  }) => GroupPlayerDraft(
+    playerNumber: playerNumber,
+    playerLabel: playerLabel ?? this.playerLabel,
+    resourceId: resourceId ?? this.resourceId,
+    resourceName: resourceName ?? this.resourceName,
+    activityCode: activityCode ?? this.activityCode,
+    gameId: clearGame ? null : (gameId ?? this.gameId),
+    gameName: clearGame ? null : (gameName ?? this.gameName),
+    controllers: controllers ?? this.controllers,
+  );
 }
 
 /// The in-progress choices for a new group session.
@@ -120,16 +123,15 @@ class GroupSessionDraft {
     int? durationMinutes,
     bool? openEnded,
     List<GroupPlayerDraft>? players,
-  }) =>
-      GroupSessionDraft(
-        primaryCustomerId: primaryCustomerId ?? this.primaryCustomerId,
-        playerCount: playerCount ?? this.playerCount,
-        purchasedControllerCount:
-            purchasedControllerCount ?? this.purchasedControllerCount,
-        durationMinutes: durationMinutes ?? this.durationMinutes,
-        openEnded: openEnded ?? this.openEnded,
-        players: players ?? this.players,
-      );
+  }) => GroupSessionDraft(
+    primaryCustomerId: primaryCustomerId ?? this.primaryCustomerId,
+    playerCount: playerCount ?? this.playerCount,
+    purchasedControllerCount:
+        purchasedControllerCount ?? this.purchasedControllerCount,
+    durationMinutes: durationMinutes ?? this.durationMinutes,
+    openEnded: openEnded ?? this.openEnded,
+    players: players ?? this.players,
+  );
 }
 
 /// The result of planning a new group: the shared window plus the estimate.
@@ -228,10 +230,10 @@ class GroupSessionActions {
 
   /// Pads a player's current assignment holds, in a stable order.
   Future<List<String>> padsHeldBy(GroupAssignment assignment) async => [
-        for (final a
-            in await pads?.openPadAllocations() ?? const <OpenPadAllocation>[])
-          if (a.assignmentId == assignment.id) a.controllerId,
-      ]..sort();
+    for (final a
+        in await pads?.openPadAllocations() ?? const <OpenPadAllocation>[])
+      if (a.assignmentId == assignment.id) a.controllerId,
+  ]..sort();
 
   Future<String> _resourceName(String id) async {
     for (final r in await catalog.resources()) {
@@ -249,7 +251,8 @@ class GroupSessionActions {
           r.currentMode != activityCode) {
         return Failure(
           message: '${r.name} is set to ${r.currentMode} mode.',
-          fix: 'Switch ${r.name} to $activityCode in Settings → Stations, '
+          fix:
+              'Switch ${r.name} to $activityCode in Settings → Stations, '
               'or use another system.',
           code: 'mode_locked',
         );
@@ -259,10 +262,15 @@ class GroupSessionActions {
   }
 
   PadBoardLoader get boards => PadBoardLoader(
-      catalog: catalog, sessions: sessions, groups: groups, pads: pads);
+    catalog: catalog,
+    sessions: sessions,
+    groups: groups,
+    pads: pads,
+  );
 
   /// Pads other players of [groupId] hold right now, labelled for messages.
-  Future<Map<String, String>> _teammatePads(String groupId, int player) async => {
+  Future<Map<String, String>> _teammatePads(String groupId, int player) async =>
+      {
         for (final a
             in await pads?.openPadAllocations() ?? const <OpenPadAllocation>[])
           if (a.groupId == groupId && a.playerNumber != player)
@@ -294,8 +302,11 @@ class GroupSessionActions {
       pickedForOthers: pickedForOthers,
       exceptOccupantId: exceptOccupantId,
     );
-    return padSelection.check(choice, board,
-        requireSupply: !(legacyUnchanged && !choice.isTracked));
+    return padSelection.check(
+      choice,
+      board,
+      requireSupply: !(legacyUnchanged && !choice.isTracked),
+    );
   }
 
   /// Usable controllers physically present at each station, keyed by resource
@@ -316,11 +327,16 @@ class GroupSessionActions {
 
   /// The shared countdown for a group — driven only by the parent's stored
   /// timestamps, never a counter (group feature §3).
-  SessionTimer groupTimer(GroupSession g) => SessionTimer(
-        startedAt: g.startedAt,
-        scheduledEndAt: g.scheduledEndAt,
-        actualEndedAt: g.actualEndedAt,
-      );
+  /// [warn] is the arena's end-of-session warning (floor options).
+  SessionTimer groupTimer(
+    GroupSession g, {
+    Duration warn = const Duration(minutes: 5),
+  }) => SessionTimer(
+    startedAt: g.startedAt,
+    scheduledEndAt: g.scheduledEndAt,
+    actualEndedAt: g.actualEndedAt,
+    warnThreshold: warn,
+  );
 
   // --- occupancy helpers -----------------------------------------------------
 
@@ -354,8 +370,9 @@ class GroupSessionActions {
 
   /// Open group assignments, optionally excluding one group (when extending or
   /// switching inside it).
-  Future<List<GroupAssignment>> _openGroupAssignments(
-      {String? excludeGroupId}) async {
+  Future<List<GroupAssignment>> _openGroupAssignments({
+    String? excludeGroupId,
+  }) async {
     final open = await groups.openAssignments();
     return [
       for (final a in open)
@@ -368,17 +385,18 @@ class GroupSessionActions {
   /// Price preview + availability for a new group (group feature §1–§2).
   Future<Result<GroupStartPlan>> previewCreate(GroupSessionDraft d) async {
     if (d.primaryCustomerId == null) {
-      return const Err(Failure(
-        message: 'Pick the primary customer.',
-        code: 'incomplete',
-      ));
+      return const Err(
+        Failure(message: 'Pick the primary customer.', code: 'incomplete'),
+      );
     }
     final assigned = d.players.where((p) => p.isComplete).toList();
     if (assigned.isEmpty) {
-      return const Err(Failure(
-        message: 'Assign at least one player to a system.',
-        code: 'no_assignments',
-      ));
+      return const Err(
+        Failure(
+          message: 'Assign at least one player to a system.',
+          code: 'no_assignments',
+        ),
+      );
     }
 
     final snapshot = await catalog.currentSnapshot();
@@ -387,10 +405,9 @@ class GroupSessionActions {
         ? _closeAt(now, snapshot.calendar)
         : now.add(Duration(minutes: d.durationMinutes ?? 60));
     if (!scheduledEnd.isAfter(now)) {
-      return const Err(Failure(
-        message: 'Choose a duration.',
-        code: 'invalid_duration',
-      ));
+      return const Err(
+        Failure(message: 'Choose a duration.', code: 'invalid_duration'),
+      );
     }
     final window = UtcInterval(now, scheduledEnd);
     final closeAt = _closeAt(now, snapshot.calendar);
@@ -415,8 +432,9 @@ class GroupSessionActions {
         pickedForOthers: pickedSoFar,
       );
       if (f != null) {
-        return Err(Failure(
-            message: '$who: ${f.message}', fix: f.fix, code: f.code));
+        return Err(
+          Failure(message: '$who: ${f.message}', fix: f.fix, code: f.code),
+        );
       }
       for (final id in p.controllerIds) {
         pickedSoFar[id] = who;
@@ -453,21 +471,24 @@ class GroupSessionActions {
       if (check.isErr) {
         final f = check.failureOrNull!;
         return Err(
-            Failure(message: '$who: ${f.message}', fix: f.fix, code: f.code));
+          Failure(message: '$who: ${f.message}', fix: f.fix, code: f.code),
+        );
       }
 
-      draftAssignments.add(GroupAssignment(
-        id: 'draft_${p.playerNumber}_${draftAssignments.length}',
-        groupId: '__new__',
-        playerNumber: p.playerNumber,
-        index: 0,
-        resourceId: p.resourceId!,
-        activityCode: p.activityCode!,
-        gameId: p.gameId,
-        controllerCount: p.controllerCount,
-        startedAt: now,
-        createdAt: now,
-      ));
+      draftAssignments.add(
+        GroupAssignment(
+          id: 'draft_${p.playerNumber}_${draftAssignments.length}',
+          groupId: '__new__',
+          playerNumber: p.playerNumber,
+          index: 0,
+          resourceId: p.resourceId!,
+          activityCode: p.activityCode!,
+          gameId: p.gameId,
+          controllerCount: p.controllerCount,
+          startedAt: now,
+          createdAt: now,
+        ),
+      );
     }
 
     final bill = billing.bill(
@@ -480,20 +501,24 @@ class GroupSessionActions {
     );
 
     final names = {for (final r in await catalog.resources()) r.id: r.name};
-    return Ok(GroupStartPlan(
-      startedAt: now,
-      scheduledEndAt: scheduledEnd,
-      openEnded: d.openEnded,
-      estimate: bill.total,
-      billingMode: snapshot.policy.groupBillingMode,
-      lines: estimateLines(bill, names),
-    ));
+    return Ok(
+      GroupStartPlan(
+        startedAt: now,
+        scheduledEndAt: scheduledEnd,
+        openEnded: d.openEnded,
+        estimate: bill.total,
+        billingMode: snapshot.policy.groupBillingMode,
+        lines: estimateLines(bill, names),
+      ),
+    );
   }
 
   /// Sums a group bill's charge rows into one line per system (and controller
   /// count on it), so staff see what each system contributes.
   static List<GroupEstimateLine> estimateLines(
-      GroupBill bill, Map<String, String> names) {
+    GroupBill bill,
+    Map<String, String> names,
+  ) {
     final byKey = <String, ({String label, int? n, int minutes, int paise})>{};
     for (final c in bill.charges) {
       final label = c.resourceId == null
@@ -527,31 +552,41 @@ class GroupSessionActions {
     if (preview.isErr) return Err(preview.failureOrNull!);
     final plan = preview.valueOrNull!;
     final snapshot = await catalog.currentSnapshot();
-    final res = await groups.create(CreateGroupCommand(
-      primaryCustomerId: d.primaryCustomerId!,
-      playerCount: d.playerCount,
-      purchasedControllerCount: d.purchasedControllerCount,
-      startedAt: plan.startedAt,
-      scheduledEndAt: plan.scheduledEndAt,
-      snapshot: snapshot,
-      billingMode: plan.billingMode,
-      assignments: [
-        for (final p in d.players.where((p) => p.isComplete))
-          GroupAssignmentDraft(
-            playerNumber: p.playerNumber,
-            playerLabel: p.playerLabel,
-            resourceId: p.resourceId!,
-            resourceName: p.resourceName ?? p.resourceId!,
-            activityCode: p.activityCode!,
-            gameId: p.gameId,
-            controllerCount: p.controllers.count,
-            controllerIds: p.controllers.padIdsOrNull,
-            borrowControllerIds: p.controllers.borrowIdsOrNull,
-          ),
-      ],
-    ));
+    final res = await groups.create(
+      CreateGroupCommand(
+        primaryCustomerId: d.primaryCustomerId!,
+        playerCount: d.playerCount,
+        purchasedControllerCount: d.purchasedControllerCount,
+        startedAt: plan.startedAt,
+        scheduledEndAt: plan.scheduledEndAt,
+        snapshot: snapshot,
+        billingMode: plan.billingMode,
+        assignments: [
+          for (final p in d.players.where((p) => p.isComplete))
+            GroupAssignmentDraft(
+              playerNumber: p.playerNumber,
+              playerLabel: p.playerLabel,
+              resourceId: p.resourceId!,
+              resourceName: p.resourceName ?? p.resourceId!,
+              activityCode: p.activityCode!,
+              gameId: p.gameId,
+              controllerCount: p.controllers.count,
+              controllerIds: p.controllers.padIdsOrNull,
+              borrowControllerIds: p.controllers.borrowIdsOrNull,
+            ),
+        ],
+      ),
+    );
     if (res.isOk) {
       unawaited(reminders?.scheduleForGroup(res.valueOrNull!));
+      AppTelemetry.timerStarted(
+        sessionId: res.valueOrNull!.id,
+        resourceId: d.players.firstOrNull?.resourceId ?? 'group',
+        activityCode: d.players.firstOrNull?.activityCode ?? 'GROUP',
+        durationMinutes: d.openEnded ? null : d.durationMinutes,
+        controllerCount: d.purchasedControllerCount,
+        isGroup: true,
+      );
     }
     return res;
   }
@@ -560,13 +595,13 @@ class GroupSessionActions {
 
   /// Live amount so far, billed across all assignments by the group's mode.
   GroupBill liveBill(ActiveGroupSession g, DateTime now) => billing.bill(
-        snapshot: g.group.snapshot,
-        assignments: g.assignments,
-        mode: g.group.billingMode,
-        purchasedControllerCount: g.group.purchasedControllerCount,
-        groupStart: g.group.startedAt,
-        openEndAt: now,
-      );
+    snapshot: g.group.snapshot,
+    assignments: g.assignments,
+    mode: g.group.billingMode,
+    purchasedControllerCount: g.group.purchasedControllerCount,
+    groupStart: g.group.startedAt,
+    openEndAt: now,
+  );
 
   // --- candidate systems for switch / add (group feature §5–§6) --------------
 
@@ -583,8 +618,10 @@ class GroupSessionActions {
   }) async {
     final resources = await catalog.resources();
     final activities = await catalog.activities();
-    final activity = activities.firstWhere((a) => a.code == activityCode,
-        orElse: () => activities.first);
+    final activity = activities.firstWhere(
+      (a) => a.code == activityCode,
+      orElse: () => activities.first,
+    );
     final now = clock.now();
     final window = UtcInterval(now, group.scheduledEndAt);
     final singleOcc = await _singleOccupancies(window);
@@ -656,18 +693,20 @@ class GroupSessionActions {
       resourceId: resourceId,
       resourceName: resourceName,
       activityCode: activityCode,
-      keepIds:
-          current == null ? const {} : (await padsHeldBy(current)).toSet(),
+      keepIds: current == null ? const {} : (await padsHeldBy(current)).toSet(),
       pickedForOthers: await _teammatePads(group.id, playerNumber),
       exceptOccupantId: current?.id,
-      legacyUnchanged: current != null &&
+      legacyUnchanged:
+          current != null &&
           current.resourceId == resourceId &&
           (controllers.count ?? 0) <= (current.controllerCount ?? 0),
     );
     if (padProblem != null) return Err(padProblem);
 
     final activities = await catalog.activities();
-    final activity = activities.where((a) => a.code == activityCode).firstOrNull;
+    final activity = activities
+        .where((a) => a.code == activityCode)
+        .firstOrNull;
     final game = gameId == null ? null : await catalog.gameById(gameId);
     final now = clock.now();
     final snapshot = await catalog.currentSnapshot();
@@ -689,8 +728,9 @@ class GroupSessionActions {
       maxLocalPlayers: game?.maxLocalPlayers ?? 1,
       gameName: game?.name,
       activityAllowsSharing: activity?.usesControllers ?? false,
-      singleOccupancies:
-          await _singleOccupancies(UtcInterval(now, group.scheduledEndAt)),
+      singleOccupancies: await _singleOccupancies(
+        UtcInterval(now, group.scheduledEndAt),
+      ),
       openOnResource: await groups.openAssignments(),
       playerNumber: playerNumber,
       excludePlayerNumber: current == null ? null : playerNumber,
@@ -719,8 +759,11 @@ class GroupSessionActions {
   }) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
-    final choice =
-        resolveControllerChoice(controllers, controllerCount, controllerIds);
+    final choice = resolveControllerChoice(
+      controllers,
+      controllerCount,
+      controllerIds,
+    );
     final group = await _group(groupId);
     if (group == null) {
       return const Err(Failure(message: 'Group not found.', code: 'not_found'));
@@ -735,25 +778,28 @@ class GroupSessionActions {
       controllers: choice,
       // A switch always replaces the player's open assignment, even when the
       // caller did not pass it.
-      current: current ??
+      current:
+          current ??
           (await groups.activeGroups())
               .where((g) => g.group.id == groupId)
               .firstOrNull
               ?.currentForPlayer(playerNumber),
     );
     if (f.isErr) return Err(f.failureOrNull!);
-    return groups.switchAssignment(SwitchAssignmentCommand(
-      groupId: groupId,
-      playerNumber: playerNumber,
-      at: at ?? clock.now(),
-      resourceId: resourceId,
-      resourceName: resourceName,
-      activityCode: activityCode,
-      gameId: gameId,
-      controllerCount: choice.count,
-      controllerIds: choice.padIdsOrNull,
-      borrowControllerIds: choice.borrowIdsOrNull,
-    ));
+    return groups.switchAssignment(
+      SwitchAssignmentCommand(
+        groupId: groupId,
+        playerNumber: playerNumber,
+        at: at ?? clock.now(),
+        resourceId: resourceId,
+        resourceName: resourceName,
+        activityCode: activityCode,
+        gameId: gameId,
+        controllerCount: choice.count,
+        controllerIds: choice.padIdsOrNull,
+        borrowControllerIds: choice.borrowIdsOrNull,
+      ),
+    );
   }
 
   Future<Result<GroupAssignment>> changeGame({
@@ -786,17 +832,19 @@ class GroupSessionActions {
       current: current,
     );
     if (f.isErr) return Err(f.failureOrNull!);
-    return groups.switchAssignment(SwitchAssignmentCommand(
-      groupId: groupId,
-      playerNumber: current.playerNumber,
-      at: at ?? clock.now(),
-      resourceId: current.resourceId,
-      resourceName: name,
-      activityCode: current.activityCode,
-      gameId: gameId,
-      controllerCount: current.controllerCount,
-      controllerIds: held.isEmpty ? null : held,
-    ));
+    return groups.switchAssignment(
+      SwitchAssignmentCommand(
+        groupId: groupId,
+        playerNumber: current.playerNumber,
+        at: at ?? clock.now(),
+        resourceId: current.resourceId,
+        resourceName: name,
+        activityCode: current.activityCode,
+        gameId: gameId,
+        controllerCount: current.controllerCount,
+        controllerIds: held.isEmpty ? null : held,
+      ),
+    );
   }
 
   /// Changes one player's controllers from [at] on (new assignment at that
@@ -811,8 +859,11 @@ class GroupSessionActions {
   }) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
-    final choice =
-        resolveControllerChoice(controllers, controllerCount, controllerIds);
+    final choice = resolveControllerChoice(
+      controllers,
+      controllerCount,
+      controllerIds,
+    );
     final name = await _resourceName(current.resourceId);
     final group = await _group(groupId);
     if (group == null) {
@@ -829,18 +880,20 @@ class GroupSessionActions {
       current: current,
     );
     if (f.isErr) return Err(f.failureOrNull!);
-    return groups.switchAssignment(SwitchAssignmentCommand(
-      groupId: groupId,
-      playerNumber: current.playerNumber,
-      at: at ?? clock.now(),
-      resourceId: current.resourceId,
-      resourceName: name,
-      activityCode: current.activityCode,
-      gameId: current.gameId,
-      controllerCount: choice.count,
-      controllerIds: choice.padIdsOrNull,
-      borrowControllerIds: choice.borrowIdsOrNull,
-    ));
+    return groups.switchAssignment(
+      SwitchAssignmentCommand(
+        groupId: groupId,
+        playerNumber: current.playerNumber,
+        at: at ?? clock.now(),
+        resourceId: current.resourceId,
+        resourceName: name,
+        activityCode: current.activityCode,
+        gameId: current.gameId,
+        controllerCount: choice.count,
+        controllerIds: choice.padIdsOrNull,
+        borrowControllerIds: choice.borrowIdsOrNull,
+      ),
+    );
   }
 
   Future<Result<GroupAssignment>> addPlayer({
@@ -858,8 +911,11 @@ class GroupSessionActions {
   }) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
-    final choice =
-        resolveControllerChoice(controllers, controllerCount, controllerIds);
+    final choice = resolveControllerChoice(
+      controllers,
+      controllerCount,
+      controllerIds,
+    );
     final group = await _group(groupId);
     if (group == null) {
       return const Err(Failure(message: 'Group not found.', code: 'not_found'));
@@ -874,19 +930,21 @@ class GroupSessionActions {
       controllers: choice,
     );
     if (f.isErr) return Err(f.failureOrNull!);
-    return groups.addAssignment(AddAssignmentCommand(
-      groupId: groupId,
-      at: at ?? clock.now(),
-      playerNumber: playerNumber,
-      playerLabel: playerLabel,
-      resourceId: resourceId,
-      resourceName: resourceName,
-      activityCode: activityCode,
-      gameId: gameId,
-      controllerCount: choice.count,
-      controllerIds: choice.padIdsOrNull,
-      borrowControllerIds: choice.borrowIdsOrNull,
-    ));
+    return groups.addAssignment(
+      AddAssignmentCommand(
+        groupId: groupId,
+        at: at ?? clock.now(),
+        playerNumber: playerNumber,
+        playerLabel: playerLabel,
+        resourceId: resourceId,
+        resourceName: resourceName,
+        activityCode: activityCode,
+        gameId: gameId,
+        controllerCount: choice.count,
+        controllerIds: choice.padIdsOrNull,
+        borrowControllerIds: choice.borrowIdsOrNull,
+      ),
+    );
   }
 
   Future<Result<void>> endPlayer({
@@ -896,11 +954,13 @@ class GroupSessionActions {
   }) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
-    return groups.endAssignment(EndAssignmentCommand(
-      groupId: groupId,
-      playerNumber: playerNumber,
-      at: at ?? clock.now(),
-    ));
+    return groups.endAssignment(
+      EndAssignmentCommand(
+        groupId: groupId,
+        playerNumber: playerNumber,
+        at: at ?? clock.now(),
+      ),
+    );
   }
 
   // --- extend / end ----------------------------------------------------------
@@ -908,7 +968,9 @@ class GroupSessionActions {
   /// Plans an extension of the whole group (group feature §8). Validates every
   /// system the group currently occupies against bookings and other occupancy.
   Future<Result<GroupExtensionPlan>> previewExtension(
-      ActiveGroupSession g, int addedMinutes) async {
+    ActiveGroupSession g,
+    int addedMinutes,
+  ) async {
     final group = g.group;
     final snapshot = group.snapshot;
     final closeAt = _closeAt(group.startedAt, snapshot.calendar);
@@ -958,27 +1020,33 @@ class GroupSessionActions {
       groupStart: group.startedAt,
       openEndAt: newEnd,
     );
-    return Ok(GroupExtensionPlan(
-      oldEnd: group.scheduledEndAt,
-      newEnd: newEnd,
-      addedMinutes: addedMinutes,
-      addedCost: Paise(after.subtotal.value - before.subtotal.value),
-    ));
+    return Ok(
+      GroupExtensionPlan(
+        oldEnd: group.scheduledEndAt,
+        newEnd: newEnd,
+        addedMinutes: addedMinutes,
+        addedCost: Paise(after.subtotal.value - before.subtotal.value),
+      ),
+    );
   }
 
   Future<Result<GroupSession>> extend(
-      ActiveGroupSession g, int addedMinutes) async {
+    ActiveGroupSession g,
+    int addedMinutes,
+  ) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
     final plan = await previewExtension(g, addedMinutes);
     if (plan.isErr) return Err(plan.failureOrNull!);
     final p = plan.valueOrNull!;
-    final res = await groups.extend(ExtendGroupCommand(
-      groupId: g.group.id,
-      addedMinutes: addedMinutes,
-      newEndAt: p.newEnd,
-      addedAmountPaise: p.addedCost.value,
-    ));
+    final res = await groups.extend(
+      ExtendGroupCommand(
+        groupId: g.group.id,
+        addedMinutes: addedMinutes,
+        newEndAt: p.newEnd,
+        addedAmountPaise: p.addedCost.value,
+      ),
+    );
     if (res.isOk) {
       unawaited(reminders?.scheduleForGroup(res.valueOrNull!));
     }
@@ -987,53 +1055,93 @@ class GroupSessionActions {
 
   /// The final bill from all assignments, for the End screen (group feature §9).
   GroupBill endSummary(ActiveGroupSession g, {DateTime? at}) => billing.bill(
-        snapshot: g.group.snapshot,
-        assignments: g.assignments,
-        mode: g.group.billingMode,
-        purchasedControllerCount: g.group.purchasedControllerCount,
-        groupStart: g.group.startedAt,
-        openEndAt: at ?? clock.now(),
-      );
+    snapshot: g.group.snapshot,
+    assignments: g.assignments,
+    mode: g.group.billingMode,
+    purchasedControllerCount: g.group.purchasedControllerCount,
+    groupStart: g.group.startedAt,
+    openEndAt: at ?? clock.now(),
+  );
 
   Future<Result<GroupSession>> end(
     ActiveGroupSession g, {
     bool markWaived = false,
     DateTime? at,
   }) async {
-    final denied = guard.check(Permission.bill) ??
+    final denied =
+        guard.check(Permission.bill) ??
         (markWaived ? guard.check(Permission.discount) : null);
     if (denied != null) return Err(denied);
     final actualEnd = at ?? clock.now();
+    if (actualEnd.isBefore(g.group.startedAt)) {
+      AppTelemetry.reportTimerAnomaly(
+        sessionId: g.group.id,
+        anomaly: 'actualEndedAt precedes startedAt',
+        resourceId: g.openAssignments.firstOrNull?.resourceId ?? 'group',
+        startedAt: g.group.startedAt,
+        actualEndedAt: actualEnd,
+      );
+    }
     final bill = endSummary(g, at: actualEnd);
-    final res = await groups.end(EndGroupCommand(
-      groupId: g.group.id,
-      actualEndedAt: actualEnd,
-      charges: bill.charges,
-      billedAmountPaise: bill.total.value,
-      markWaived: markWaived,
-    ));
+    final res = await groups.end(
+      EndGroupCommand(
+        groupId: g.group.id,
+        actualEndedAt: actualEnd,
+        charges: bill.charges,
+        billedAmountPaise: bill.total.value,
+        markWaived: markWaived,
+      ),
+    );
     if (res.isOk) {
       unawaited(reminders?.cancelFor(g.group.id));
+      AppTelemetry.timerStopped(
+        sessionId: g.group.id,
+        resourceId: g.openAssignments.firstOrNull?.resourceId ?? 'group',
+        billedAmountPaise: bill.total.value,
+        playedDuration: actualEnd.difference(g.group.startedAt),
+        isGroup: true,
+      );
+      AppTelemetry.billingCalculated(
+        sessionId: g.group.id,
+        totalPaise: bill.total.value,
+        segmentCount: g.assignments.length,
+        totalSeconds: actualEnd.difference(g.group.startedAt).inSeconds,
+      );
     }
     return res;
   }
 
   Future<Result> recordPayment(RecordGroupPaymentCommand cmd) async {
-    final denied = guard.check(Permission.bill) ??
+    final denied =
+        guard.check(Permission.bill) ??
         (cmd.isRefund ? guard.check(Permission.discount) : null);
     if (denied != null) return Err(denied);
-    return groups.recordPayment(cmd);
+    final res = await groups.recordPayment(cmd);
+    if (res.isOk) {
+      AppTelemetry.addBreadcrumb(
+        category: 'billing',
+        message: 'group_payment_recorded',
+        data: {
+          'groupId': cmd.groupId,
+          'amountPaise': cmd.amountPaise,
+          'method': cmd.method.name,
+          'isRefund': cmd.isRefund,
+        },
+      );
+    }
+    return res;
   }
 }
 
-final groupSessionActionsProvider =
-    Provider<GroupSessionActions>((ref) => GroupSessionActions(
-          groups: ref.watch(groupSessionRepositoryProvider),
-          bookings: ref.watch(bookingRepositoryProvider),
-          guard: PermissionGuard(ref.watch(authControllerProvider)),
-          sessions: ref.watch(sessionRepositoryProvider),
-          catalog: ref.watch(catalogRepositoryProvider),
-          clock: ref.watch(clockProvider),
-          reminders: ref.watch(sessionRemindersProvider),
-          pads: ref.watch(controllerAllocationRepositoryProvider),
-        ));
+final groupSessionActionsProvider = Provider<GroupSessionActions>(
+  (ref) => GroupSessionActions(
+    groups: ref.watch(groupSessionRepositoryProvider),
+    bookings: ref.watch(bookingRepositoryProvider),
+    guard: PermissionGuard(ref.watch(authControllerProvider)),
+    sessions: ref.watch(sessionRepositoryProvider),
+    catalog: ref.watch(catalogRepositoryProvider),
+    clock: ref.watch(clockProvider),
+    reminders: ref.watch(sessionRemindersProvider),
+    pads: ref.watch(controllerAllocationRepositoryProvider),
+  ),
+);

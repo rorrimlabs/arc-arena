@@ -16,7 +16,7 @@ abstract interface class CustomerRepository {
   /// Used to prevent duplicate phone numbers within the arena (spec §21, §32).
   Future<Customer?> findByPhone(String phone);
 
-  Future<Customer> create({required String name, String? phone, String? notes});
+  Future<Customer> create({required String name, String? phone, String? notes, int? birthYear});
 
   /// A one-tap walk-in: a record per visit so the session can be billed and
   /// counted, with no details asked for (brief §4, §12).

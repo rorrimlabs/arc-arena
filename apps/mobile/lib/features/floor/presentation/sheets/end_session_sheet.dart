@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
@@ -10,6 +11,7 @@ import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/services/segment_billing.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
+import 'package:arena_ops/domain/value/floor_options.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_choice_field.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -41,6 +43,10 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   late final SegmentBill _bill;
   final _amountCtrl = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
+
+  /// The pick, or the first method the arena offers when the pick is not (floor options).
+  PaymentMethod _offered(PaymentMethod picked) =>
+      (ref.read(floorOptionsProvider).value ?? FloorOptions.defaults).methodOr(picked);
   bool _waived = false;
   bool _saving = false;
 
@@ -68,8 +74,15 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     super.dispose();
   }
 
-  int get _paidPaise =>
-      ((double.tryParse(_amountCtrl.text.trim()) ?? 0) * 100).round();
+  /// Exact paise for what is typed (never via a double); 0 when empty.
+  int get _paidPaise => parseRupeesToPaise(_amountCtrl.text) ?? 0;
+
+  /// Text that is not a rupee amount: End is held back rather than ending the
+  /// session as if nothing had been paid.
+  bool get _amountInvalid =>
+      !_waived &&
+      _amountCtrl.text.trim().isNotEmpty &&
+      parseRupeesToPaise(_amountCtrl.text) == null;
 
   @override
   Widget build(BuildContext context) {
@@ -83,7 +96,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     final billed = _bill.total.value - collected;
     if (!_prefilled && payments != null) {
       _prefilled = true;
-      _amountCtrl.text = billed > 0 ? (billed / 100).toStringAsFixed(2) : '';
+      _amountCtrl.text = billed > 0 ? paiseToRupeeInput(billed) : '';
     }
     final paid = _paidPaise;
     final change = paid - billed;
@@ -131,10 +144,10 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
             Wrap(
               spacing: AppSpacing.sm,
               children: [
-                for (final m in PaymentMethod.values)
+                for (final m in ref.watch(offeredPaymentMethodsProvider))
                   ChoiceChip(
                     label: Text(_methodLabel(m)),
-                    selected: _method == m,
+                    selected: _offered(_method) == m,
                     onSelected: (_) => setState(() => _method = m),
                   ),
               ],
@@ -143,11 +156,12 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
             TextField(
               controller: _amountCtrl,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
-              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.]'))],
-              decoration: const InputDecoration(
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              decoration: InputDecoration(
                 labelText: 'Amount received (₹)',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
                 prefixText: '₹ ',
+                errorText: _amountInvalid ? rupeeInputError : null,
               ),
               onChanged: (_) => setState(() {}),
             ),
@@ -160,7 +174,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           ],
           const SizedBox(height: AppSpacing.md),
           FilledButton.icon(
-            onPressed: _saving ? null : _confirm,
+            onPressed: _saving || _amountInvalid ? null : _confirm,
             icon: _saving
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check),
@@ -197,7 +211,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
       final paid = await actions.recordPayment(RecordPaymentCommand(
         sessionId: _session.id,
         amountPaise: record,
-        method: _method,
+        method: _offered(_method),
       ));
       final change = _paidPaise - billed;
       if (paid.isErr) {

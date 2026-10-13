@@ -71,6 +71,17 @@ class $CustomersTable extends Customers
     ),
     defaultValue: const Constant(false),
   );
+  static const VerificationMeta _birthYearMeta = const VerificationMeta(
+    'birthYear',
+  );
+  @override
+  late final GeneratedColumn<int> birthYear = GeneratedColumn<int>(
+    'birth_year',
+    aliasedName,
+    true,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+  );
   static const VerificationMeta _createdAtMeta = const VerificationMeta(
     'createdAt',
   );
@@ -101,6 +112,7 @@ class $CustomersTable extends Customers
     notes,
     lastVisitAt,
     isGuest,
+    birthYear,
     createdAt,
     updatedAt,
   ];
@@ -156,6 +168,12 @@ class $CustomersTable extends Customers
         isGuest.isAcceptableOrUnknown(data['is_guest']!, _isGuestMeta),
       );
     }
+    if (data.containsKey('birth_year')) {
+      context.handle(
+        _birthYearMeta,
+        birthYear.isAcceptableOrUnknown(data['birth_year']!, _birthYearMeta),
+      );
+    }
     if (data.containsKey('created_at')) {
       context.handle(
         _createdAtMeta,
@@ -205,6 +223,10 @@ class $CustomersTable extends Customers
         DriftSqlType.bool,
         data['${effectivePrefix}is_guest'],
       )!,
+      birthYear: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}birth_year'],
+      ),
       createdAt: attachedDatabase.typeMapping.read(
         DriftSqlType.dateTime,
         data['${effectivePrefix}created_at'],
@@ -231,6 +253,9 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
 
   /// A walk-in who never registered (brief §12).
   final bool isGuest;
+
+  /// Year of birth given at registration; null when not given (v15).
+  final int? birthYear;
   final DateTime createdAt;
   final DateTime updatedAt;
   const CustomerRow({
@@ -240,6 +265,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
     this.notes,
     this.lastVisitAt,
     required this.isGuest,
+    this.birthYear,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -258,6 +284,9 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
       map['last_visit_at'] = Variable<DateTime>(lastVisitAt);
     }
     map['is_guest'] = Variable<bool>(isGuest);
+    if (!nullToAbsent || birthYear != null) {
+      map['birth_year'] = Variable<int>(birthYear);
+    }
     map['created_at'] = Variable<DateTime>(createdAt);
     map['updated_at'] = Variable<DateTime>(updatedAt);
     return map;
@@ -277,6 +306,9 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
           ? const Value.absent()
           : Value(lastVisitAt),
       isGuest: Value(isGuest),
+      birthYear: birthYear == null && nullToAbsent
+          ? const Value.absent()
+          : Value(birthYear),
       createdAt: Value(createdAt),
       updatedAt: Value(updatedAt),
     );
@@ -294,6 +326,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
       notes: serializer.fromJson<String?>(json['notes']),
       lastVisitAt: serializer.fromJson<DateTime?>(json['lastVisitAt']),
       isGuest: serializer.fromJson<bool>(json['isGuest']),
+      birthYear: serializer.fromJson<int?>(json['birthYear']),
       createdAt: serializer.fromJson<DateTime>(json['createdAt']),
       updatedAt: serializer.fromJson<DateTime>(json['updatedAt']),
     );
@@ -308,6 +341,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
       'notes': serializer.toJson<String?>(notes),
       'lastVisitAt': serializer.toJson<DateTime?>(lastVisitAt),
       'isGuest': serializer.toJson<bool>(isGuest),
+      'birthYear': serializer.toJson<int?>(birthYear),
       'createdAt': serializer.toJson<DateTime>(createdAt),
       'updatedAt': serializer.toJson<DateTime>(updatedAt),
     };
@@ -320,6 +354,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
     Value<String?> notes = const Value.absent(),
     Value<DateTime?> lastVisitAt = const Value.absent(),
     bool? isGuest,
+    Value<int?> birthYear = const Value.absent(),
     DateTime? createdAt,
     DateTime? updatedAt,
   }) => CustomerRow(
@@ -329,6 +364,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
     notes: notes.present ? notes.value : this.notes,
     lastVisitAt: lastVisitAt.present ? lastVisitAt.value : this.lastVisitAt,
     isGuest: isGuest ?? this.isGuest,
+    birthYear: birthYear.present ? birthYear.value : this.birthYear,
     createdAt: createdAt ?? this.createdAt,
     updatedAt: updatedAt ?? this.updatedAt,
   );
@@ -342,6 +378,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
           ? data.lastVisitAt.value
           : this.lastVisitAt,
       isGuest: data.isGuest.present ? data.isGuest.value : this.isGuest,
+      birthYear: data.birthYear.present ? data.birthYear.value : this.birthYear,
       createdAt: data.createdAt.present ? data.createdAt.value : this.createdAt,
       updatedAt: data.updatedAt.present ? data.updatedAt.value : this.updatedAt,
     );
@@ -356,6 +393,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
           ..write('notes: $notes, ')
           ..write('lastVisitAt: $lastVisitAt, ')
           ..write('isGuest: $isGuest, ')
+          ..write('birthYear: $birthYear, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt')
           ..write(')'))
@@ -370,6 +408,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
     notes,
     lastVisitAt,
     isGuest,
+    birthYear,
     createdAt,
     updatedAt,
   );
@@ -383,6 +422,7 @@ class CustomerRow extends DataClass implements Insertable<CustomerRow> {
           other.notes == this.notes &&
           other.lastVisitAt == this.lastVisitAt &&
           other.isGuest == this.isGuest &&
+          other.birthYear == this.birthYear &&
           other.createdAt == this.createdAt &&
           other.updatedAt == this.updatedAt);
 }
@@ -394,6 +434,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
   final Value<String?> notes;
   final Value<DateTime?> lastVisitAt;
   final Value<bool> isGuest;
+  final Value<int?> birthYear;
   final Value<DateTime> createdAt;
   final Value<DateTime> updatedAt;
   final Value<int> rowid;
@@ -404,6 +445,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
     this.notes = const Value.absent(),
     this.lastVisitAt = const Value.absent(),
     this.isGuest = const Value.absent(),
+    this.birthYear = const Value.absent(),
     this.createdAt = const Value.absent(),
     this.updatedAt = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -415,6 +457,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
     this.notes = const Value.absent(),
     this.lastVisitAt = const Value.absent(),
     this.isGuest = const Value.absent(),
+    this.birthYear = const Value.absent(),
     required DateTime createdAt,
     required DateTime updatedAt,
     this.rowid = const Value.absent(),
@@ -429,6 +472,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
     Expression<String>? notes,
     Expression<DateTime>? lastVisitAt,
     Expression<bool>? isGuest,
+    Expression<int>? birthYear,
     Expression<DateTime>? createdAt,
     Expression<DateTime>? updatedAt,
     Expression<int>? rowid,
@@ -440,6 +484,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
       if (notes != null) 'notes': notes,
       if (lastVisitAt != null) 'last_visit_at': lastVisitAt,
       if (isGuest != null) 'is_guest': isGuest,
+      if (birthYear != null) 'birth_year': birthYear,
       if (createdAt != null) 'created_at': createdAt,
       if (updatedAt != null) 'updated_at': updatedAt,
       if (rowid != null) 'rowid': rowid,
@@ -453,6 +498,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
     Value<String?>? notes,
     Value<DateTime?>? lastVisitAt,
     Value<bool>? isGuest,
+    Value<int?>? birthYear,
     Value<DateTime>? createdAt,
     Value<DateTime>? updatedAt,
     Value<int>? rowid,
@@ -464,6 +510,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
       notes: notes ?? this.notes,
       lastVisitAt: lastVisitAt ?? this.lastVisitAt,
       isGuest: isGuest ?? this.isGuest,
+      birthYear: birthYear ?? this.birthYear,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
       rowid: rowid ?? this.rowid,
@@ -491,6 +538,9 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
     if (isGuest.present) {
       map['is_guest'] = Variable<bool>(isGuest.value);
     }
+    if (birthYear.present) {
+      map['birth_year'] = Variable<int>(birthYear.value);
+    }
     if (createdAt.present) {
       map['created_at'] = Variable<DateTime>(createdAt.value);
     }
@@ -512,6 +562,7 @@ class CustomersCompanion extends UpdateCompanion<CustomerRow> {
           ..write('notes: $notes, ')
           ..write('lastVisitAt: $lastVisitAt, ')
           ..write('isGuest: $isGuest, ')
+          ..write('birthYear: $birthYear, ')
           ..write('createdAt: $createdAt, ')
           ..write('updatedAt: $updatedAt, ')
           ..write('rowid: $rowid')
@@ -16691,6 +16742,7 @@ typedef $$CustomersTableCreateCompanionBuilder = CustomersCompanion Function({
   Value<String?> notes,
   Value<DateTime?> lastVisitAt,
   Value<bool> isGuest,
+  Value<int?> birthYear,
   required DateTime createdAt,
   required DateTime updatedAt,
   Value<int> rowid,
@@ -16702,6 +16754,7 @@ typedef $$CustomersTableUpdateCompanionBuilder = CustomersCompanion Function({
   Value<String?> notes,
   Value<DateTime?> lastVisitAt,
   Value<bool> isGuest,
+  Value<int?> birthYear,
   Value<DateTime> createdAt,
   Value<DateTime> updatedAt,
   Value<int> rowid,
@@ -16743,6 +16796,11 @@ class $$CustomersTableFilterComposer
 
   ColumnFilters<bool> get isGuest => $composableBuilder(
     column: $table.isGuest,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get birthYear => $composableBuilder(
+    column: $table.birthYear,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -16796,6 +16854,11 @@ class $$CustomersTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
+  ColumnOrderings<int> get birthYear => $composableBuilder(
+    column: $table.birthYear,
+    builder: (column) => ColumnOrderings(column),
+  );
+
   ColumnOrderings<DateTime> get createdAt => $composableBuilder(
     column: $table.createdAt,
     builder: (column) => ColumnOrderings(column),
@@ -16835,6 +16898,9 @@ class $$CustomersTableAnnotationComposer
 
   GeneratedColumn<bool> get isGuest =>
       $composableBuilder(column: $table.isGuest, builder: (column) => column);
+
+  GeneratedColumn<int> get birthYear =>
+      $composableBuilder(column: $table.birthYear, builder: (column) => column);
 
   GeneratedColumn<DateTime> get createdAt =>
       $composableBuilder(column: $table.createdAt, builder: (column) => column);
@@ -16880,6 +16946,7 @@ class $$CustomersTableTableManager
                 Value<String?> notes = const Value.absent(),
                 Value<DateTime?> lastVisitAt = const Value.absent(),
                 Value<bool> isGuest = const Value.absent(),
+                Value<int?> birthYear = const Value.absent(),
                 Value<DateTime> createdAt = const Value.absent(),
                 Value<DateTime> updatedAt = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -16890,6 +16957,7 @@ class $$CustomersTableTableManager
                 notes: notes,
                 lastVisitAt: lastVisitAt,
                 isGuest: isGuest,
+                birthYear: birthYear,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,
@@ -16902,6 +16970,7 @@ class $$CustomersTableTableManager
                 Value<String?> notes = const Value.absent(),
                 Value<DateTime?> lastVisitAt = const Value.absent(),
                 Value<bool> isGuest = const Value.absent(),
+                Value<int?> birthYear = const Value.absent(),
                 required DateTime createdAt,
                 required DateTime updatedAt,
                 Value<int> rowid = const Value.absent(),
@@ -16912,6 +16981,7 @@ class $$CustomersTableTableManager
                 notes: notes,
                 lastVisitAt: lastVisitAt,
                 isGuest: isGuest,
+                birthYear: birthYear,
                 createdAt: createdAt,
                 updatedAt: updatedAt,
                 rowid: rowid,

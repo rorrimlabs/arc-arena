@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
@@ -211,18 +212,25 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
       return;
     }
     setState(() => _saving = true);
-    final catalog = ref.read(catalogRepositoryProvider);
-    await catalog.upsertGame(Game(
-      id: _id,
-      name: name,
-      categoryId: _categoryId,
-      platforms: _platforms.toList(),
-      playerMode: _playerMode,
-      maxLocalPlayers: _maxPlayers,
-      active: _active,
-    ));
-    for (final entry in _compat.entries) {
-      await catalog.setCompatibility(_id, entry.key, entry.value);
+    final saved = await ref.read(catalogActionsProvider).saveGame(
+          Game(
+            id: _id,
+            name: name,
+            categoryId: _categoryId,
+            platforms: _platforms.toList(),
+            playerMode: _playerMode,
+            maxLocalPlayers: _maxPlayers,
+            active: _active,
+          ),
+          compatibility: Map.of(_compat),
+        );
+    if (saved.isErr) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(saved.failureOrNull!.display)),
+      );
+      return;
     }
     // Refresh dependent views.
     ref.invalidate(allGamesProvider);

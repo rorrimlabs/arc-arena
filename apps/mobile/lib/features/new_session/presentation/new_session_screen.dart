@@ -236,7 +236,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
           _Section(
             title: n('Duration'),
             child: Builder(builder: (context) {
-              const presets = [30, 60, 90, 120];
+              final presets = ref.watch(startPresetsProvider);
               final isCustom = !_draft.openEnded &&
                   _draft.durationMinutes != null &&
                   !presets.contains(_draft.durationMinutes);

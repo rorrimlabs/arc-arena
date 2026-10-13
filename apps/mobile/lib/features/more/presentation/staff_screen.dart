@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
+import 'package:arena_ops/core/monitoring/replay_privacy.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
@@ -7,7 +8,6 @@ import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:supabase_flutter/supabase_flutter.dart' show PostgrestException;
 import 'package:uuid/uuid.dart';
 
 /// Staff accounts and what each one may do (brief §12, design role model).
@@ -44,79 +44,28 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
     }
   }
 
-  /// Cloud mode: a person is a real account. They create it on their own
-  /// device; the owner then grants it access here (online only).
-  Future<void> _addByEmail(CloudBinding cloud) async {
-    final email = TextEditingController();
-    final name = TextEditingController();
-    var owner = false;
-    final go = await showDialog<bool>(
-      context: context,
-      builder: (c) => StatefulBuilder(
-        builder: (c, set) => AlertDialog(
-          title: const Text('Add by e-mail'),
-          content: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Text('First create their login in the Supabase '
-                  'dashboard (Authentication → Users → Add user, with a '
-                  'starting password). Then add that e-mail here; they can '
-                  'change the password after signing in.'),
-              TextField(
-                controller: email,
-                keyboardType: TextInputType.emailAddress,
-                decoration: const InputDecoration(labelText: 'E-mail'),
-              ),
-              TextField(
-                controller: name,
-                decoration: const InputDecoration(labelText: 'Name'),
-              ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Owner access'),
-                subtitle: const Text('Money, reports and settings'),
-                value: owner,
-                onChanged: (v) => set(() => owner = v),
-              ),
-            ],
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(c, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: () => Navigator.pop(c, true), child: const Text('Add')),
-          ],
-        ),
+  /// Cloud mode: people join by accepting an invitation, so the floor app
+  /// never attaches a login to the arena itself. Owners invite on the admin
+  /// dashboard; the invited person sets their own password from the e-mailed
+  /// link and then signs in here.
+  Future<void> _explainInvites() => showDialog<void>(
+    context: context,
+    builder: (c) => AlertDialog(
+      title: const Text('Invite staff'),
+      content: const Text(
+        'Invite people from the admin dashboard: Users → Invite user. '
+        'They get an e-mail link, choose their own password, and then '
+        'sign in on this app. Permissions are set here or on the '
+        'dashboard after they join.',
       ),
-    );
-    if (go != true || !mounted) return;
-    final perms = owner
-        ? Permission.codesOf(Permission.all)
-        : Permission.codesOf({
-            Permission.start,
-            Permission.bill,
-            Permission.discount,
-            Permission.members,
-          });
-    final messenger = ScaffoldMessenger.of(context);
-    try {
-      await cloud.addStaffByEmail(email.text.trim(), name.text.trim(), perms);
-      await cloud.engine.syncNow();
-      await _load();
-      messenger.showSnackBar(
-          SnackBar(content: Text('${name.text.trim()} can now sign in.')));
-    } on PostgrestException catch (e) {
-      messenger.showSnackBar(SnackBar(
-          content: Text(e.message == 'no_account'
-              ? 'No login uses that e-mail yet — create it in the Supabase '
-                  'dashboard first (Authentication → Users → Add user).'
-              : 'Not added: ${e.message}')));
-    } on Object catch (e) {
-      messenger.showSnackBar(
-          SnackBar(content: Text('Needs a connection to add someone ($e).')));
-    }
-  }
+      actions: [
+        FilledButton(
+          onPressed: () => Navigator.pop(c),
+          child: const Text('OK'),
+        ),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -132,15 +81,19 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
               label: const Text('Add person'),
             )
           : FloatingActionButton.extended(
-              onPressed: () => _addByEmail(cloud),
+              onPressed: _explainInvites,
               icon: const Icon(Icons.alternate_email),
-              label: const Text('Add by e-mail'),
+              label: const Text('Invite staff'),
             ),
       body: _loading
           ? const Center(child: CircularProgressIndicator())
           : ListView(
               padding: const EdgeInsets.fromLTRB(
-                  AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 96),
+                AppSpacing.lg,
+                AppSpacing.lg,
+                AppSpacing.lg,
+                96,
+              ),
               children: [
                 Text(
                   'Anyone holding Money or Reports is an owner and sees the '
@@ -162,14 +115,19 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                         title: Row(
                           children: [
                             Flexible(
-                              child: Text(u.name,
-                                  maxLines: 1, overflow: TextOverflow.ellipsis),
+                              child: Text(
+                                u.name,
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             const SizedBox(width: AppSpacing.sm),
                             StatusDotLabel(
                               label: u.active ? u.roleLabel : 'Disabled',
                               color: u.active
-                                  ? (u.isOwner ? arena.primary : arena.textMuted)
+                                  ? (u.isOwner
+                                        ? arena.primary
+                                        : arena.textMuted)
                                   : arena.textSubtle,
                             ),
                           ],
@@ -204,8 +162,12 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
     // The last person who can reach Settings must keep that access, or the
     // arena locks itself out of its own configuration on this device.
     final wouldLockOut = _users
-        .where((u) =>
-            u.id != saved.id && u.active && u.perms.contains(Permission.settings))
+        .where(
+          (u) =>
+              u.id != saved.id &&
+              u.active &&
+              u.perms.contains(Permission.settings),
+        )
         .isEmpty;
     if (wouldLockOut &&
         (!saved.active || !saved.perms.contains(Permission.settings))) {
@@ -222,9 +184,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
       return;
     }
 
-    await ref
-        .read(userRepositoryProvider)
-        .upsert(saved, newPin: result.newPin);
+    await ref.read(userRepositoryProvider).upsert(saved, newPin: result.newPin);
     ref.invalidate(usersProvider);
     await _load();
     if (mounted) {
@@ -251,8 +211,9 @@ class _StaffEditor extends StatefulWidget {
 }
 
 class _StaffEditorState extends State<_StaffEditor> {
-  late final TextEditingController _name =
-      TextEditingController(text: widget.existing?.name ?? '');
+  late final TextEditingController _name = TextEditingController(
+    text: widget.existing?.name ?? '',
+  );
   // Always starts empty: a stored PIN is a salted hash and cannot be shown.
   // Blank means "keep the current PIN".
   late final TextEditingController _pin = TextEditingController();
@@ -267,11 +228,15 @@ class _StaffEditorState extends State<_StaffEditor> {
     super.dispose();
   }
 
+  // Credentials are entered here: Session Replay pauses while it is open.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ReplayPause(child: _screen(context));
+
+  Widget _screen(BuildContext context) {
     final theme = Theme.of(context);
     final arena = context.arena;
-    final isOwner = _perms.contains(Permission.money) ||
+    final isOwner =
+        _perms.contains(Permission.money) ||
         _perms.contains(Permission.reports);
 
     return SafeArea(
@@ -284,8 +249,10 @@ class _StaffEditorState extends State<_StaffEditor> {
         child: ListView(
           shrinkWrap: true,
           children: [
-            Text(widget.existing == null ? 'Add person' : 'Edit person',
-                style: theme.textTheme.titleLarge),
+            Text(
+              widget.existing == null ? 'Add person' : 'Edit person',
+              style: theme.textTheme.titleLarge,
+            ),
             const SizedBox(height: AppSpacing.md),
             TextField(
               controller: _name,

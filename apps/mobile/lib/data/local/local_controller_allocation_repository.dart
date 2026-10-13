@@ -6,6 +6,7 @@ import 'package:arena_ops/data/local/mappers.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/repositories/controller_allocation_reader.dart';
+import 'package:arena_ops/domain/repositories/controller_inventory_writer.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
 import 'package:drift/drift.dart';
 import 'package:uuid/uuid.dart';
@@ -73,7 +74,8 @@ class ControllerDashboard {
 /// LOCKING a dual-capability station to one mode (RIFT PS5/VR, brief §1).
 /// Allocation itself happens inside the session/group repositories via
 /// [ControllerAllocator]; this repository is the owner-facing view + inventory.
-class LocalControllerAllocationRepository implements ControllerAllocationReader {
+class LocalControllerAllocationRepository
+    implements ControllerAllocationReader, ControllerInventoryWriter {
   LocalControllerAllocationRepository(this._db,
       [this._clock = const SystemClock(), this._sync]);
   final AppDatabase _db;
@@ -120,6 +122,7 @@ class LocalControllerAllocationRepository implements ControllerAllocationReader 
   /// allocation, so this only changes where the pad is — it never ends a
   /// session. A loan records where to return it and (optionally) which session
   /// owes the return; a permanent move re-homes it; returnHome sends it back.
+  @override
   Future<Result<void>> moveController({
     required String controllerId,
     required String toResourceId,
@@ -215,6 +218,7 @@ class LocalControllerAllocationRepository implements ControllerAllocationReader 
   /// Lock a dual-capability station (RIFT) to one activity, or clear the lock
   /// with [mode] = null (brief §1). Refused while the station has an open
   /// occupant, so a mode flip can never strand a running session.
+  @override
   Future<Result<void>> setResourceMode(String resourceId, String? mode) async {
     final openSeg = await (_db.select(_db.sessionSegments)
           ..where((t) => t.resourceId.equals(resourceId) & t.endedAt.isNull()))

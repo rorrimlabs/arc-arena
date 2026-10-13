@@ -20,6 +20,7 @@ Customer customerFromRow(CustomerRow r) => Customer(
       notes: r.notes,
       lastVisitAt: r.lastVisitAt,
       isGuest: r.isGuest,
+      birthYear: r.birthYear,
       createdAt: r.createdAt,
       updatedAt: r.updatedAt,
     );

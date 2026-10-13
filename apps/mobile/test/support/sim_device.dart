@@ -3,6 +3,8 @@
 /// and a [SyncEngine] — exactly the stack the app runs, minus the UI.
 library;
 
+import 'dart:io';
+
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/data/local/database.dart';
@@ -52,13 +54,17 @@ class SimDevice {
     final client = SupabaseClient(url, anonKey,
         authOptions: const AuthClientOptions(
             autoRefreshToken: false, authFlowType: AuthFlowType.implicit));
-    await client.auth.signInWithPassword(email: email, password: 'it-pass-$email');
+    // tool/sync_it.sh generates one password per run (AO_IT_PASSWORD) for its
+    // throw-away local test logins; it is never printed or stored.
+    final password = Platform.environment['AO_IT_PASSWORD'] ?? 'it-pass-$email';
+    await client.auth.signInWithPassword(email: email, password: password);
     return SimDevice._(name, client, AppDatabase(NativeDatabase.memory()),
         SupabaseSyncTransport(client));
   }
 
   /// Binds this device to [arenaId]: repositories record ops, the engine syncs.
-  void bind(String arenaId, {SyncTransport? via}) {
+  void bind(String arenaId,
+      {SyncTransport? via, void Function(List<String> appliedKinds)? onPushed}) {
     recorder = SyncRecorder(db, actor: () => userId, clock: clock);
     sessions = LocalSessionRepository(db, clock, recorder);
     groups = LocalGroupSessionRepository(db, clock, recorder);
@@ -66,7 +72,8 @@ class SimDevice {
     catalog = LocalCatalogRepository(db, clock, recorder);
     bookings = LocalBookingRepository(db, clock, recorder);
     pads = LocalControllerAllocationRepository(db, clock, recorder);
-    engine = SyncEngine(db: db, transport: via ?? transport, arenaId: arenaId, clock: clock);
+    engine = SyncEngine(db: db, transport: via ?? transport, arenaId: arenaId,
+        clock: clock, onPushed: onPushed);
   }
 
   Future<SyncReport> sync() => engine.syncNow();

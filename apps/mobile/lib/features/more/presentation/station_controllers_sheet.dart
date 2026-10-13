@@ -1,11 +1,12 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:uuid/uuid.dart';
 
 /// The controllers physically at one station — the owner's inventory surface.
 ///
@@ -34,8 +35,6 @@ class _StationControllersSheet extends ConsumerWidget {
   const _StationControllersSheet({required this.resource});
 
   final Resource resource;
-
-  static const _uuid = Uuid();
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -169,6 +168,10 @@ class _StationControllersSheet extends ConsumerWidget {
     );
   }
 
+  /// Shows what happened: [done] on success, otherwise the refusal.
+  void _report(ScaffoldMessengerState m, Result<Object?> r, String done) =>
+      m.showSnackBar(SnackBar(content: Text(r.failureOrNull?.display ?? done)));
+
   Future<void> _setStatus(
     BuildContext context,
     WidgetRef ref,
@@ -177,12 +180,10 @@ class _StationControllersSheet extends ConsumerWidget {
     String? note,
   ) async {
     final m = ScaffoldMessenger.of(context);
-    await ref
-        .read(catalogRepositoryProvider)
+    final r = await ref
+        .read(catalogActionsProvider)
         .setControllerStatus(c.id, status, notes: note);
-    m.showSnackBar(
-      SnackBar(content: Text('${c.label}: ${status.label.toLowerCase()}.')),
-    );
+    _report(m, r, '${c.label}: ${status.label.toLowerCase()}.');
   }
 
   Future<void> _addController(
@@ -198,24 +199,10 @@ class _StationControllersSheet extends ConsumerWidget {
       confirm: 'Add',
     );
     if (label == null || label.isEmpty) return;
-    if (_labelTaken(ref, label)) {
-      m.showSnackBar(
-        SnackBar(content: Text('A controller is already labelled $label.')),
-      );
-      return;
-    }
-    await ref
-        .read(catalogRepositoryProvider)
-        .upsertController(
-          Controller(
-            id: _uuid.v4(),
-            label: label,
-            homeResourceId: station.id,
-            currentResourceId: station.id,
-            updatedAt: DateTime.now(),
-          ),
-        );
-    m.showSnackBar(SnackBar(content: Text('Added $label to ${station.name}.')));
+    final r = await ref
+        .read(catalogActionsProvider)
+        .addController(label: label, resourceId: station.id);
+    _report(m, r, 'Added $label to ${station.name}.');
   }
 
   Future<void> _rename(
@@ -231,16 +218,8 @@ class _StationControllersSheet extends ConsumerWidget {
       confirm: 'Rename',
     );
     if (label == null || label.isEmpty || label == c.label) return;
-    if (_labelTaken(ref, label, except: c.id)) {
-      m.showSnackBar(
-        SnackBar(content: Text('A controller is already labelled $label.')),
-      );
-      return;
-    }
-    await ref
-        .read(catalogRepositoryProvider)
-        .upsertController(c.copyWith(label: label));
-    m.showSnackBar(SnackBar(content: Text('Renamed to $label.')));
+    final r = await ref.read(catalogActionsProvider).renameController(c, label);
+    _report(m, r, 'Renamed to $label.');
   }
 
   Future<void> _setHome(
@@ -257,21 +236,10 @@ class _StationControllersSheet extends ConsumerWidget {
       exclude: c.homeResourceId,
     );
     if (dest == null) return;
-    // Re-homing onto the station it already stands at settles any loan; a pad
-    // still on loan elsewhere now returns to its NEW home.
-    final settled = dest.id == c.currentResourceId;
-    await ref
-        .read(catalogRepositoryProvider)
-        .upsertController(
-          c.copyWith(
-            homeResourceId: dest.id,
-            loanReturnTo: settled || c.loanReturnTo == null ? null : dest.id,
-            loanSessionRef: settled ? null : c.loanSessionRef,
-          ),
-        );
-    m.showSnackBar(
-      SnackBar(content: Text('${c.label} now belongs to ${dest.name}.')),
-    );
+    final r = await ref
+        .read(catalogActionsProvider)
+        .setControllerHome(c, dest.id);
+    _report(m, r, '${c.label} now belongs to ${dest.name}.');
   }
 
   Future<void> _move(
@@ -283,26 +251,14 @@ class _StationControllersSheet extends ConsumerWidget {
     final m = ScaffoldMessenger.of(context);
     final choice = await _pickMove(context, ref, c);
     if (choice == null) return;
-    // A "loan" back to its own home is just a return — don't record a loan.
-    final kind = choice.$1.id == c.homeResourceId
-        ? ControllerMoveKind.returnHome
-        : choice.$2;
     final r = await ref
-        .read(controllerAllocationRepositoryProvider)
+        .read(catalogActionsProvider)
         .moveController(
-          controllerId: c.id,
+          controller: c,
           toResourceId: choice.$1.id,
-          kind: kind,
+          kind: choice.$2,
         );
-    m.showSnackBar(
-      SnackBar(
-        content: Text(
-          r.isErr
-              ? r.failureOrNull!.display
-              : 'Moved ${c.label} to ${choice.$1.name}.',
-        ),
-      ),
-    );
+    _report(m, r, 'Moved ${c.label} to ${choice.$1.name}.');
   }
 
   Future<void> _returnHome(
@@ -311,20 +267,8 @@ class _StationControllersSheet extends ConsumerWidget {
     Controller c,
   ) async {
     final m = ScaffoldMessenger.of(context);
-    final r = await ref
-        .read(controllerAllocationRepositoryProvider)
-        .moveController(
-          controllerId: c.id,
-          toResourceId: c.homeResourceId,
-          kind: ControllerMoveKind.returnHome,
-        );
-    m.showSnackBar(
-      SnackBar(
-        content: Text(
-          r.isErr ? r.failureOrNull!.display : 'Recalled ${c.label}.',
-        ),
-      ),
-    );
+    final r = await ref.read(catalogActionsProvider).returnHome(c);
+    _report(m, r, 'Recalled ${c.label}.');
   }
 
   Future<void> _setMode(
@@ -335,26 +279,10 @@ class _StationControllersSheet extends ConsumerWidget {
   ) async {
     final m = ScaffoldMessenger.of(context);
     final r = await ref
-        .read(controllerAllocationRepositoryProvider)
-        .setResourceMode(station.id, code);
-    if (r.isErr) {
-      m.showSnackBar(SnackBar(content: Text(r.failureOrNull!.display)));
-    } else {
-      ref.invalidate(resourcesProvider);
-      m.showSnackBar(
-        SnackBar(
-          content: Text('${station.name} set to ${code ?? 'either mode'}.'),
-        ),
-      );
-    }
-  }
-
-  /// Labels are what staff are told to carry ("HEX-1"), so two pads must
-  /// never share one. Case-insensitive.
-  bool _labelTaken(WidgetRef ref, String label, {String? except}) {
-    final all = ref.read(controllersProvider).value ?? const <Controller>[];
-    final wanted = label.toLowerCase();
-    return all.any((c) => c.id != except && c.label.toLowerCase() == wanted);
+        .read(catalogActionsProvider)
+        .setStationMode(station.id, code);
+    if (r.isOk) ref.invalidate(resourcesProvider);
+    _report(m, r, '${station.name} set to ${code ?? 'either mode'}.');
   }
 
   Future<String?> _textPrompt(

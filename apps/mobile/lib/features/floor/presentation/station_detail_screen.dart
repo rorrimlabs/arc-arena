@@ -49,6 +49,7 @@ class StationDetailScreen extends ConsumerWidget {
     final timer = SessionTimer(
       startedAt: session.startedAt,
       scheduledEndAt: session.scheduledEndAt,
+      warnThreshold: ref.watch(warnThresholdProvider),
     );
     final visual = timer.state(now);
     final overtime = visual == SessionVisualState.overtime;

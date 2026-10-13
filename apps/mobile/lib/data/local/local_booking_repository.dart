@@ -1,4 +1,5 @@
 import 'package:arena_ops/core/clock/clock.dart';
+import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/mappers.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
@@ -81,6 +82,13 @@ class LocalBookingRepository implements BookingRepository {
       updatedAt: now,
     );
     await _db.transaction(() async {
+      await _ensureSlotFree(
+        bookingId: row.id,
+        resourceId: row.resourceId,
+        status: row.status,
+        start: row.scheduledStart,
+        end: row.scheduledEnd,
+      );
       await _db.into(_db.bookings).insert(row);
       await _sync?.record(
         kind: 'booking.create',
@@ -100,6 +108,13 @@ class LocalBookingRepository implements BookingRepository {
   Future<Booking> update(Booking booking) async {
     final now = _clock.now();
     await _db.transaction(() async {
+      await _ensureSlotFree(
+        bookingId: booking.id,
+        resourceId: booking.resourceId,
+        status: booking.status.code,
+        start: booking.scheduledStart.toUtc(),
+        end: booking.scheduledEnd.toUtc(),
+      );
       await (_db.update(_db.bookings)..where((t) => t.id.equals(booking.id)))
           .write(BookingsCompanion(
         customerId: Value(booking.customerId),
@@ -162,6 +177,81 @@ class LocalBookingRepository implements BookingRepository {
         );
       }
     });
+  }
+
+  /// The last line against a double booking, run inside the write
+  /// transaction: the caller checked availability a moment ago, but another
+  /// booking or a session may have taken the station since. Only a `booked`
+  /// reservation on a specific station holds it (an any-system booking is
+  /// placed at check-in, and a checked-in one is the session itself).
+  /// Half-open overlap, like [overlapping]; throws [BookingConflict].
+  Future<void> _ensureSlotFree({
+    required String bookingId,
+    required String? resourceId,
+    required String status,
+    required DateTime start,
+    required DateTime end,
+  }) async {
+    if (resourceId == null || status != BookingStatus.booked.code) return;
+
+    final otherBooking = await (_db.select(_db.bookings)
+          ..where((t) =>
+              t.resourceId.equals(resourceId) &
+              t.id.equals(bookingId).not() &
+              t.status.equals(BookingStatus.booked.code) &
+              t.scheduledStart.isSmallerThanValue(end) &
+              t.scheduledEnd.isBiggerThanValue(start))
+          ..limit(1))
+        .getSingleOrNull();
+    var taken = otherBooking != null;
+
+    if (!taken) {
+      // A session on the station holds it from its open segment's start to the
+      // session's scheduled end.
+      final segments = await (_db.select(_db.sessionSegments)
+            ..where((t) => t.resourceId.equals(resourceId) & t.endedAt.isNull()))
+          .get();
+      for (final seg in segments) {
+        final session = await (_db.select(_db.sessions)
+              ..where((t) => t.id.equals(seg.sessionId)))
+            .getSingleOrNull();
+        if (session != null &&
+            seg.startedAt.isBefore(end) &&
+            session.scheduledEndAt.isAfter(start)) {
+          taken = true;
+          break;
+        }
+      }
+    }
+
+    if (!taken) {
+      // So does a group playing on it, until the group's scheduled end.
+      final assignments = await (_db.select(_db.groupAssignments)
+            ..where((t) => t.resourceId.equals(resourceId) & t.endedAt.isNull()))
+          .get();
+      for (final a in assignments) {
+        final group = await (_db.select(_db.groupSessions)
+              ..where((t) => t.id.equals(a.groupId)))
+            .getSingleOrNull();
+        if (group != null &&
+            a.startedAt.isBefore(end) &&
+            group.scheduledEndAt.isAfter(start)) {
+          taken = true;
+          break;
+        }
+      }
+    }
+
+    if (!taken) return;
+    final station = await (_db.select(_db.resources)
+          ..where((t) => t.id.equals(resourceId)))
+        .getSingleOrNull();
+    throw BookingConflict(Failure(
+      message: '${station?.name ?? 'That system'} is occupied during the '
+          'requested time.',
+      fix: 'Pick another system or time.',
+      code: 'occupied',
+    ));
   }
 
   @override

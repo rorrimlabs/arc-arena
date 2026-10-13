@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
@@ -62,7 +63,7 @@ class StationsScreen extends ConsumerWidget {
                         if (c.currentResourceId == r.id) c,
                     ],
                     onEdit: () => _edit(context, ref, r),
-                    onStatus: (s) => _setStatus(context, ref, r, s, busy),
+                    onStatus: (s) => _setStatus(context, ref, r, s),
                     onControllers: () => showStationControllersSheet(context, r),
                   ),
               ],
@@ -75,25 +76,19 @@ class StationsScreen extends ConsumerWidget {
     WidgetRef ref,
     Resource r,
     ResourceStatus status,
-    Set<String> busy,
   ) async {
     // Taking a station out of service while someone is on it would strand a
-    // live session, so it is refused with a reason instead.
-    if (status != ResourceStatus.available && busy.contains(r.id)) {
+    // live session; the action refuses that with a reason.
+    final result =
+        await ref.read(catalogActionsProvider).setStationStatus(r, status);
+    if (result.isOk) ref.invalidate(resourcesProvider);
+    if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${r.name} is in use. End or move that session first.',
+            result.failureOrNull?.display ?? '${r.name}: ${status.label}.',
           ),
         ),
-      );
-      return;
-    }
-    await ref.read(catalogRepositoryProvider).setResourceStatus(r.id, status);
-    ref.invalidate(resourcesProvider);
-    if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${r.name}: ${status.label}.')),
       );
     }
   }
@@ -111,11 +106,13 @@ class StationsScreen extends ConsumerWidget {
       ),
     );
     if (saved == null) return;
-    await ref.read(catalogRepositoryProvider).upsertResource(saved);
-    ref.invalidate(resourcesProvider);
+    final result = await ref.read(catalogActionsProvider).saveStation(saved);
+    if (result.isOk) ref.invalidate(resourcesProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('${saved.name} saved.')),
+        SnackBar(
+          content: Text(result.failureOrNull?.display ?? '${saved.name} saved.'),
+        ),
       );
     }
   }

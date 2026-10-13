@@ -115,11 +115,13 @@ class FloorScreen extends ConsumerWidget {
               seg.resourceId: (group: g, seg: seg),
         };
 
+    final warn = ref.watch(warnThresholdProvider);
     var endingSoon = 0;
     for (final a in active) {
       final st = SessionTimer(
         startedAt: a.session.startedAt,
         scheduledEndAt: a.session.scheduledEndAt,
+        warnThreshold: warn,
       ).state(now);
       if (st != SessionVisualState.normal) endingSoon++;
     }
@@ -127,6 +129,7 @@ class FloorScreen extends ConsumerWidget {
       final st = SessionTimer(
         startedAt: g.group.startedAt,
         scheduledEndAt: g.group.scheduledEndAt,
+        warnThreshold: warn,
       ).state(now);
       if (st != SessionVisualState.normal) endingSoon++;
     }

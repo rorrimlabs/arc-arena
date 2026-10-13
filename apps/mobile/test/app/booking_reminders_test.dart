@@ -8,6 +8,9 @@ import 'package:arena_ops/data/local/local_booking_repository.dart';
 import 'package:arena_ops/data/local/local_catalog_repository.dart';
 import 'package:arena_ops/data/local/local_customer_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
+import 'package:arena_ops/domain/auth/app_user.dart';
+import 'package:arena_ops/domain/auth/permission.dart';
+import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/notifications/reminder_plan.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -64,6 +67,11 @@ void main() {
       sessions: sessions,
       catalog: catalog,
       clock: clock,
+      guard: const PermissionGuard(AppUser(
+        id: 'u2',
+        name: 'Staff',
+        perms: {Permission.start},
+      )),
       reminders: reminders,
     );
     final rahul = await customers.create(name: 'Rahul', phone: '9000000001');

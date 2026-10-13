@@ -27,9 +27,23 @@ class SessionTimer {
   /// How long before scheduled end the card turns amber.
   final Duration warnThreshold;
 
-  /// Time played so far (frozen at [actualEndedAt] once ended).
-  Duration elapsed(DateTime now) =>
-      (actualEndedAt ?? now).difference(startedAt);
+  /// Time played so far (frozen at [actualEndedAt] once ended). Clamped to zero
+  /// if current clock is momentarily behind start time.
+  Duration elapsed(DateTime now) {
+    final diff = (actualEndedAt ?? now).difference(startedAt);
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  /// Detects impossible timer states or corrupted timestamps.
+  String? detectAnomaly(DateTime now) {
+    if (scheduledEndAt.isBefore(startedAt)) {
+      return 'scheduledEndAt ($scheduledEndAt) precedes startedAt ($startedAt)';
+    }
+    if (actualEndedAt != null && actualEndedAt!.isBefore(startedAt)) {
+      return 'actualEndedAt ($actualEndedAt) precedes startedAt ($startedAt)';
+    }
+    return null;
+  }
 
   /// Time left until scheduled end. Zero once past it (see [overtime]).
   Duration remaining(DateTime now) {

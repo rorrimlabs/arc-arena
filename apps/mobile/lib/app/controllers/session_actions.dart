@@ -14,6 +14,7 @@ import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/auth/permission_guard.dart';
@@ -55,11 +56,14 @@ class NewSessionDraft {
     List<String>? controllerIds,
     this.durationMinutes = 60,
     this.openEnded = false,
-  }) : controllers = controllers ??
-            (controllerIds != null && controllerIds.isNotEmpty
-                ? ControllerChoice.tracked(
-                    requested: controllerIds.length, padIds: controllerIds)
-                : ControllerChoice.count(controllerCount));
+  }) : controllers =
+           controllers ??
+           (controllerIds != null && controllerIds.isNotEmpty
+               ? ControllerChoice.tracked(
+                   requested: controllerIds.length,
+                   padIds: controllerIds,
+                 )
+               : ControllerChoice.count(controllerCount));
 
   final String? customerId;
   final String? activityCode;
@@ -87,19 +91,18 @@ class NewSessionDraft {
     bool? openEnded,
     bool clearGame = false,
     bool clearControllers = false,
-  }) =>
-      NewSessionDraft(
-        customerId: customerId ?? this.customerId,
-        activityCode: activityCode ?? this.activityCode,
-        resourceId: resourceId ?? this.resourceId,
-        resourceName: resourceName ?? this.resourceName,
-        gameId: clearGame ? null : (gameId ?? this.gameId),
-        controllers: clearControllers
-            ? ControllerChoice.none
-            : (controllers ?? this.controllers),
-        durationMinutes: durationMinutes ?? this.durationMinutes,
-        openEnded: openEnded ?? this.openEnded,
-      );
+  }) => NewSessionDraft(
+    customerId: customerId ?? this.customerId,
+    activityCode: activityCode ?? this.activityCode,
+    resourceId: resourceId ?? this.resourceId,
+    resourceName: resourceName ?? this.resourceName,
+    gameId: clearGame ? null : (gameId ?? this.gameId),
+    controllers: clearControllers
+        ? ControllerChoice.none
+        : (controllers ?? this.controllers),
+    durationMinutes: durationMinutes ?? this.durationMinutes,
+    openEnded: openEnded ?? this.openEnded,
+  );
 }
 
 /// Legacy (count, ids) arguments folded into one [ControllerChoice].
@@ -111,7 +114,9 @@ ControllerChoice resolveControllerChoice(
     choice ??
     (controllerIds != null && controllerIds.isNotEmpty
         ? ControllerChoice.tracked(
-            requested: controllerIds.length, padIds: controllerIds)
+            requested: controllerIds.length,
+            padIds: controllerIds,
+          )
         : ControllerChoice.count(controllerCount));
 
 class SessionActions {
@@ -180,7 +185,10 @@ class SessionActions {
         if (a.session.id != excludeSessionId)
           Occupancy(
             resourceId: a.current.resourceId,
-            interval: UtcInterval(a.current.startedAt, a.session.scheduledEndAt),
+            interval: UtcInterval(
+              a.current.startedAt,
+              a.session.scheduledEndAt,
+            ),
             isBooking: false,
           ),
       for (final g in activeGroups)
@@ -206,9 +214,10 @@ class SessionActions {
 
   /// Pads the session's current segment holds, in a stable order.
   Future<List<String>> padsHeldBy(SessionSegment segment) async => [
-        for (final a in await pads?.openPadAllocations() ?? const <OpenPadAllocation>[])
-          if (a.segmentId == segment.id) a.controllerId,
-      ]..sort();
+    for (final a
+        in await pads?.openPadAllocations() ?? const <OpenPadAllocation>[])
+      if (a.segmentId == segment.id) a.controllerId,
+  ]..sort();
 
   Future<String> _resourceName(String id) async {
     for (final r in await catalog.resources()) {
@@ -226,7 +235,8 @@ class SessionActions {
           r.currentMode != activityCode) {
         return Failure(
           message: '${r.name} is set to ${r.currentMode} mode.',
-          fix: 'Switch ${r.name} to $activityCode in Settings → Stations, '
+          fix:
+              'Switch ${r.name} to $activityCode in Settings → Stations, '
               'or use another system.',
           code: 'mode_locked',
         );
@@ -236,7 +246,11 @@ class SessionActions {
   }
 
   PadBoardLoader get boards => PadBoardLoader(
-      catalog: catalog, sessions: sessions, groups: groups, pads: pads);
+    catalog: catalog,
+    sessions: sessions,
+    groups: groups,
+    pads: pads,
+  );
 
   /// The friendly pre-flight for a [ControllerChoice] at a station: count
   /// required, port ceiling, the game's local-player limit, and — once the
@@ -295,11 +309,15 @@ class SessionActions {
 
   /// Price preview + availability for a new session (spec §6, §17).
   Future<Result<StartPlan>> previewStart(NewSessionDraft d) async {
-    if (d.customerId == null || d.activityCode == null || d.resourceId == null) {
-      return const Err(Failure(
-        message: 'Pick a customer, activity and station.',
-        code: 'incomplete',
-      ));
+    if (d.customerId == null ||
+        d.activityCode == null ||
+        d.resourceId == null) {
+      return const Err(
+        Failure(
+          message: 'Pick a customer, activity and station.',
+          code: 'incomplete',
+        ),
+      );
     }
     final snapshot = await catalog.currentSnapshot();
     // A controller-based activity has a rate *per controller count*, so
@@ -340,31 +358,40 @@ class SessionActions {
     if (preview.isErr) return Err(preview.failureOrNull!);
     final plan = preview.valueOrNull!;
     final snapshot = await catalog.currentSnapshot();
-    final res = await sessions.start(StartSessionCommand(
-      customerId: d.customerId!,
-      startedAt: plan.startedAt,
-      scheduledEndAt: plan.scheduledEndAt,
-      snapshot: snapshot,
-      resourceId: d.resourceId!,
-      resourceName: d.resourceName ?? d.resourceId!,
-      activityCode: d.activityCode!,
-      gameId: d.gameId,
-      controllerCount: d.controllers.count,
-      controllerIds: d.controllers.padIdsOrNull,
-      borrowControllerIds: d.controllers.borrowIdsOrNull,
-    ));
+    final res = await sessions.start(
+      StartSessionCommand(
+        customerId: d.customerId!,
+        startedAt: plan.startedAt,
+        scheduledEndAt: plan.scheduledEndAt,
+        snapshot: snapshot,
+        resourceId: d.resourceId!,
+        resourceName: d.resourceName ?? d.resourceId!,
+        activityCode: d.activityCode!,
+        gameId: d.gameId,
+        controllerCount: d.controllers.count,
+        controllerIds: d.controllers.padIdsOrNull,
+        borrowControllerIds: d.controllers.borrowIdsOrNull,
+      ),
+    );
     if (res.isOk) {
       unawaited(reminders?.scheduleFor(res.valueOrNull!));
+      AppTelemetry.timerStarted(
+        sessionId: res.valueOrNull!.id,
+        resourceId: d.resourceId!,
+        activityCode: d.activityCode!,
+        durationMinutes: d.openEnded ? null : d.durationMinutes,
+        controllerCount: d.controllers.count,
+      );
     }
     return res;
   }
 
   /// Live amount so far, billed across all segments (spec §14, §16).
   SegmentBill liveBill(ActiveSession active, DateTime now) => billing.bill(
-        snapshot: active.session.snapshot,
-        segments: active.segments,
-        openEndAt: now,
-      );
+    snapshot: active.session.snapshot,
+    segments: active.segments,
+    openEndAt: now,
+  );
 
   // --- in-session changes (close current, open new at the exact instant) -----
 
@@ -382,8 +409,11 @@ class SessionActions {
   }) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
-    final choice =
-        resolveControllerChoice(controllers, controllerCount, controllerIds);
+    final choice = resolveControllerChoice(
+      controllers,
+      controllerCount,
+      controllerIds,
+    );
     final locked = await _modeLock(resourceId, activityCode);
     if (locked != null) return Err(locked);
     final problem = await checkControllers(
@@ -396,17 +426,30 @@ class SessionActions {
       exceptOccupantId: current.id,
     );
     if (problem != null) return Err(problem);
-    return sessions.reconfigure(ReconfigureCommand(
-      sessionId: session.id,
-      at: at ?? clock.now(),
-      resourceId: resourceId,
-      resourceName: resourceName,
-      activityCode: activityCode,
-      gameId: gameId,
-      controllerCount: choice.count,
-      controllerIds: choice.padIdsOrNull,
-      borrowControllerIds: choice.borrowIdsOrNull,
-    ));
+    final res = await sessions.reconfigure(
+      ReconfigureCommand(
+        sessionId: session.id,
+        at: at ?? clock.now(),
+        resourceId: resourceId,
+        resourceName: resourceName,
+        activityCode: activityCode,
+        gameId: gameId,
+        controllerCount: choice.count,
+        controllerIds: choice.padIdsOrNull,
+        borrowControllerIds: choice.borrowIdsOrNull,
+      ),
+    );
+    if (res.isOk) {
+      AppTelemetry.sessionSwitched(
+        sessionId: session.id,
+        operation: 'switch_station',
+        fromResourceId: current.resourceId,
+        toResourceId: resourceId,
+        gameId: gameId,
+        controllerCount: choice.count,
+      );
+    }
+    return res;
   }
 
   Future<Result<SessionSegment>> changeGame({
@@ -435,16 +478,29 @@ class SessionActions {
       legacyUnchanged: true,
     );
     if (problem != null) return Err(problem);
-    return sessions.reconfigure(ReconfigureCommand(
-      sessionId: session.id,
-      at: at ?? clock.now(),
-      resourceId: current.resourceId,
-      resourceName: name,
-      activityCode: current.activityCode,
-      gameId: gameId,
-      controllerCount: current.controllerCount,
-      controllerIds: choice.padIdsOrNull,
-    ));
+    final res = await sessions.reconfigure(
+      ReconfigureCommand(
+        sessionId: session.id,
+        at: at ?? clock.now(),
+        resourceId: current.resourceId,
+        resourceName: name,
+        activityCode: current.activityCode,
+        gameId: gameId,
+        controllerCount: current.controllerCount,
+        controllerIds: choice.padIdsOrNull,
+      ),
+    );
+    if (res.isOk) {
+      AppTelemetry.sessionSwitched(
+        sessionId: session.id,
+        operation: 'change_game',
+        fromResourceId: current.resourceId,
+        toResourceId: current.resourceId,
+        gameId: gameId,
+        controllerCount: current.controllerCount,
+      );
+    }
+    return res;
   }
 
   /// Changes how many controllers — and which pads — the session uses, from
@@ -461,8 +517,11 @@ class SessionActions {
   }) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
-    final choice =
-        resolveControllerChoice(controllers, controllerCount, controllerIds);
+    final choice = resolveControllerChoice(
+      controllers,
+      controllerCount,
+      controllerIds,
+    );
     final name = await _resourceName(current.resourceId);
     final problem = await checkControllers(
       choice: choice,
@@ -472,28 +531,46 @@ class SessionActions {
       gameId: current.gameId,
       keepIds: (await padsHeldBy(current)).toSet(),
       exceptOccupantId: current.id,
-      legacyUnchanged:
-          (choice.count ?? 0) <= (current.controllerCount ?? 0),
+      legacyUnchanged: (choice.count ?? 0) <= (current.controllerCount ?? 0),
     );
     if (problem != null) return Err(problem);
-    return sessions.reconfigure(ReconfigureCommand(
-      sessionId: session.id,
-      at: at ?? clock.now(),
-      resourceId: current.resourceId,
-      resourceName: name,
-      activityCode: current.activityCode,
-      gameId: current.gameId,
-      controllerCount: choice.count,
-      controllerIds: choice.padIdsOrNull,
-      borrowControllerIds: choice.borrowIdsOrNull,
-    ));
+    final res = await sessions.reconfigure(
+      ReconfigureCommand(
+        sessionId: session.id,
+        at: at ?? clock.now(),
+        resourceId: current.resourceId,
+        resourceName: name,
+        activityCode: current.activityCode,
+        gameId: current.gameId,
+        controllerCount: choice.count,
+        controllerIds: choice.padIdsOrNull,
+        borrowControllerIds: choice.borrowIdsOrNull,
+      ),
+    );
+    if (res.isOk) {
+      AppTelemetry.sessionSwitched(
+        sessionId: session.id,
+        operation: 'change_controllers',
+        fromResourceId: current.resourceId,
+        toResourceId: current.resourceId,
+        gameId: current.gameId,
+        controllerCount: choice.count,
+      );
+    }
+    return res;
   }
 
   // --- extend / end ----------------------------------------------------------
 
   Future<Result<ExtensionPlan>> previewExtension(
-      Session session, List<SessionSegment> segments, int addedMinutes) async {
-    final current = segments.firstWhere((s) => s.isOpen, orElse: () => segments.last);
+    Session session,
+    List<SessionSegment> segments,
+    int addedMinutes,
+  ) async {
+    final current = segments.firstWhere(
+      (s) => s.isOpen,
+      orElse: () => segments.last,
+    );
     final snapshot = session.snapshot;
     final closeAt = _closeAt(session.startedAt, snapshot.calendar);
     return planner.planExtension(
@@ -513,31 +590,48 @@ class SessionActions {
   }
 
   Future<Result<Session>> extend(
-      Session session, List<SessionSegment> segments, int addedMinutes) async {
+    Session session,
+    List<SessionSegment> segments,
+    int addedMinutes,
+  ) async {
     final denied = guard.check(Permission.start);
     if (denied != null) return Err(denied);
     final plan = await previewExtension(session, segments, addedMinutes);
     if (plan.isErr) return Err(plan.failureOrNull!);
     final p = plan.valueOrNull!;
-    final res = await sessions.extend(ExtendSessionCommand(
-      sessionId: session.id,
-      addedMinutes: addedMinutes,
-      newEndAt: p.newEnd,
-      addedAmountPaise: p.addedCost.value,
-    ));
+    final res = await sessions.extend(
+      ExtendSessionCommand(
+        sessionId: session.id,
+        addedMinutes: addedMinutes,
+        newEndAt: p.newEnd,
+        addedAmountPaise: p.addedCost.value,
+      ),
+    );
     if (res.isOk) {
       unawaited(reminders?.scheduleFor(res.valueOrNull!));
+      AppTelemetry.addBreadcrumb(
+        category: 'session',
+        message: 'session_extended',
+        data: {
+          'sessionId': session.id,
+          'addedMinutes': addedMinutes,
+          'newEndAt': p.newEnd.toIso8601String(),
+        },
+      );
     }
     return res;
   }
 
   /// The final bill from all segments, for the End screen (spec §19).
-  SegmentBill endSummary(Session session, List<SessionSegment> segments, {DateTime? at}) =>
-      billing.bill(
-        snapshot: session.snapshot,
-        segments: segments,
-        openEndAt: at ?? clock.now(),
-      );
+  SegmentBill endSummary(
+    Session session,
+    List<SessionSegment> segments, {
+    DateTime? at,
+  }) => billing.bill(
+    snapshot: session.snapshot,
+    segments: segments,
+    openEndAt: at ?? clock.now(),
+  );
 
   Future<Result<Session>> end(
     Session session,
@@ -545,39 +639,79 @@ class SessionActions {
     bool markWaived = false,
     DateTime? at,
   }) async {
-    final denied = guard.check(Permission.bill) ??
+    final denied =
+        guard.check(Permission.bill) ??
         (markWaived ? guard.check(Permission.discount) : null);
     if (denied != null) return Err(denied);
     final actualEnd = at ?? clock.now();
+    if (actualEnd.isBefore(session.startedAt)) {
+      AppTelemetry.reportTimerAnomaly(
+        sessionId: session.id,
+        anomaly: 'actualEndedAt precedes startedAt',
+        resourceId: segments.lastOrNull?.resourceId ?? 'unknown',
+        startedAt: session.startedAt,
+        actualEndedAt: actualEnd,
+      );
+    }
     final bill = endSummary(session, segments, at: actualEnd);
-    final res = await sessions.end(EndSessionCommand(
-      sessionId: session.id,
-      actualEndedAt: actualEnd,
-      charges: bill.charges,
-      billedAmountPaise: bill.total.value,
-      markWaived: markWaived,
-    ));
+    final res = await sessions.end(
+      EndSessionCommand(
+        sessionId: session.id,
+        actualEndedAt: actualEnd,
+        charges: bill.charges,
+        billedAmountPaise: bill.total.value,
+        markWaived: markWaived,
+      ),
+    );
     if (res.isOk) {
       unawaited(reminders?.cancelFor(session.id));
+      AppTelemetry.timerStopped(
+        sessionId: session.id,
+        resourceId: segments.lastOrNull?.resourceId ?? 'unknown',
+        billedAmountPaise: bill.total.value,
+        playedDuration: actualEnd.difference(session.startedAt),
+      );
+      AppTelemetry.billingCalculated(
+        sessionId: session.id,
+        totalPaise: bill.total.value,
+        segmentCount: segments.length,
+        totalSeconds: actualEnd.difference(session.startedAt).inSeconds,
+      );
     }
     return res;
   }
 
   Future<Result> recordPayment(RecordPaymentCommand cmd) async {
-    final denied = guard.check(Permission.bill) ??
+    final denied =
+        guard.check(Permission.bill) ??
         (cmd.isRefund ? guard.check(Permission.discount) : null);
     if (denied != null) return Err(denied);
-    return sessions.recordPayment(cmd);
+    final res = await sessions.recordPayment(cmd);
+    if (res.isOk) {
+      AppTelemetry.addBreadcrumb(
+        category: 'billing',
+        message: 'payment_recorded',
+        data: {
+          'sessionId': cmd.sessionId,
+          'amountPaise': cmd.amountPaise,
+          'method': cmd.method.name,
+          'isRefund': cmd.isRefund,
+        },
+      );
+    }
+    return res;
   }
 }
 
-final sessionActionsProvider = Provider<SessionActions>((ref) => SessionActions(
-      sessions: ref.watch(sessionRepositoryProvider),
-      groups: ref.watch(groupSessionRepositoryProvider),
-      catalog: ref.watch(catalogRepositoryProvider),
-      bookings: ref.watch(bookingRepositoryProvider),
-      clock: ref.watch(clockProvider),
-      guard: PermissionGuard(ref.watch(authControllerProvider)),
-      reminders: ref.watch(sessionRemindersProvider),
-      pads: ref.watch(controllerAllocationRepositoryProvider),
-    ));
+final sessionActionsProvider = Provider<SessionActions>(
+  (ref) => SessionActions(
+    sessions: ref.watch(sessionRepositoryProvider),
+    groups: ref.watch(groupSessionRepositoryProvider),
+    catalog: ref.watch(catalogRepositoryProvider),
+    bookings: ref.watch(bookingRepositoryProvider),
+    clock: ref.watch(clockProvider),
+    guard: PermissionGuard(ref.watch(authControllerProvider)),
+    reminders: ref.watch(sessionRemindersProvider),
+    pads: ref.watch(controllerAllocationRepositoryProvider),
+  ),
+);

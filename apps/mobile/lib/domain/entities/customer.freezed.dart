@@ -19,7 +19,8 @@ mixin _$Customer {
  String get id; String get name; String? get phone; String? get notes; DateTime? get lastVisitAt;/// A walk-in started without registering. One record per visit, so the
 /// visit is still counted and billed, but the Members directory is not
 /// filled with anonymous rows.
- bool get isGuest; DateTime get createdAt; DateTime get updatedAt;
+ bool get isGuest;/// Year of birth given at registration (for age-rated games); null when not given.
+ int? get birthYear; DateTime get createdAt; DateTime get updatedAt;
 /// Create a copy of Customer
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -33,20 +34,20 @@ $CustomerCopyWith<Customer> get copyWith => _$CustomerCopyWithImpl<Customer>(thi
 @override
 bool operator ==(Object other) {
   final _this = this as Customer;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Customer&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.phone, _this.phone) || other.phone == _this.phone)&&(identical(other.notes, _this.notes) || other.notes == _this.notes)&&(identical(other.lastVisitAt, _this.lastVisitAt) || other.lastVisitAt == _this.lastVisitAt)&&(identical(other.isGuest, _this.isGuest) || other.isGuest == _this.isGuest)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&(identical(other.updatedAt, _this.updatedAt) || other.updatedAt == _this.updatedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Customer&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&(identical(other.phone, _this.phone) || other.phone == _this.phone)&&(identical(other.notes, _this.notes) || other.notes == _this.notes)&&(identical(other.lastVisitAt, _this.lastVisitAt) || other.lastVisitAt == _this.lastVisitAt)&&(identical(other.isGuest, _this.isGuest) || other.isGuest == _this.isGuest)&&(identical(other.birthYear, _this.birthYear) || other.birthYear == _this.birthYear)&&(identical(other.createdAt, _this.createdAt) || other.createdAt == _this.createdAt)&&(identical(other.updatedAt, _this.updatedAt) || other.updatedAt == _this.updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
   final _this = this as Customer;
-  return Object.hash(runtimeType,_this.id,_this.name,_this.phone,_this.notes,_this.lastVisitAt,_this.isGuest,_this.createdAt,_this.updatedAt);
+  return Object.hash(runtimeType,_this.id,_this.name,_this.phone,_this.notes,_this.lastVisitAt,_this.isGuest,_this.birthYear,_this.createdAt,_this.updatedAt);
 }
 
 @override
 String toString() {
   final _this = this as Customer;
-  return 'Customer(id: ${_this.id}, name: ${_this.name}, phone: ${_this.phone}, notes: ${_this.notes}, lastVisitAt: ${_this.lastVisitAt}, isGuest: ${_this.isGuest}, createdAt: ${_this.createdAt}, updatedAt: ${_this.updatedAt})';
+  return 'Customer(id: ${_this.id}, name: ${_this.name}, phone: ${_this.phone}, notes: ${_this.notes}, lastVisitAt: ${_this.lastVisitAt}, isGuest: ${_this.isGuest}, birthYear: ${_this.birthYear}, createdAt: ${_this.createdAt}, updatedAt: ${_this.updatedAt})';
 }
 
 
@@ -57,7 +58,7 @@ abstract mixin class $CustomerCopyWith<$Res>  {
   factory $CustomerCopyWith(Customer value, $Res Function(Customer) _then) = _$CustomerCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, String? phone, String? notes, DateTime? lastVisitAt, bool isGuest, DateTime createdAt, DateTime updatedAt
+ String id, String name, String? phone, String? notes, DateTime? lastVisitAt, bool isGuest, int? birthYear, DateTime createdAt, DateTime updatedAt
 });
 
 
@@ -74,7 +75,7 @@ class _$CustomerCopyWithImpl<$Res>
 
 /// Create a copy of Customer
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? phone = freezed,Object? notes = freezed,Object? lastVisitAt = freezed,Object? isGuest = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? phone = freezed,Object? notes = freezed,Object? lastVisitAt = freezed,Object? isGuest = null,Object? birthYear = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(Customer(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -82,7 +83,8 @@ as String,phone: freezed == phone ? _self.phone : phone // ignore: cast_nullable
 as String?,notes: freezed == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String?,lastVisitAt: freezed == lastVisitAt ? _self.lastVisitAt : lastVisitAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,isGuest: null == isGuest ? _self.isGuest : isGuest // ignore: cast_nullable_to_non_nullable
-as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as bool,birthYear: freezed == birthYear ? _self.birthYear : birthYear // ignore: cast_nullable_to_non_nullable
+as int?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));
@@ -169,10 +171,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? phone,  String? notes,  DateTime? lastVisitAt,  bool isGuest,  DateTime createdAt,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  String? phone,  String? notes,  DateTime? lastVisitAt,  bool isGuest,  int? birthYear,  DateTime createdAt,  DateTime updatedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Customer() when $default != null:
-return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_that.isGuest,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_that.isGuest,_that.birthYear,_that.createdAt,_that.updatedAt);case _:
   return orElse();
 
 }
@@ -190,10 +192,10 @@ return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? phone,  String? notes,  DateTime? lastVisitAt,  bool isGuest,  DateTime createdAt,  DateTime updatedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  String? phone,  String? notes,  DateTime? lastVisitAt,  bool isGuest,  int? birthYear,  DateTime createdAt,  DateTime updatedAt)  $default,) {final _that = this;
 switch (_that) {
 case _Customer():
-return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_that.isGuest,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_that.isGuest,_that.birthYear,_that.createdAt,_that.updatedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -210,10 +212,10 @@ return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_t
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? phone,  String? notes,  DateTime? lastVisitAt,  bool isGuest,  DateTime createdAt,  DateTime updatedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  String? phone,  String? notes,  DateTime? lastVisitAt,  bool isGuest,  int? birthYear,  DateTime createdAt,  DateTime updatedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _Customer() when $default != null:
-return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_that.isGuest,_that.createdAt,_that.updatedAt);case _:
+return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_that.isGuest,_that.birthYear,_that.createdAt,_that.updatedAt);case _:
   return null;
 
 }
@@ -225,7 +227,7 @@ return $default(_that.id,_that.name,_that.phone,_that.notes,_that.lastVisitAt,_t
 @JsonSerializable()
 
 class _Customer extends Customer {
-  const _Customer({required this.id, required this.name, this.phone, this.notes, this.lastVisitAt, this.isGuest = false, required this.createdAt, required this.updatedAt}): super._();
+  const _Customer({required this.id, required this.name, this.phone, this.notes, this.lastVisitAt, this.isGuest = false, this.birthYear, required this.createdAt, required this.updatedAt}): super._();
   factory _Customer.fromJson(Map<String, dynamic> json) => _$CustomerFromJson(json);
 
 @override final  String id;
@@ -237,6 +239,8 @@ class _Customer extends Customer {
 /// visit is still counted and billed, but the Members directory is not
 /// filled with anonymous rows.
 @override@JsonKey() final  bool isGuest;
+/// Year of birth given at registration (for age-rated games); null when not given.
+@override final  int? birthYear;
 @override final  DateTime createdAt;
 @override final  DateTime updatedAt;
 
@@ -253,18 +257,18 @@ Map<String, dynamic> toJson() {
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Customer&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.lastVisitAt, lastVisitAt) || other.lastVisitAt == lastVisitAt)&&(identical(other.isGuest, isGuest) || other.isGuest == isGuest)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Customer&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&(identical(other.phone, phone) || other.phone == phone)&&(identical(other.notes, notes) || other.notes == notes)&&(identical(other.lastVisitAt, lastVisitAt) || other.lastVisitAt == lastVisitAt)&&(identical(other.isGuest, isGuest) || other.isGuest == isGuest)&&(identical(other.birthYear, birthYear) || other.birthYear == birthYear)&&(identical(other.createdAt, createdAt) || other.createdAt == createdAt)&&(identical(other.updatedAt, updatedAt) || other.updatedAt == updatedAt));
 }
 
 @JsonKey(includeFromJson: false, includeToJson: false)
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,name,phone,notes,lastVisitAt,isGuest,createdAt,updatedAt);
+    return Object.hash(runtimeType,id,name,phone,notes,lastVisitAt,isGuest,birthYear,createdAt,updatedAt);
 }
 
 @override
 String toString() {
-    return 'Customer(id: $id, name: $name, phone: $phone, notes: $notes, lastVisitAt: $lastVisitAt, isGuest: $isGuest, createdAt: $createdAt, updatedAt: $updatedAt)';
+    return 'Customer(id: $id, name: $name, phone: $phone, notes: $notes, lastVisitAt: $lastVisitAt, isGuest: $isGuest, birthYear: $birthYear, createdAt: $createdAt, updatedAt: $updatedAt)';
 }
 
 
@@ -275,7 +279,7 @@ abstract mixin class _$CustomerCopyWith<$Res> implements $CustomerCopyWith<$Res>
   factory _$CustomerCopyWith(_Customer value, $Res Function(_Customer) _then) = __$CustomerCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, String? phone, String? notes, DateTime? lastVisitAt, bool isGuest, DateTime createdAt, DateTime updatedAt
+ String id, String name, String? phone, String? notes, DateTime? lastVisitAt, bool isGuest, int? birthYear, DateTime createdAt, DateTime updatedAt
 });
 
 
@@ -292,7 +296,7 @@ class __$CustomerCopyWithImpl<$Res>
 
 /// Create a copy of Customer
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? phone = freezed,Object? notes = freezed,Object? lastVisitAt = freezed,Object? isGuest = null,Object? createdAt = null,Object? updatedAt = null,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? phone = freezed,Object? notes = freezed,Object? lastVisitAt = freezed,Object? isGuest = null,Object? birthYear = freezed,Object? createdAt = null,Object? updatedAt = null,}) {
   return _then(_Customer(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -300,7 +304,8 @@ as String,phone: freezed == phone ? _self.phone : phone // ignore: cast_nullable
 as String?,notes: freezed == notes ? _self.notes : notes // ignore: cast_nullable_to_non_nullable
 as String?,lastVisitAt: freezed == lastVisitAt ? _self.lastVisitAt : lastVisitAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,isGuest: null == isGuest ? _self.isGuest : isGuest // ignore: cast_nullable_to_non_nullable
-as bool,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
+as bool,birthYear: freezed == birthYear ? _self.birthYear : birthYear // ignore: cast_nullable_to_non_nullable
+as int?,createdAt: null == createdAt ? _self.createdAt : createdAt // ignore: cast_nullable_to_non_nullable
 as DateTime,updatedAt: null == updatedAt ? _self.updatedAt : updatedAt // ignore: cast_nullable_to_non_nullable
 as DateTime,
   ));

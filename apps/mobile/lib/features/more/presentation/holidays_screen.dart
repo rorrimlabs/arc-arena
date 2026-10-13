@@ -1,4 +1,7 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
+import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/domain/repositories/catalog_repository.dart';
@@ -75,7 +78,14 @@ class _HolidaysScreenState extends ConsumerState<HolidaysScreen> {
                       color: arena.danger,
                       child: const Icon(Icons.delete_outline),
                     ),
-                    onDismissed: (_) => _delete(h),
+                    onDismissed: (_) {
+                      // Out of the tree now; a refused delete reloads it.
+                      setState(() => _holidays = [
+                            for (final x in _holidays)
+                              if (x.day != h.day) x,
+                          ]);
+                      _delete(h);
+                    },
                     child: ListTile(
                       title: Text(h.name),
                       subtitle: Text(
@@ -96,10 +106,13 @@ class _HolidaysScreenState extends ConsumerState<HolidaysScreen> {
   }
 
   Future<void> _add() async {
-    final now = DateTime.now();
+    // Today in the arena (IST), from the app clock — not the device's.
+    final today = IstDate.fromUtc(ref.read(clockProvider).now());
+    final now = DateTime(today.year, today.month, today.day);
     final date = await showDatePicker(
       context: context,
       initialDate: now,
+      currentDate: now,
       firstDate: DateTime(now.year - 1),
       lastDate: DateTime(now.year + 3),
       helpText: 'Holiday date',
@@ -120,15 +133,21 @@ class _HolidaysScreenState extends ConsumerState<HolidaysScreen> {
     ));
   }
 
-  Future<void> _save(Holiday holiday) async {
-    await ref.read(catalogRepositoryProvider).upsertHoliday(holiday);
-    ref.invalidate(pricingSnapshotProvider);
-    await _load();
-  }
+  Future<void> _save(Holiday holiday) async =>
+      _after(await ref.read(catalogActionsProvider).saveHoliday(holiday));
 
-  Future<void> _delete(Holiday holiday) async {
-    await ref.read(catalogRepositoryProvider).deleteHoliday(holiday.day);
-    ref.invalidate(pricingSnapshotProvider);
+  Future<void> _delete(Holiday holiday) async =>
+      _after(await ref.read(catalogActionsProvider).deleteHoliday(holiday.day));
+
+  /// Refresh after a write; a refused one says why (and the reload puts a
+  /// swiped-away row back).
+  Future<void> _after(Result<void> r) async {
+    if (r.isOk) ref.invalidate(pricingSnapshotProvider);
+    if (r.isErr && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(r.failureOrNull!.display)),
+      );
+    }
     await _load();
   }
 }

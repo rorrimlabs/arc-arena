@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/core/monitoring/replay_privacy.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/repositories/user_repository.dart';
@@ -24,16 +25,16 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   String? _error;
 
   void _pick(AppUser u) => setState(() {
-        _picked = u;
-        _pin = '';
-        _error = null;
-      });
+    _picked = u;
+    _pin = '';
+    _error = null;
+  });
 
   void _back() => setState(() {
-        _picked = null;
-        _pin = '';
-        _error = null;
-      });
+    _picked = null;
+    _pin = '';
+    _error = null;
+  });
 
   Future<void> _press(String d) async {
     if (_checking || _pin.length >= 4) return;
@@ -62,10 +63,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
       _checking = false;
       _pin = '';
       _error = switch (attempt) {
-        PinRejected(:final attemptsLeft) => attemptsLeft <= 2
-            ? 'Wrong PIN. $attemptsLeft ${attemptsLeft == 1 ? 'try' : 'tries'} '
-                'left before this account locks.'
-            : 'Wrong PIN. Try again.',
+        PinRejected(:final attemptsLeft) =>
+          attemptsLeft <= 2
+              ? 'Wrong PIN. $attemptsLeft ${attemptsLeft == 1 ? 'try' : 'tries'} '
+                    'left before this account locks.'
+              : 'Wrong PIN. Try again.',
         PinLockedOut(:final retryIn) =>
           'Too many wrong PINs. Try again in ${_wait(retryIn)}.',
         PinUnavailable(:final reason) => reason,
@@ -83,8 +85,11 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
     return '$minutes ${minutes == 1 ? 'minute' : 'minutes'}';
   }
 
+  // Credentials are entered here: Session Replay pauses while it is open.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ReplayPause(child: _screen(context));
+
+  Widget _screen(BuildContext context) {
     final arena = context.arena;
     return Scaffold(
       body: SafeArea(
@@ -120,17 +125,27 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text('404 ARENA',
-                          style: ArenaType.overline.copyWith(color: arena.primary)),
-                      Text('Gaming Operations',
-                          style: ArenaType.caption.copyWith(color: arena.textMuted)),
+                      Text(
+                        '404 ARENA',
+                        style: ArenaType.overline.copyWith(
+                          color: arena.primary,
+                        ),
+                      ),
+                      Text(
+                        'Gaming Operations',
+                        style: ArenaType.caption.copyWith(
+                          color: arena.textMuted,
+                        ),
+                      ),
                     ],
                   ),
                 ],
               ),
               const SizedBox(height: AppSpacing.xl),
-              Text(_picked == null ? "Who's on shift?" : 'Enter PIN',
-                  style: ArenaType.h1.copyWith(color: arena.text, fontSize: 30)),
+              Text(
+                _picked == null ? "Who's on shift?" : 'Enter PIN',
+                style: ArenaType.h1.copyWith(color: arena.text, fontSize: 30),
+              ),
               const SizedBox(height: AppSpacing.xl),
               Expanded(
                 child: _picked == null
@@ -164,8 +179,10 @@ class _UserList extends ConsumerWidget {
     return users.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, _) => Center(
-        child: Text('Could not load accounts.',
-            style: ArenaType.body.copyWith(color: arena.textMuted)),
+        child: Text(
+          'Could not load accounts.',
+          style: ArenaType.body.copyWith(color: arena.textMuted),
+        ),
       ),
       data: (list) => ListView.separated(
         itemCount: list.length,
@@ -179,8 +196,9 @@ class _UserList extends ConsumerWidget {
               onTap: () => onPick(u),
               borderRadius: BorderRadius.circular(AppRadii.md),
               child: Container(
-                constraints:
-                    const BoxConstraints(minHeight: AppSpacing.minTarget),
+                constraints: const BoxConstraints(
+                  minHeight: AppSpacing.minTarget,
+                ),
                 padding: const EdgeInsets.all(AppSpacing.lg),
                 decoration: BoxDecoration(
                   borderRadius: BorderRadius.circular(AppRadii.md),
@@ -193,8 +211,9 @@ class _UserList extends ConsumerWidget {
                       backgroundColor: arena.primarySoft,
                       child: Text(
                         u.name.characters.first.toUpperCase(),
-                        style:
-                            ArenaType.label.copyWith(color: arena.primaryText),
+                        style: ArenaType.label.copyWith(
+                          color: arena.primaryText,
+                        ),
                       ),
                     ),
                     const SizedBox(width: AppSpacing.md),
@@ -202,12 +221,19 @@ class _UserList extends ConsumerWidget {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(u.name,
-                              style: ArenaType.h3
-                                  .copyWith(color: arena.text, fontSize: 17)),
-                          Text('${u.roleLabel} · PIN ••••',
-                              style: ArenaType.caption
-                                  .copyWith(color: arena.textMuted)),
+                          Text(
+                            u.name,
+                            style: ArenaType.h3.copyWith(
+                              color: arena.text,
+                              fontSize: 17,
+                            ),
+                          ),
+                          Text(
+                            '${u.roleLabel} · PIN ••••',
+                            style: ArenaType.caption.copyWith(
+                              color: arena.textMuted,
+                            ),
+                          ),
                         ],
                       ),
                     ),
@@ -251,46 +277,51 @@ class _PinPad extends StatelessWidget {
           Text(user.name, style: ArenaType.h3.copyWith(color: arena.text)),
           TextButton(onPressed: onBack, child: const Text('Not you?')),
           const SizedBox(height: AppSpacing.lg),
-        // 4 dots.
-        Row(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: [
-            for (var i = 0; i < 4; i++)
-              Container(
-                margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
-                width: 16,
-                height: 16,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: i < pin.length ? arena.primary : Colors.transparent,
-                  border: Border.all(
-                    color: error != null
-                        ? arena.stOvertime
-                        : (i < pin.length ? arena.primary : arena.borderStrong),
-                    width: 2,
+          // 4 dots.
+          Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              for (var i = 0; i < 4; i++)
+                Container(
+                  margin: const EdgeInsets.symmetric(horizontal: AppSpacing.sm),
+                  width: 16,
+                  height: 16,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: i < pin.length ? arena.primary : Colors.transparent,
+                    border: Border.all(
+                      color: error != null
+                          ? arena.stOvertime
+                          : (i < pin.length
+                                ? arena.primary
+                                : arena.borderStrong),
+                      width: 2,
+                    ),
                   ),
                 ),
-              ),
-          ],
-        ),
-        const SizedBox(height: AppSpacing.md),
-        SizedBox(
-          height: 24,
-          child: checking
-              ? const SizedBox(
-                  width: 18,
-                  height: 18,
-                  child: CircularProgressIndicator(strokeWidth: 2))
-              : Text(error ?? '',
-                  style: ArenaType.caption.copyWith(color: arena.stOvertime)),
-        ),
-        const SizedBox(height: AppSpacing.xl),
-        _Keypad(onPress: onPress, onDelete: onDelete),
-        const SizedBox(height: AppSpacing.lg),
-      ],
-    ),
-  );
-}
+            ],
+          ),
+          const SizedBox(height: AppSpacing.md),
+          SizedBox(
+            height: 24,
+            child: checking
+                ? const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  )
+                : Text(
+                    error ?? '',
+                    style: ArenaType.caption.copyWith(color: arena.stOvertime),
+                  ),
+          ),
+          const SizedBox(height: AppSpacing.xl),
+          _Keypad(onPress: onPress, onDelete: onDelete),
+          const SizedBox(height: AppSpacing.lg),
+        ],
+      ),
+    );
+  }
 }
 
 class _Keypad extends StatelessWidget {
@@ -303,33 +334,37 @@ class _Keypad extends StatelessWidget {
     final arena = context.arena;
 
     Widget key(String label, {VoidCallback? onTap, Widget? child}) => Expanded(
-          child: Padding(
-            padding: const EdgeInsets.all(AppSpacing.sm),
-            child: Material(
-              color: arena.surface,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(AppRadii.md),
-                side: BorderSide(color: arena.border),
-              ),
-              child: InkWell(
-                onTap: onTap ?? () => onPress(label),
-                borderRadius: BorderRadius.circular(AppRadii.md),
-                child: SizedBox(
-                  height: 64,
-                  child: Center(
-                    child: child ??
-                        Text(label,
-                            style: ArenaType.h2
-                                .copyWith(color: arena.text, fontSize: 24)),
-                  ),
-                ),
+      child: Padding(
+        padding: const EdgeInsets.all(AppSpacing.sm),
+        child: Material(
+          color: arena.surface,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.md),
+            side: BorderSide(color: arena.border),
+          ),
+          child: InkWell(
+            onTap: onTap ?? () => onPress(label),
+            borderRadius: BorderRadius.circular(AppRadii.md),
+            child: SizedBox(
+              height: 64,
+              child: Center(
+                child:
+                    child ??
+                    Text(
+                      label,
+                      style: ArenaType.h2.copyWith(
+                        color: arena.text,
+                        fontSize: 24,
+                      ),
+                    ),
               ),
             ),
           ),
-        );
+        ),
+      ),
+    );
 
-    Widget row(List<Widget> children) =>
-        Row(children: children);
+    Widget row(List<Widget> children) => Row(children: children);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -340,9 +375,11 @@ class _Keypad extends StatelessWidget {
         row([
           const Spacer(),
           key('0'),
-          key('⌫',
-              onTap: onDelete,
-              child: Icon(Icons.backspace_outlined, color: arena.text)),
+          key(
+            '⌫',
+            onTap: onDelete,
+            child: Icon(Icons.backspace_outlined, color: arena.text),
+          ),
         ]),
       ],
     );

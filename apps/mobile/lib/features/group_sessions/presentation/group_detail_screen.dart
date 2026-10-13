@@ -41,7 +41,7 @@ class GroupDetailScreen extends ConsumerWidget {
 
     final now = ref.watch(nowProvider).value ?? ref.watch(clockProvider).now();
     final actions = ref.watch(groupSessionActionsProvider);
-    final timer = actions.groupTimer(g.group);
+    final timer = actions.groupTimer(g.group, warn: ref.watch(warnThresholdProvider));
     final visual = timer.state(now);
     final customer = ref.watch(customerByIdProvider(g.group.primaryCustomerId)).value;
     final resources = ref.watch(resourcesProvider).value ?? const <Resource>[];

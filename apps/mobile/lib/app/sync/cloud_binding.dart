@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 
 import 'package:arena_ops/core/clock/clock.dart';
+import 'package:arena_ops/data/sync/realtime_sync.dart';
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -20,8 +21,8 @@ class CloudBinding {
     required this.recorder,
     required this.clock,
     required this.signOut,
-    required this.addStaffByEmail,
     required this.changePassword,
+    this.realtime,
   });
 
   final String arenaId;
@@ -30,18 +31,13 @@ class CloudBinding {
   final String email;
   final SyncEngine engine;
   final SyncRecorder recorder;
+  final RealtimeSync? realtime;
 
   /// Device time corrected by the server offset once it is significant.
   final OffsetClock clock;
 
   /// Ends the cloud session on this device and returns to the sign-in gate.
   final Future<void> Function() signOut;
-
-  /// Owner-only, online-only: give an EXISTING login access to this arena with
-  /// the chosen permissions. It does not create the login — the owner creates
-  /// that in the Supabase dashboard (migration 0015).
-  final Future<void> Function(String email, String name, List<String> perms)
-      addStaffByEmail;
 
   /// Online-only: replace the signed-in person's own password, so a login the
   /// owner set up becomes credentials only that person knows.
@@ -52,8 +48,9 @@ class CloudBinding {
 final cloudBindingProvider = Provider<CloudBinding?>((ref) => null);
 
 /// The outbox recorder the repositories write through (null = local-only).
-final syncRecorderProvider =
-    Provider<SyncRecorder?>((ref) => ref.watch(cloudBindingProvider)?.recorder);
+final syncRecorderProvider = Provider<SyncRecorder?>(
+  (ref) => ref.watch(cloudBindingProvider)?.recorder,
+);
 
 /// Live sync status for the status strip and the Sync screen.
 final syncStatusProvider = StreamProvider<SyncStatus>((ref) {

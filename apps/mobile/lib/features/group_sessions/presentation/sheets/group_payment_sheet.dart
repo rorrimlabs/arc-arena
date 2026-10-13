@@ -1,8 +1,11 @@
 import 'package:arena_ops/app/controllers/group_session_actions.dart';
+import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/repositories/group_commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/domain/value/floor_options.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -30,6 +33,10 @@ class _GroupPaymentSheet extends ConsumerStatefulWidget {
 class _GroupPaymentSheetState extends ConsumerState<_GroupPaymentSheet> {
   final _controller = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
+
+  /// The pick, or the first method the arena offers when the pick is not (floor options).
+  PaymentMethod _offered(PaymentMethod picked) =>
+      (ref.read(floorOptionsProvider).value ?? FloorOptions.defaults).methodOr(picked);
   bool _busy = false;
 
   @override
@@ -58,7 +65,7 @@ class _GroupPaymentSheetState extends ConsumerState<_GroupPaymentSheet> {
             controller: _controller,
             keyboardType: const TextInputType.numberWithOptions(decimal: true),
             inputFormatters: [
-              FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+              FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
             ],
             decoration: const InputDecoration(
               prefixText: '₹ ',
@@ -69,10 +76,10 @@ class _GroupPaymentSheetState extends ConsumerState<_GroupPaymentSheet> {
           Wrap(
             spacing: AppSpacing.sm,
             children: [
-              for (final m in PaymentMethod.values)
+              for (final m in ref.watch(offeredPaymentMethodsProvider))
                 ChoiceChip(
                   label: Text(m.name.toUpperCase()),
-                  selected: _method == m,
+                  selected: _offered(_method) == m,
                   onSelected: (_) => setState(() => _method = m),
                 ),
             ],
@@ -88,18 +95,22 @@ class _GroupPaymentSheetState extends ConsumerState<_GroupPaymentSheet> {
   }
 
   Future<void> _confirm() async {
-    final rupees = double.tryParse(_controller.text.trim());
-    if (rupees == null || rupees <= 0) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Enter an amount.')));
+    // Exact paise, never via a double ("1.005" is refused, not rounded).
+    final paise = parseRupeesToPaise(_controller.text);
+    if (paise == null || paise <= 0) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(paise == null && _controller.text.trim().isNotEmpty
+            ? rupeeInputError
+            : 'Enter an amount.'),
+      ));
       return;
     }
     setState(() => _busy = true);
     final r = await ref.read(groupSessionActionsProvider).recordPayment(
           RecordGroupPaymentCommand(
             groupId: widget.group.group.id,
-            amountPaise: (rupees * 100).round(),
-            method: _method,
+            amountPaise: paise,
+            method: _offered(_method),
           ),
         );
     if (!mounted) return;

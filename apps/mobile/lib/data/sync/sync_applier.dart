@@ -29,7 +29,7 @@ typedef ServerRow = ({String table, Map<String, dynamic> row});
 
 /// Settings keys that are arena-wide (and so synced). Every other key in the
 /// Drift settings table is device-local and never touched by sync.
-const sharedSettingKeys = {'business_hours'};
+const sharedSettingKeys = {'business_hours', 'floor_options'};
 
 /// Tables that make up the owner's configuration — replaced wholesale when an
 /// owner edit is refused, so the device converges on the server's catalog.
@@ -303,6 +303,8 @@ class SyncApplier {
               notes: r['notes'] as String?,
               lastVisitAt: _at(r['last_visit_at']),
               isGuest: r['is_guest'] as bool,
+              // Absent on a server without the column: "not given".
+              birthYear: (r['birth_year'] as num?)?.toInt(),
               createdAt: _at(r['created_at'])!,
               updatedAt: _at(r['updated_at'])!,
             ).toCompanion(false));

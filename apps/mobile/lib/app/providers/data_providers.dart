@@ -26,6 +26,8 @@ import 'package:arena_ops/domain/repositories/customer_repository.dart';
 import 'package:arena_ops/domain/repositories/group_session_repository.dart';
 import 'package:arena_ops/domain/repositories/session_repository.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
+import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/domain/value/floor_options.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// The open database. Overridden in `main()` with a seeded instance (and in
@@ -199,6 +201,29 @@ final activeGamesProvider = FutureProvider.autoDispose<List<Game>>(
     ref.watch(syncRevisionProvider);
     return ref.watch(catalogRepositoryProvider).games(activeOnly: true);
   },
+);
+
+/// The arena's floor options (synced `floor_options` setting), refreshed after each sync.
+final floorOptionsProvider = FutureProvider<FloorOptions>(
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).floorOptions();
+  },
+);
+
+/// Methods offered when taking a payment; every method until the options load.
+final offeredPaymentMethodsProvider = Provider<List<PaymentMethod>>(
+  (ref) => (ref.watch(floorOptionsProvider).value ?? FloorOptions.defaults).paymentMethods,
+);
+
+/// Duration choices (minutes) when starting a session or booking.
+final startPresetsProvider = Provider<List<int>>(
+  (ref) => (ref.watch(floorOptionsProvider).value ?? FloorOptions.defaults).startPresets,
+);
+
+/// How long before the booked end a station turns amber.
+final warnThresholdProvider = Provider<Duration>(
+  (ref) => (ref.watch(floorOptionsProvider).value ?? FloorOptions.defaults).warnThreshold,
 );
 
 final allGamesProvider = FutureProvider.autoDispose<List<Game>>(

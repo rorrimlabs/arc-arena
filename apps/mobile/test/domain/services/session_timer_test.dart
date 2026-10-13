@@ -7,10 +7,10 @@ void main() {
   final scheduledEnd = start.add(const Duration(hours: 1));
 
   SessionTimer timer({DateTime? ended}) => SessionTimer(
-        startedAt: start,
-        scheduledEndAt: scheduledEnd,
-        actualEndedAt: ended,
-      );
+    startedAt: start,
+    scheduledEndAt: scheduledEnd,
+    actualEndedAt: ended,
+  );
 
   test('elapsed and remaining are derived from the clock', () {
     final clock = FakeClock(start.add(const Duration(minutes: 20)));
@@ -47,8 +47,10 @@ void main() {
     // Same timestamps, a fresh SessionTimer, same now → same values.
     final now = scheduledEnd.add(const Duration(minutes: 7));
     final before = timer().overtime(now);
-    final afterRestart = SessionTimer(startedAt: start, scheduledEndAt: scheduledEnd)
-        .overtime(now);
+    final afterRestart = SessionTimer(
+      startedAt: start,
+      scheduledEndAt: scheduledEnd,
+    ).overtime(now);
     expect(afterRestart, before);
     expect(afterRestart, const Duration(minutes: 7));
   });
@@ -72,5 +74,36 @@ void main() {
     const big = ClockOffset(Duration(minutes: 3));
     expect(big.isSignificant, isTrue);
     expect(big.warning, 'Tablet clock is wrong. Timers use server time.');
+  });
+
+  test('elapsed time never produces negative duration', () {
+    // Current clock is slightly before start time (e.g. slight device jitter)
+    final slightlyBefore = start.subtract(const Duration(seconds: 5));
+    final t = timer();
+    expect(t.elapsed(slightlyBefore), Duration.zero);
+  });
+
+  test('detectAnomaly identifies corrupted or inverted timestamps', () {
+    final normal = timer();
+    expect(normal.detectAnomaly(start), isNull);
+
+    final invertedSchedule = SessionTimer(
+      startedAt: start,
+      scheduledEndAt: start.subtract(const Duration(minutes: 30)),
+    );
+    expect(
+      invertedSchedule.detectAnomaly(start),
+      contains('precedes startedAt'),
+    );
+
+    final invertedActualEnd = SessionTimer(
+      startedAt: start,
+      scheduledEndAt: scheduledEnd,
+      actualEndedAt: start.subtract(const Duration(minutes: 10)),
+    );
+    expect(
+      invertedActualEnd.detectAnomaly(start),
+      contains('precedes startedAt'),
+    );
   });
 }

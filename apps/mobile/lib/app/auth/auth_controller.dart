@@ -7,6 +7,7 @@ library;
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/data/local/local_user_repository.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
@@ -27,8 +28,9 @@ final usersProvider = FutureProvider.autoDispose<List<AppUser>>(
 );
 
 /// The signed-in user, or null when locked.
-final authControllerProvider =
-    NotifierProvider<AuthController, AppUser?>(AuthController.new);
+final authControllerProvider = NotifierProvider<AuthController, AppUser?>(
+  AuthController.new,
+);
 
 class AuthController extends Notifier<AppUser?> {
   @override
@@ -41,11 +43,21 @@ class AuthController extends Notifier<AppUser?> {
   /// way to become signed in without passing through here.
   Future<PinAttempt> signIn(String userId, String pin) async {
     final attempt = await ref.read(userRepositoryProvider).verify(userId, pin);
-    if (attempt is PinAccepted) state = attempt.user;
+    final accepted = attempt is PinAccepted;
+    AppTelemetry.staffAuth(
+      operation: 'login',
+      userId: userId,
+      success: accepted,
+    );
+    if (accepted) state = attempt.user;
     return attempt;
   }
 
-  void signOut() => state = null;
+  void signOut() {
+    final currentId = state?.id ?? 'unknown';
+    AppTelemetry.staffAuth(operation: 'logout', userId: currentId);
+    state = null;
+  }
 }
 
 /// Cloud mode: the person signed in on this device is the Supabase account
@@ -64,17 +76,17 @@ class CloudAuthController extends AuthController {
     final sub = (db.select(db.users)..where((t) => t.id.equals(binding.userId)))
         .watchSingleOrNull()
         .listen((row) {
-      if (row == null || !row.active) {
-        state = null;
-        binding.signOut();
-        return;
-      }
-      state = AppUser(
-        id: row.id,
-        name: row.name,
-        perms: Permission.parse(row.perms),
-      );
-    });
+          if (row == null || !row.active) {
+            state = null;
+            binding.signOut();
+            return;
+          }
+          state = AppUser(
+            id: row.id,
+            name: row.name,
+            perms: Permission.parse(row.perms),
+          );
+        });
     ref.onDispose(sub.cancel);
     return _initial;
   }
@@ -84,5 +96,8 @@ class CloudAuthController extends AuthController {
       const PinUnavailable('This device is signed in with your account.');
 
   @override
-  void signOut() => ref.read(cloudBindingProvider)?.signOut();
+  void signOut() {
+    state = null;
+    ref.read(cloudBindingProvider)?.signOut();
+  }
 }

@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
@@ -174,9 +175,17 @@ class _ControlsEditScreenState extends ConsumerState<ControlsEditScreen> {
       for (var i = 0; i < _controls.length; i++)
         _controls[i].copyWith(sortOrder: i),
     ];
-    await ref
-        .read(catalogRepositoryProvider)
+    final r = await ref
+        .read(catalogActionsProvider)
         .replaceControls(widget.game.id, ordered);
+    if (r.isErr) {
+      if (!mounted) return;
+      setState(() => _saving = false);
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(r.failureOrNull!.display)),
+      );
+      return;
+    }
     ref.invalidate(gameControlsProvider(widget.game.id));
     if (!mounted) return;
     setState(() {

@@ -16,10 +16,13 @@ import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
+import 'package:arena_ops/app/sync/stored_session.dart';
 import 'package:arena_ops/core/clock/clock.dart';
+import 'package:arena_ops/core/monitoring/replay_privacy.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
+import 'package:arena_ops/data/sync/realtime_sync.dart';
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/data/sync/sync_transport.dart';
@@ -62,6 +65,10 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   CloudBinding? _binding;
   DbProtectReport? _locked;
   StreamSubscription<SyncStatus>? _statusSub;
+  StreamSubscription<AuthState>? _authSub;
+
+  static const _expiredNotice =
+      'Your sign-in has expired. Sign in again to continue.';
 
   SupabaseClient get _client => Supabase.instance.client;
 
@@ -69,28 +76,54 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
+    _authSub = _client.auth.onAuthStateChange.listen(
+      _onAuthChange,
+      onError: (Object _) {}, // retryable refresh failures; handled per call
+    );
     if (_client.auth.currentSession == null) {
       _phase = _Phase.signIn;
     } else {
-      unawaited(_loadArenas());
+      unawaited(_restore());
     }
   }
 
   @override
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
+    unawaited(_authSub?.cancel());
     unawaited(_teardown());
     super.dispose();
+  }
+
+  /// Start-up with a stored sign-in: check it before the first call, so a
+  /// refresh the server refused lands on Sign in instead of calling as `anon`.
+  Future<void> _restore() async {
+    if (await checkStoredSession(_client.auth) == StoredSession.signInNeeded) {
+      _go(_Phase.signIn, message: _expiredNotice);
+      return;
+    }
+    await _loadArenas(); // offline: its fallback opens the last arena from disk
+  }
+
+  /// The server ended the sign-in mid-shift (its refresh was refused): stop
+  /// and ask for a sign-in, as when access is turned off.
+  void _onAuthChange(AuthState state) {
+    if (state.event == AuthChangeEvent.signedOut && _phase == _Phase.ready) {
+      unawaited(_signOut(reason: _expiredNotice));
+    }
   }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     final engine = _binding?.engine;
+    final realtime = _binding?.realtime;
     if (engine == null) return;
     if (state == AppLifecycleState.resumed) {
       engine.start(); // also syncs at once: catch up after the pause
+      if (realtime != null) unawaited(realtime.start());
     } else if (state == AppLifecycleState.paused) {
       engine.stop();
+      realtime?.stop();
     }
   }
 
@@ -122,12 +155,32 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
         _go(_Phase.pickArena);
       }
     } on Object catch (e) {
-      // Offline with a previous sign-in: open the last arena from disk.
-      final last = await _lastArenaOnDisk();
-      if (last != null) {
-        await _open(last);
-      } else {
-        _go(_Phase.failed, message: 'Could not reach the server ($e).');
+      switch (classifyStartupFailure(
+        e,
+        hasSession: _client.auth.currentSession != null,
+      )) {
+        case StartupFailure.signInNeeded:
+          // The sign-in itself was rejected: sign in again, never retry as
+          // anon. Clearing it locally needs no network.
+          try {
+            await _client.auth.signOut(scope: SignOutScope.local);
+          } on Object catch (_) {}
+          _go(_Phase.signIn, message: _expiredNotice);
+        case StartupFailure.serverRefused:
+          // Reachable and signed in, but refused: keep the sign-in.
+          _go(
+            _Phase.failed,
+            message: 'The server refused to list your arenas ($e).',
+          );
+        case StartupFailure.offline:
+          // Offline (even if the access token needed refreshing): keep the
+          // sign-in and open the last arena from disk.
+          final last = await _lastArenaOnDisk();
+          if (last != null) {
+            await _open(last);
+          } else {
+            _go(_Phase.failed, message: 'Could not reach the server ($e).');
+          }
       }
     }
   }
@@ -147,7 +200,12 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
 
   Future<void> _open(Membership arena) async {
     _go(_Phase.opening, message: 'Opening ${arena.arenaName}…');
-    final user = _client.auth.currentUser!;
+    final user = _client.auth.currentUser;
+    if (user == null) {
+      // The sign-in ended while choosing (refresh refused): never open as anon.
+      _go(_Phase.signIn, message: _expiredNotice);
+      return;
+    }
     final dbPath =
         '${widget.documentsPath}/arena_ops_cloud_${arena.arenaId}_${user.id}.sqlite';
     final safety = await DbSafety.protect(
@@ -167,10 +225,20 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       ),
     );
     final clock = OffsetClock(const SystemClock(), Duration.zero);
+    late final RealtimeSync realtime;
     final engine = SyncEngine(
       db: db,
       transport: SupabaseSyncTransport(_client),
       arenaId: arena.arenaId,
+      // Nudge the other devices only once the server has committed the ops
+      // (never at record time, never for refused or unsent ones).
+      onPushed: (kinds) => unawaited(realtime.broadcastSync(kinds: kinds)),
+    );
+    realtime = RealtimeSync(
+      client: _client,
+      arenaId: arena.arenaId,
+      clock: clock,
+      onSyncNeeded: engine.syncIfRunning,
     );
     final recorder = SyncRecorder(
       db,
@@ -188,6 +256,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       _go(_Phase.opening, message: 'Downloading ${arena.arenaName}…');
       final first = await engine.syncNow();
       if (first.endedIn != SyncState.synced) {
+        await realtime.dispose();
         await engine.dispose();
         await db.close();
         _go(
@@ -203,6 +272,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       db.users,
     )..where((t) => t.id.equals(user.id))).getSingleOrNull();
     if (me == null || !me.active) {
+      await realtime.dispose();
       await engine.dispose();
       await db.close();
       _go(
@@ -223,17 +293,9 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       recorder: recorder,
       clock: clock,
       signOut: () => _signOut(),
-      addStaffByEmail: (email, name, perms) => _client.rpc(
-        'add_staff_by_email',
-        params: {
-          'p_arena': arena.arenaId,
-          'p_email': email,
-          'p_name': name,
-          'p_perms': perms,
-        },
-      ),
       changePassword: (password) =>
           _client.auth.updateUser(UserAttributes(password: password)),
+      realtime: realtime,
     );
     final container = ProviderContainer(
       overrides: [
@@ -266,6 +328,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     });
     await _applyClockOffset(db, clock);
     engine.start();
+    unawaited(realtime.start());
     unawaited(_initReminders(container));
     _db = db;
     _binding = binding;
@@ -298,26 +361,47 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   Future<void> _teardown() async {
     await _statusSub?.cancel();
     _statusSub = null;
+    final realtime = _binding?.realtime;
     final engine = _binding?.engine;
     _binding = null;
     final container = _container;
     _container = null;
-    await engine?.dispose();
-    container?.dispose();
-    await _db?.close();
+    try {
+      await realtime?.dispose().timeout(const Duration(seconds: 2));
+    } catch (e) {
+      debugPrint('realtime dispose warning: $e');
+    }
+    try {
+      await engine?.dispose().timeout(const Duration(seconds: 2));
+    } catch (e) {
+      debugPrint('engine dispose warning: $e');
+    }
+    try {
+      container?.dispose();
+    } catch (e) {
+      debugPrint('container dispose warning: $e');
+    }
+    try {
+      await _db?.close().timeout(const Duration(seconds: 2));
+    } catch (e) {
+      debugPrint('db close warning: $e');
+    }
     _db = null;
   }
 
   Future<void> _signOut({String? reason}) async {
-    if (_phase != _Phase.ready) return;
-    _phase = _Phase.checking;
-    await _teardown();
-    try {
-      await _client.auth.signOut();
-    } on Object catch (_) {
-      // Offline: the local session is cleared regardless.
-    }
+    if (_phase != _Phase.ready && _phase != _Phase.pickArena) return;
     _go(_Phase.signIn, message: reason);
+    try {
+      await _teardown();
+    } catch (e) {
+      debugPrint('SignOut teardown warning: $e');
+    }
+    try {
+      await _client.auth.signOut().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('SignOut auth warning: $e');
+    }
   }
 
   @override
@@ -351,7 +435,11 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
           onPick: _open,
           onRefresh: _loadArenas,
           onSignOut: () async {
-            await _client.auth.signOut();
+            try {
+              await _client.auth.signOut();
+            } on Object catch (_) {
+              // Offline: gotrue has already cleared the local session.
+            }
             _go(_Phase.signIn);
           },
         ),
@@ -359,6 +447,13 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
           text: _message ?? 'Something went wrong.',
           action: 'Try again',
           onAction: _loadArenas,
+          secondaryAction: 'Sign in again',
+          onSecondaryAction: () async {
+            try {
+              await _client.auth.signOut();
+            } catch (_) {}
+            _go(_Phase.signIn);
+          },
         ),
         _ => _Message(text: _message ?? 'Checking your account…'),
       },
@@ -430,8 +525,11 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
     }
   }
 
+  // Credentials are entered here: Session Replay pauses while it is open.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ReplayPause(child: _screen(context));
+
+  Widget _screen(BuildContext context) {
     final arena = context.arena;
     return Scaffold(
       body: SafeArea(
@@ -569,10 +667,18 @@ class CloudArenaPickScreen extends StatelessWidget {
 }
 
 class _Message extends StatelessWidget {
-  const _Message({required this.text, this.action, this.onAction});
+  const _Message({
+    required this.text,
+    this.action,
+    this.onAction,
+    this.secondaryAction,
+    this.onSecondaryAction,
+  });
   final String text;
   final String? action;
   final Future<void> Function()? onAction;
+  final String? secondaryAction;
+  final Future<void> Function()? onSecondaryAction;
 
   @override
   Widget build(BuildContext context) {
@@ -597,6 +703,13 @@ class _Message extends StatelessWidget {
                 if (action != null) ...[
                   const SizedBox(height: AppSpacing.lg),
                   FilledButton(onPressed: onAction, child: Text(action!)),
+                ],
+                if (secondaryAction != null) ...[
+                  const SizedBox(height: AppSpacing.sm),
+                  TextButton(
+                    onPressed: onSecondaryAction,
+                    child: Text(secondaryAction!),
+                  ),
                 ],
               ],
             ),

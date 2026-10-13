@@ -19,6 +19,9 @@ class Customers extends Table {
   /// A walk-in who never registered (brief §12).
   BoolColumn get isGuest => boolean().withDefault(const Constant(false))();
 
+  /// Year of birth given at registration; null when not given (v15).
+  IntColumn get birthYear => integer().nullable()();
+
   DateTimeColumn get createdAt => dateTime()();
   DateTimeColumn get updatedAt => dateTime()();
 
@@ -602,7 +605,7 @@ class AppDatabase extends _$AppDatabase {
   /// Readable without constructing (and therefore without opening) the
   /// database, so the pre-open backup in `main()` can compare it against what
   /// is on disk and decide whether a migration is about to run.
-  static const expectedSchemaVersion = 14;
+  static const expectedSchemaVersion = 15;
 
   @override
   int get schemaVersion => expectedSchemaVersion;
@@ -746,6 +749,11 @@ class AppDatabase extends _$AppDatabase {
           await m.createTable(syncOutbox);
           await m.createTable(syncMeta);
           await m.createTable(syncVersions);
+        },
+        // v14 -> v15: member birth year (customers.birth_year). ADDITIVE — one nullable
+        // column; every existing customer keeps its row and reads as "not given".
+        14: (m) async {
+          await m.addColumn(customers, customers.birthYear);
         },
       };
 

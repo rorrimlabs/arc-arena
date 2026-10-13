@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
@@ -407,26 +408,10 @@ class _ControllerChoiceFieldState extends ConsumerState<ControllerChoiceField> {
 }
 
 /// Records the walk home for each of [ids] (after their session has ended).
-/// Returns how many were recorded.
-Future<int> returnPadsHome(WidgetRef ref, Iterable<String> ids) async {
-  final repo = ref.read(controllerAllocationRepositoryProvider);
-  final pads = {
-    for (final c in ref.read(controllersProvider).value ?? const <Controller>[])
-      c.id: c,
-  };
-  var done = 0;
-  for (final id in ids) {
-    final pad = pads[id];
-    if (pad == null) continue;
-    final r = await repo.moveController(
-      controllerId: id,
-      toResourceId: pad.homeResourceId,
-      kind: ControllerMoveKind.returnHome,
-    );
-    if (r.isOk) done++;
-  }
-  return done;
-}
+/// Returns how many were recorded. Goes through [CatalogActions], which
+/// checks the signed-in user may move pads (`start` or `settings`).
+Future<int> returnPadsHome(WidgetRef ref, Iterable<String> ids) =>
+    ref.read(catalogActionsProvider).returnPadsHome(ids);
 
 /// Labels for pads, for read-only lists ("HEX-1, HEX-2").
 String padLabels(Iterable<String> ids, List<Controller> controllers) {
@@ -511,12 +496,8 @@ class BorrowedPadsNotice extends ConsumerWidget {
                   onPressed: () async {
                     final m = ScaffoldMessenger.of(context);
                     final r = await ref
-                        .read(controllerAllocationRepositoryProvider)
-                        .moveController(
-                          controllerId: c.id,
-                          toResourceId: c.homeResourceId,
-                          kind: ControllerMoveKind.returnHome,
-                        );
+                        .read(catalogActionsProvider)
+                        .returnHome(c);
                     m.showSnackBar(
                       SnackBar(
                         content: Text(

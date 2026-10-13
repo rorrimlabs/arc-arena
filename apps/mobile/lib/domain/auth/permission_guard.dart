@@ -48,6 +48,33 @@ class PermissionGuard {
   /// True when the action is allowed — for deciding what to *show*.
   bool allows(Permission permission) => check(permission) == null;
 
+  /// Null when ANY of [permissions] is held — for actions more than one role
+  /// may take (a customer can be added by whoever starts sessions or manages
+  /// members) — otherwise one refusal naming all of them.
+  Failure? checkAny(List<Permission> permissions) {
+    assert(permissions.isNotEmpty, 'checkAny needs at least one permission');
+    Failure? refused;
+    for (final p in permissions) {
+      final f = check(p);
+      if (f == null) return null;
+      refused ??= f;
+    }
+    // Not signed in / turned off read the same for every permission.
+    if (refused!.code != 'not_permitted' || permissions.length == 1) {
+      return refused;
+    }
+    return Failure(
+      message: '${actor!.name} is not allowed to '
+          '${permissions.map(_phrase).join(' or ')}.',
+      fix: 'Ask an owner to do this, or to change the permissions.',
+      code: 'not_permitted',
+    );
+  }
+
+  /// [checkAny] as a yes/no — for deciding what to *show*.
+  bool allowsAny(List<Permission> permissions) =>
+      checkAny(permissions) == null;
+
   static String _phrase(Permission p) => switch (p) {
         Permission.start => 'start or change sessions',
         Permission.bill => 'bill or take payment',

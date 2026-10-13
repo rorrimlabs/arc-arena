@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
@@ -34,6 +35,15 @@ class CustomerProfileScreen extends ConsumerWidget {
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.phone_outlined),
               title: Text(customer!.phone!),
+            ),
+          if (customer?.birthYear != null)
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: const Icon(Icons.cake_outlined),
+              title: Text(
+                'Born ${customer!.birthYear} · age '
+                '${customer.ageIn(IstDate.fromUtc(ref.watch(clockProvider).now()).year)}',
+              ),
             ),
           if (customer?.notes != null && customer!.notes!.isNotEmpty)
             ListTile(

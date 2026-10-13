@@ -6,6 +6,9 @@ import 'package:arena_ops/data/local/local_catalog_repository.dart';
 import 'package:arena_ops/data/local/local_customer_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
 import 'package:arena_ops/data/local/seed_data.dart';
+import 'package:arena_ops/domain/auth/app_user.dart';
+import 'package:arena_ops/domain/auth/permission.dart';
+import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -31,6 +34,11 @@ void main() {
       sessions: sessionsRepo,
       catalog: LocalCatalogRepository(db),
       clock: clock,
+      guard: const PermissionGuard(AppUser(
+        id: 'u_test',
+        name: 'Tester',
+        perms: {Permission.start, Permission.bill},
+      )),
     );
     customerId = (await LocalCustomerRepository(db, clock).create(name: 'Rahul')).id;
   });

@@ -185,10 +185,11 @@ class _BookingTile extends ConsumerWidget {
       ),
     );
     if (confirmed != true) return;
-    await ref.read(bookingActionsProvider).cancel(booking.id);
+    final r = await ref.read(bookingActionsProvider).cancel(booking.id);
     if (context.mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Booking cancelled')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(r.failureOrNull?.display ?? 'Booking cancelled'),
+      ));
     }
   }
 

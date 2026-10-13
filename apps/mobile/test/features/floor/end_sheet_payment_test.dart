@@ -87,4 +87,58 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   });
+
+  testWidgets('only the methods the arena offers are shown, and the bill is taken by one',
+      (tester) async {
+    tester.view.physicalSize = const Size(1179, 5200);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    // Set on the admin dashboard and synced down: UPI only.
+    await db.into(db.settings).insert(SettingsCompanion.insert(
+        key: 'floor_options',
+        json: '{"payment_methods":["upi"],"start_presets":[60],"warn_minutes":5}'));
+    final who = await LocalCustomerRepository(db).create(name: 'Kiran');
+    final sessions = LocalSessionRepository(db);
+    final started = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: now.subtract(const Duration(hours: 1)),
+      scheduledEndAt: now,
+      snapshot: await LocalCatalogRepository(db).currentSnapshot(),
+      resourceId: 'hex',
+      resourceName: 'HEX',
+      activityCode: 'PS5',
+      controllerCount: 1,
+    ));
+    final id = started.valueOrNull!.id;
+    final active = (await sessions.active()).single;
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: testOverrides(db, clock: FakeClock(now)),
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showEndSessionSheet(context, active),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await settle(tester);
+    expect(find.widgetWithText(ChoiceChip, 'UPI'), findsOneWidget);
+    expect(find.widgetWithText(ChoiceChip, 'Cash'), findsNothing);
+    expect(find.widgetWithText(ChoiceChip, 'Card'), findsNothing);
+
+    await tester.tap(find.text('End & record'));
+    await settle(tester);
+    final payments = await sessions.paymentsFor(id);
+    expect(payments.single.method, PaymentMethod.upi,
+        reason: 'the default Cash pick is not offered, so UPI is used');
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 }

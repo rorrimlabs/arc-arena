@@ -12,6 +12,9 @@ import 'package:arena_ops/data/local/local_controller_allocation_repository.dart
 import 'package:arena_ops/data/local/local_customer_repository.dart';
 import 'package:arena_ops/data/local/local_group_session_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
+import 'package:arena_ops/domain/auth/app_user.dart';
+import 'package:arena_ops/domain/auth/permission.dart';
+import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/repositories/group_commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -82,6 +85,11 @@ void main() {
       sessions: LocalSessionRepository(db, clock),
       catalog: LocalCatalogRepository(db),
       clock: clock,
+      guard: const PermissionGuard(AppUser(
+        id: 'u2',
+        name: 'Staff',
+        perms: {Permission.start},
+      )),
     ).createBooking(BookingDraft(
       customerId: who.id,
       activityCode: 'PS5',

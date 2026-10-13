@@ -1,5 +1,7 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
@@ -172,7 +174,7 @@ class _ActivityRates extends ConsumerWidget {
     );
     if (result == null) return;
 
-    await ref.read(catalogRepositoryProvider).upsertRate(
+    final r = await ref.read(catalogActionsProvider).saveRate(
           Rate(
             activityCode: activity.code,
             band: band,
@@ -181,12 +183,13 @@ class _ActivityRates extends ConsumerWidget {
             price: Paise(result.paise),
           ),
         );
-    ref.invalidate(pricingSnapshotProvider);
+    if (r.isOk) ref.invalidate(pricingSnapshotProvider);
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
           content: Text(
-            '${activity.name} rate saved — applies to new sessions.',
+            r.failureOrNull?.display ??
+                '${activity.name} rate saved — applies to new sessions.',
           ),
         ),
       );
@@ -284,7 +287,7 @@ class _RateEditor extends StatefulWidget {
 
 class _RateEditorState extends State<_RateEditor> {
   late final TextEditingController _price = TextEditingController(
-    text: (widget.initialPaise / 100).toStringAsFixed(2),
+    text: paiseToRupeeInput(widget.initialPaise),
   );
   late int _unit = widget.initialUnitMinutes;
 
@@ -294,7 +297,10 @@ class _RateEditorState extends State<_RateEditor> {
     super.dispose();
   }
 
-  int get _paise => ((double.tryParse(_price.text.trim()) ?? 0) * 100).round();
+  /// Exact paise for what is typed (never via a double); null when the text
+  /// is not a rupee amount.
+  int? get _parsed => parseRupeesToPaise(_price.text);
+  int get _paise => _parsed ?? 0;
 
   @override
   Widget build(BuildContext context) {
@@ -320,12 +326,15 @@ class _RateEditorState extends State<_RateEditor> {
               autofocus: true,
               keyboardType: const TextInputType.numberWithOptions(decimal: true),
               inputFormatters: [
-                FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
+                FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]')),
               ],
-              decoration: const InputDecoration(
+              decoration: InputDecoration(
                 labelText: 'Price',
                 prefixText: '₹ ',
-                border: OutlineInputBorder(),
+                border: const OutlineInputBorder(),
+                errorText: _price.text.trim().isNotEmpty && _parsed == null
+                    ? rupeeInputError
+                    : null,
               ),
               onChanged: (_) => setState(() {}),
             ),

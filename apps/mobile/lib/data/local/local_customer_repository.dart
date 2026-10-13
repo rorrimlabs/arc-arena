@@ -30,6 +30,7 @@ class LocalCustomerRepository implements CustomerRepository {
             'phone': row.phone,
             'notes': row.notes,
             'is_guest': row.isGuest,
+            'birth_year': row.birthYear,
             'last_visit_at': Wire.at(row.lastVisitAt),
             'created_at': Wire.at(row.createdAt),
           },
@@ -90,6 +91,7 @@ class LocalCustomerRepository implements CustomerRepository {
     required String name,
     String? phone,
     String? notes,
+    int? birthYear,
   }) async {
     final now = _clock.now();
     final row = CustomerRow(
@@ -99,6 +101,7 @@ class LocalCustomerRepository implements CustomerRepository {
       notes: notes,
       lastVisitAt: null,
       isGuest: false,
+      birthYear: birthYear,
       createdAt: now,
       updatedAt: now,
     );
@@ -134,6 +137,7 @@ class LocalCustomerRepository implements CustomerRepository {
         name: Value(customer.name),
         phone: Value(customer.phone),
         notes: Value(customer.notes),
+        birthYear: Value(customer.birthYear),
         updatedAt: Value(now),
       ));
       await _sync?.record(
@@ -145,6 +149,7 @@ class LocalCustomerRepository implements CustomerRepository {
           'name': customer.name,
           'phone': customer.phone,
           'notes': customer.notes,
+          'birth_year': customer.birthYear,
           'base_version': await _sync.baseVersion('customers', customer.id),
         },
       );

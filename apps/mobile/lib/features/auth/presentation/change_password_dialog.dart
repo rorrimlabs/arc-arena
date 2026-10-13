@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:arena_ops/core/monitoring/replay_privacy.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -23,17 +24,21 @@ class ChangePasswordDialog extends StatefulWidget {
   /// weak password, a sign-in too old for a password change) are not.
   @visibleForTesting
   static String describeError(Object e) {
-    if (e is AuthRetryableFetchException || e is SocketException ||
+    if (e is AuthRetryableFetchException ||
+        e is SocketException ||
         e is TimeoutException) {
       return 'Not changed — needs a connection. Try again when online.';
     }
     if (e is AuthException) {
       return switch (e.code) {
         'same_password' => 'That is already your password. Choose a new one.',
-        'weak_password' => 'The server says this password is too weak. '
-            'Use a longer one with letters and digits.',
-        'reauthentication_needed' || 'reauth_nonce_missing' ||
-        'session_not_found' || 'session_expired' =>
+        'weak_password' =>
+          'The server says this password is too weak. '
+              'Use a longer one with letters and digits.',
+        'reauthentication_needed' ||
+        'reauth_nonce_missing' ||
+        'session_not_found' ||
+        'session_expired' =>
           'For safety, sign out and sign in again, then change it.',
         _ => 'Not changed: ${e.message}',
       };
@@ -63,8 +68,8 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     final problem = p.length < ChangePasswordDialog.minLength
         ? 'Use at least ${ChangePasswordDialog.minLength} characters.'
         : p != _again.text
-            ? 'The two passwords are different.'
-            : null;
+        ? 'The two passwords are different.'
+        : null;
     if (problem != null) {
       setState(() => _error = problem);
       return;
@@ -86,8 +91,11 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
     }
   }
 
+  // Credentials are entered here: Session Replay pauses while it is open.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ReplayPause(child: _screen(context));
+
+  Widget _screen(BuildContext context) {
     final arena = context.arena;
     return AlertDialog(
       title: const Text('Change password'),
@@ -115,9 +123,13 @@ class _ChangePasswordDialogState extends State<ChangePasswordDialog> {
       ),
       actions: [
         TextButton(
-            onPressed: _busy ? null : () => Navigator.of(context).pop(false),
-            child: const Text('Cancel')),
-        FilledButton(onPressed: _busy ? null : _save, child: const Text('Save')),
+          onPressed: _busy ? null : () => Navigator.of(context).pop(false),
+          child: const Text('Cancel'),
+        ),
+        FilledButton(
+          onPressed: _busy ? null : _save,
+          child: const Text('Save'),
+        ),
       ],
     );
   }

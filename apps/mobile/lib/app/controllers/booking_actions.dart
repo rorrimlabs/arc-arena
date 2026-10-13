@@ -3,15 +3,19 @@
 /// check-in, keeping the booking as the planned record.
 library;
 
+import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/controllers/pad_board_loader.dart';
 import 'package:arena_ops/app/notifications/booking_reminders.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/core/clock/clock.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/core/time/utc_interval.dart';
+import 'package:arena_ops/domain/auth/permission.dart';
+import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
@@ -93,6 +97,7 @@ class BookingActions {
     required this.sessions,
     required this.catalog,
     required this.clock,
+    this.guard = const PermissionGuard(null),
     this.reminders,
     this.availability = const BookingAvailabilityService(),
     this.groups,
@@ -104,6 +109,11 @@ class BookingActions {
   final SessionRepository sessions;
   final CatalogRepository catalog;
   final Clock clock;
+
+  /// Who is signed in. Booking, amending, cancelling and checking in all need
+  /// `start` — the same rule the server's booking ops and session start apply.
+  /// Defaults to "nobody", so a caller that forgets it is refused.
+  final PermissionGuard guard;
 
   /// Schedules/cancels offline booking reminders (spec §23). Optional so the
   /// controller can be built without notifications (e.g. in tests).
@@ -122,8 +132,10 @@ class BookingActions {
 
   /// Active-session + existing-booking occupancy over [window]. Unassigned
   /// (any-system) bookings do not block a specific resource until check-in.
-  Future<List<Occupancy>> _occupancies(UtcInterval window,
-      {String? excludeBookingId}) async {
+  Future<List<Occupancy>> _occupancies(
+    UtcInterval window, {
+    String? excludeBookingId,
+  }) async {
     final active = await sessions.active();
     final booked = await bookings.overlapping(window.start, window.end);
     final groupActive = await groups?.activeGroups() ?? const [];
@@ -156,7 +168,8 @@ class BookingActions {
   Future<Map<String, GameAvailability>?> _compat(String? gameId) async {
     if (gameId == null) return null;
     return {
-      for (final rf in await catalog.resourcesForGame(gameId)) rf.resource.id: rf.status,
+      for (final rf in await catalog.resourcesForGame(gameId))
+        rf.resource.id: rf.status,
     };
   }
 
@@ -180,6 +193,8 @@ class BookingActions {
   }
 
   Future<Result<Booking>> createBooking(BookingDraft d) async {
+    final denied = guard.check(Permission.start);
+    if (denied != null) return Err(denied);
     final window = bookingWindow(
       date: d.date,
       startMinuteOfDay: d.startMinuteOfDay,
@@ -193,7 +208,9 @@ class BookingActions {
     if (d.resourceId != null) {
       final matches = resources.where((r) => r.id == d.resourceId).toList();
       if (matches.isEmpty) {
-        return const Err(Failure(message: 'Unknown system.', code: 'no_resource'));
+        return const Err(
+          Failure(message: 'Unknown system.', code: 'no_resource'),
+        );
       }
       final check = availability.checkSpecific(
         resource: matches.first,
@@ -217,16 +234,19 @@ class BookingActions {
         playersRequired: d.playersRequired,
       );
       if (avail.isEmpty) {
-        return const Err(Failure(
-          message: 'No compatible system is available for that time.',
-          fix: 'Try another time or game.',
-          code: 'no_availability',
-        ));
+        return const Err(
+          Failure(
+            message: 'No compatible system is available for that time.',
+            fix: 'Try another time or game.',
+            code: 'no_availability',
+          ),
+        );
       }
     }
 
-    final existing =
-        d.editingId == null ? null : await bookings.getById(d.editingId!);
+    final existing = d.editingId == null
+        ? null
+        : await bookings.getById(d.editingId!);
     final draft = Booking(
       id: d.editingId ?? '',
       customerId: d.customerId,
@@ -244,14 +264,27 @@ class BookingActions {
       updatedAt: clock.now(),
     );
 
-    final saved = existing == null
-        ? await bookings.create(draft)
-        : await bookings.update(draft);
+    final Booking saved;
+    try {
+      saved = existing == null
+          ? await bookings.create(draft)
+          : await bookings.update(draft);
+    } on BookingConflict catch (e) {
+      // Taken between the check above and the write: the repository re-checks
+      // inside its transaction and wrote nothing.
+      return Err(e.failure);
+    }
 
     // Reschedule from scratch so an amended time never leaves the old
     // reminder behind (spec §23).
     if (existing != null) await reminders?.cancelFor(saved.id);
     await reminders?.scheduleFor(saved);
+    AppTelemetry.bookingOperation(
+      bookingId: saved.id,
+      operation: existing != null ? 'updated' : 'created',
+      resourceId: saved.resourceId,
+      activityCode: saved.activityCode,
+    );
     return Ok(saved);
   }
 
@@ -267,22 +300,26 @@ class BookingActions {
   /// booking), the session end, and the controllers the booking asked for.
   /// Nothing is written — the check-in sheet shows this, lets staff pick the
   /// physical pads, then calls [checkIn].
-  Future<Result<CheckInPlan>> planCheckIn(Booking booking,
-      {String? preferResourceId}) async {
+  Future<Result<CheckInPlan>> planCheckIn(
+    Booking booking, {
+    String? preferResourceId,
+  }) async {
     if (booking.customerId == null) {
-      return const Err(Failure(
-        message: 'This booking has no customer.',
-        code: 'no_customer',
-      ));
+      return const Err(
+        Failure(message: 'This booking has no customer.', code: 'no_customer'),
+      );
     }
     final now = clock.now();
     final duration = booking.scheduledEnd.difference(booking.scheduledStart);
-    final scheduledEnd =
-        now.isBefore(booking.scheduledEnd) ? booking.scheduledEnd : now.add(duration);
+    final scheduledEnd = now.isBefore(booking.scheduledEnd)
+        ? booking.scheduledEnd
+        : now.add(duration);
     final window = UtcInterval(now, scheduledEnd);
 
     final resources = await catalog.resources();
-    final game = booking.gameId == null ? null : await catalog.gameById(booking.gameId!);
+    final game = booking.gameId == null
+        ? null
+        : await catalog.gameById(booking.gameId!);
     final compat = await _compat(booking.gameId);
     final occ = await _occupancies(window, excludeBookingId: booking.id);
     final activity = (await catalog.activities())
@@ -292,22 +329,24 @@ class BookingActions {
     final wanted = booking.controllerRequirement ?? booking.playersRequired;
 
     Result<void> fits(Resource r) => availability.checkSpecific(
-          resource: r,
-          window: window,
-          occupancies: occ,
-          requireActivityCode: booking.activityCode,
-          gameName: game?.name,
-          compatibility: compat,
-          gameMaxLocalPlayers: game?.maxLocalPlayers,
-          playersRequired: booking.playersRequired,
-        );
+      resource: r,
+      window: window,
+      occupancies: occ,
+      requireActivityCode: booking.activityCode,
+      gameName: game?.name,
+      compatibility: compat,
+      gameMaxLocalPlayers: game?.maxLocalPlayers,
+      playersRequired: booking.playersRequired,
+    );
 
     Resource resolved;
     final fixedId = booking.resourceId ?? preferResourceId;
     if (fixedId != null) {
       final matches = resources.where((r) => r.id == fixedId).toList();
       if (matches.isEmpty) {
-        return const Err(Failure(message: 'Unknown system.', code: 'no_resource'));
+        return const Err(
+          Failure(message: 'Unknown system.', code: 'no_resource'),
+        );
       }
       final check = fits(matches.first);
       if (check.isErr) return Err(check.failureOrNull!);
@@ -323,11 +362,13 @@ class BookingActions {
         playersRequired: booking.playersRequired,
       );
       if (avail.isEmpty) {
-        return const Err(Failure(
-          message: 'No compatible system is free right now.',
-          fix: 'Free a system or pick another.',
-          code: 'no_availability',
-        ));
+        return const Err(
+          Failure(
+            message: 'No compatible system is free right now.',
+            fix: 'Free a system or pick another.',
+            code: 'no_availability',
+          ),
+        );
       }
       resolved = avail.first;
       // Prefer a system that already has the booked controllers free, so the
@@ -342,15 +383,17 @@ class BookingActions {
         }
       }
     }
-    return Ok(CheckInPlan(
-      resource: resolved,
-      scheduledEnd: scheduledEnd,
-      usesControllers: usesControllers,
-      requestedControllers: usesControllers ? wanted : null,
-      gameName: game?.name,
-      gameMaxLocalPlayers: game?.maxLocalPlayers,
-      alternatives: booking.resourceId == null,
-    ));
+    return Ok(
+      CheckInPlan(
+        resource: resolved,
+        scheduledEnd: scheduledEnd,
+        usesControllers: usesControllers,
+        requestedControllers: usesControllers ? wanted : null,
+        gameName: game?.name,
+        gameMaxLocalPlayers: game?.maxLocalPlayers,
+        alternatives: booking.resourceId == null,
+      ),
+    );
   }
 
   /// Check in a booked customer: re-check availability now and start a session
@@ -363,17 +406,23 @@ class BookingActions {
     ControllerChoice? controllers,
     String? resourceId,
   }) async {
+    // Checking in starts a session, so it takes the session-start permission.
+    final denied = guard.check(Permission.start);
+    if (denied != null) return Err(denied);
     final planned = await planCheckIn(booking, preferResourceId: resourceId);
     if (planned.isErr) return Err(planned.failureOrNull!);
     final plan = planned.valueOrNull!;
     final resolved = plan.resource;
     final now = clock.now();
 
-    var choice = controllers ?? ControllerChoice.count(plan.requestedControllers);
+    var choice =
+        controllers ?? ControllerChoice.count(plan.requestedControllers);
     if (!plan.usesControllers) choice = ControllerChoice.none;
     if (plan.usesControllers && boards != null) {
-      final board =
-          await boards!.load(resourceId: resolved.id, resourceName: resolved.name);
+      final board = await boards!.load(
+        resourceId: resolved.id,
+        resourceName: resolved.name,
+      );
       final problem = padSelection.check(
         choice,
         board,
@@ -384,20 +433,22 @@ class BookingActions {
     }
 
     final snapshot = await catalog.currentSnapshot();
-    final started = await sessions.start(StartSessionCommand(
-      customerId: booking.customerId!,
-      startedAt: now,
-      scheduledEndAt: plan.scheduledEnd,
-      snapshot: snapshot,
-      resourceId: resolved.id,
-      resourceName: resolved.name,
-      activityCode: booking.activityCode,
-      gameId: booking.gameId,
-      controllerCount: plan.usesControllers ? choice.count : null,
-      controllerIds: choice.padIdsOrNull,
-      borrowControllerIds: choice.borrowIdsOrNull,
-      bookingId: booking.id,
-    ));
+    final started = await sessions.start(
+      StartSessionCommand(
+        customerId: booking.customerId!,
+        startedAt: now,
+        scheduledEndAt: plan.scheduledEnd,
+        snapshot: snapshot,
+        resourceId: resolved.id,
+        resourceName: resolved.name,
+        activityCode: booking.activityCode,
+        gameId: booking.gameId,
+        controllerCount: plan.usesControllers ? choice.count : null,
+        controllerIds: choice.padIdsOrNull,
+        borrowControllerIds: choice.borrowIdsOrNull,
+        bookingId: booking.id,
+      ),
+    );
     if (started.isOk) {
       // The session start already checked the booking in, in the same
       // transaction (and the server does the same), so there is no second
@@ -405,14 +456,26 @@ class BookingActions {
       // They arrived — the reminder is no longer needed.
       await reminders?.cancelFor(booking.id);
       await bookings.setReminderStatus(booking.id, ReminderStatus.done);
+      AppTelemetry.bookingOperation(
+        bookingId: booking.id,
+        operation: 'checked_in',
+        resourceId: booking.resourceId,
+        activityCode: booking.activityCode,
+      );
     }
     return started;
   }
 
-  Future<void> cancel(String id) async {
+  /// Cancel a reservation (booking.set_status). The slot is freed and the
+  /// reminder cleared; the booking stays in history as cancelled.
+  Future<Result<void>> cancel(String id) async {
+    final denied = guard.check(Permission.start);
+    if (denied != null) return Err(denied);
     await bookings.setStatus(id, BookingStatus.cancelled);
     await reminders?.cancelFor(id);
     await bookings.setReminderStatus(id, ReminderStatus.done);
+    AppTelemetry.bookingOperation(bookingId: id, operation: 'cancelled');
+    return const Ok(null);
   }
 
   /// Turn the device reminder for a booking on or off.
@@ -427,17 +490,20 @@ class BookingActions {
   }
 }
 
-final bookingActionsProvider = Provider<BookingActions>((ref) => BookingActions(
-      bookings: ref.watch(bookingRepositoryProvider),
-      sessions: ref.watch(sessionRepositoryProvider),
+final bookingActionsProvider = Provider<BookingActions>(
+  (ref) => BookingActions(
+    bookings: ref.watch(bookingRepositoryProvider),
+    sessions: ref.watch(sessionRepositoryProvider),
+    catalog: ref.watch(catalogRepositoryProvider),
+    clock: ref.watch(clockProvider),
+    guard: PermissionGuard(ref.watch(authControllerProvider)),
+    reminders: ref.watch(bookingRemindersProvider),
+    groups: ref.watch(groupSessionRepositoryProvider),
+    boards: PadBoardLoader(
       catalog: ref.watch(catalogRepositoryProvider),
-      clock: ref.watch(clockProvider),
-      reminders: ref.watch(bookingRemindersProvider),
+      sessions: ref.watch(sessionRepositoryProvider),
       groups: ref.watch(groupSessionRepositoryProvider),
-      boards: PadBoardLoader(
-        catalog: ref.watch(catalogRepositoryProvider),
-        sessions: ref.watch(sessionRepositoryProvider),
-        groups: ref.watch(groupSessionRepositoryProvider),
-        pads: ref.watch(controllerAllocationRepositoryProvider),
-      ),
-    ));
+      pads: ref.watch(controllerAllocationRepositoryProvider),
+    ),
+  ),
+);

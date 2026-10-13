@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
@@ -72,16 +73,33 @@ class StationCard extends ConsumerWidget {
     return _free(context, ref, arena);
   }
 
+  static final Set<String> _reportedAnomalies = <String>{};
+
   // --- occupied by a group ---------------------------------------------------
 
-  Widget _groupOccupied(BuildContext context, WidgetRef ref, ArenaColors arena) {
+  Widget _groupOccupied(
+    BuildContext context,
+    WidgetRef ref,
+    ArenaColors arena,
+  ) {
     final g = group!.group;
     final seg = groupAssignment!;
     final now = ref.watch(nowProvider).value ?? ref.watch(clockProvider).now();
     final timer = SessionTimer(
       startedAt: g.startedAt,
       scheduledEndAt: g.scheduledEndAt,
+      warnThreshold: ref.watch(warnThresholdProvider),
     );
+    final anomaly = timer.detectAnomaly(now);
+    if (anomaly != null && _reportedAnomalies.add('${g.id}:$anomaly')) {
+      AppTelemetry.reportTimerAnomaly(
+        sessionId: g.id,
+        anomaly: anomaly,
+        resourceId: seg.resourceId,
+        startedAt: g.startedAt,
+        scheduledEndAt: g.scheduledEndAt,
+      );
+    }
     final visual = timer.state(now);
     final (Color accent, String badge) = switch (visual) {
       SessionVisualState.normal => (arena.stPlaying, 'Group'),
@@ -89,8 +107,9 @@ class StationCard extends ConsumerWidget {
       SessionVisualState.overtime => (arena.stOvertime, 'Group · over'),
     };
     final overtime = visual == SessionVisualState.overtime;
-    final game =
-        seg.gameId == null ? null : ref.watch(gameByIdProvider(seg.gameId!)).value;
+    final game = seg.gameId == null
+        ? null
+        : ref.watch(gameByIdProvider(seg.gameId!)).value;
     final who = ref.watch(customerByIdProvider(g.primaryCustomerId)).value;
 
     return _shell(
@@ -111,9 +130,7 @@ class StationCard extends ConsumerWidget {
         _factLine(
           arena,
           game?.name ?? seg.activityCode,
-          seg.controllerCount == null
-              ? null
-              : '${seg.controllerCount} ctrl',
+          seg.controllerCount == null ? null : '${seg.controllerCount} ctrl',
         ),
         _clockLine(arena, g.startedAt, g.scheduledEndAt),
       ],
@@ -130,7 +147,18 @@ class StationCard extends ConsumerWidget {
     final timer = SessionTimer(
       startedAt: session.startedAt,
       scheduledEndAt: session.scheduledEndAt,
+      warnThreshold: ref.watch(warnThresholdProvider),
     );
+    final anomaly = timer.detectAnomaly(now);
+    if (anomaly != null && _reportedAnomalies.add('${session.id}:$anomaly')) {
+      AppTelemetry.reportTimerAnomaly(
+        sessionId: session.id,
+        anomaly: anomaly,
+        resourceId: current.resourceId,
+        startedAt: session.startedAt,
+        scheduledEndAt: session.scheduledEndAt,
+      );
+    }
     final visual = timer.state(now);
 
     final (Color accent, String badge) = switch (visual) {
@@ -173,17 +201,23 @@ class StationCard extends ConsumerWidget {
           children: [
             Text(
               Paise(bill.total.value).display,
-              style: AppTextStyles.mono(ArenaType.label).copyWith(
-                color: bill.isIncomplete ? arena.warning : arena.text,
-              ),
+              style: AppTextStyles.mono(
+                ArenaType.label,
+              ).copyWith(color: bill.isIncomplete ? arena.warning : arena.text),
             ),
-            Text(' so far',
-                style: ArenaType.caption.copyWith(color: arena.textMuted)),
+            Text(
+              ' so far',
+              style: ArenaType.caption.copyWith(color: arena.textMuted),
+            ),
             if (bill.isIncomplete) ...[
               const SizedBox(width: AppSpacing.xs),
               Tooltip(
                 message: 'Part of this session has no configured rate.',
-                child: Icon(Icons.error_outline, size: 14, color: arena.warning),
+                child: Icon(
+                  Icons.error_outline,
+                  size: 14,
+                  color: arena.warning,
+                ),
               ),
             ],
           ],
@@ -214,15 +248,16 @@ class StationCard extends ConsumerWidget {
 
     // "Reserved" is derived from the next booking, never stored on the row.
     final booking = nextBooking;
-    final reservedSoon = !oos &&
+    final reservedSoon =
+        !oos &&
         booking != null &&
         booking.scheduledStart.difference(now) <= const Duration(hours: 2);
 
     final (Color accent, String badge) = oos
         ? (arena.stOos, status.badge)
         : reservedSoon
-            ? (arena.stEnding, 'Reserved')
-            : (arena.stFree, 'Free');
+        ? (arena.stEnding, 'Reserved')
+        : (arena.stFree, 'Free');
 
     return _shell(
       arena: arena,
@@ -234,7 +269,10 @@ class StationCard extends ConsumerWidget {
         _headerRow(arena, badge, accent, dotColor: accent),
         const SizedBox(height: AppSpacing.md),
         if (oos) ...[
-          Text(status.label, style: ArenaType.body.copyWith(color: arena.textMuted)),
+          Text(
+            status.label,
+            style: ArenaType.body.copyWith(color: arena.textMuted),
+          ),
           const SizedBox(height: 2),
           Text(
             'Not available for play',
@@ -262,8 +300,12 @@ class StationCard extends ConsumerWidget {
               ),
               const SizedBox(width: AppSpacing.sm),
               if (onViewGames != null) ...[
-                _iconButton(arena, Icons.videogame_asset_outlined, onViewGames,
-                    'Games on this station'),
+                _iconButton(
+                  arena,
+                  Icons.videogame_asset_outlined,
+                  onViewGames,
+                  'Games on this station',
+                ),
                 const SizedBox(width: AppSpacing.sm),
               ],
               _quietButton(arena, 'Start', onStart, icon: Icons.play_arrow),
@@ -276,7 +318,9 @@ class StationCard extends ConsumerWidget {
 
   /// A short "₹150/h · up to 4" rate line for a free station (design).
   String? _rateLine(WidgetRef ref) {
-    final code = resource.activityCodes.isEmpty ? null : resource.activityCodes.first;
+    final code = resource.activityCodes.isEmpty
+        ? null
+        : resource.activityCodes.first;
     final snap = ref.watch(pricingSnapshotProvider).value;
     if (code == null || snap == null) return null;
     final activity = ref
@@ -322,16 +366,22 @@ class StationCard extends ConsumerWidget {
         const SizedBox(width: AppSpacing.sm),
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
-          child: Text(overtime ? 'over' : 'left',
-              style: ArenaType.caption.copyWith(color: arena.textMuted)),
+          child: Text(
+            overtime ? 'over' : 'left',
+            style: ArenaType.caption.copyWith(color: arena.textMuted),
+          ),
         ),
       ],
     );
   }
 
   /// `Kabir` + optional trailing chip like `2 ctrl`.
-  Widget _factLine(ArenaColors arena, String text, String? trailing,
-      {bool strong = false}) {
+  Widget _factLine(
+    ArenaColors arena,
+    String text,
+    String? trailing, {
+    bool strong = false,
+  }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 2),
       child: Row(
@@ -371,8 +421,12 @@ class StationCard extends ConsumerWidget {
     );
   }
 
-  Widget _headerRow(ArenaColors arena, String badge, Color accent,
-      {Color? dotColor}) {
+  Widget _headerRow(
+    ArenaColors arena,
+    String badge,
+    Color accent, {
+    Color? dotColor,
+  }) {
     return Row(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -429,8 +483,12 @@ class StationCard extends ConsumerWidget {
     );
   }
 
-  Widget _quietButton(ArenaColors arena, String label, VoidCallback? onTap,
-      {IconData? icon}) {
+  Widget _quietButton(
+    ArenaColors arena,
+    String label,
+    VoidCallback? onTap, {
+    IconData? icon,
+  }) {
     return SizedBox(
       height: 48,
       child: OutlinedButton.icon(
