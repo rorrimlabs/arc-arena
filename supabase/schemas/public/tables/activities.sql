@@ -2,7 +2,8 @@
 --
 -- The catalog of activity types per arena, keyed for the app by a stable business
 -- code: segments, assignments, rates and the pricing snapshot reference activities
--- by code, not uuid. Seeded by _seed_arena_catalog; no op_* writes this table.
+-- by code, not uuid. The owner creates and edits them on the dashboard
+-- (op_activity_upsert, sync op 'activity.upsert'); the code is fixed once created.
 -- Its billing flags (duration_model, happy_hour_eligible) are part of the
 -- pricing snapshot, so they must match the device's for a session to start.
 -- resource_activities says which resources offer which activity.

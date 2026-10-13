@@ -221,8 +221,10 @@ unsent work stays in that person's database file and goes after they sign in.
   on the admin dashboard (`apps/admin`): e-mail + password (10+, letters and
   digits) → the 6-digit code from the confirmation e-mail (`verifyOtp`) →
   Create your arena → `create_my_arena(arena name, owner name)`. The server
-  refuses unconfirmed logins and a second arena per login (`arena_limit`), and
-  seeds the starter catalog.
+  refuses unconfirmed logins and a second arena per login (`arena_limit`). The
+  arena starts **empty**: the owner adds station types (`activity.upsert`),
+  prices (`rate.upsert`), stations, controllers and games on the dashboard, and
+  devices pull them.
 * **Operator route:** `select bootstrap_owner(email, arena name, owner name)`
   in the SQL editor still attaches an owner to a new arena (no limit; not
   callable by the app). The legacy `create_arena` / `claim_arena` stay dropped.
@@ -261,7 +263,7 @@ own data:
 
 | Suite | Isolation | Leaves behind |
 |---|---|---|
-| pgTAP (`supabase/tests`) | each file creates its own arena (the seed catalog, fixed id) inside its transaction; every lookup is pinned to it | nothing (rolled back) |
+| pgTAP (`supabase/tests`) | each file creates its own arena (the `_seed_arena_catalog` test fixture, fixed id) inside its transaction; every lookup is pinned to it | nothing (rolled back) |
 | `concurrency_tests/run.sh`, `run_pads.sh` | a dedicated arena + owner per script (`fixture.sh`), created on start | nothing (deleted on exit, even on failure) |
 | `tool/sync_it.sh` | fresh `it-*@arena.test` accounts and an `IT …` arena per run | nothing (deleted on exit, even on failure) |
 | `tool/pricing_parity.sh` | a throwaway arena inside one transaction | nothing (rolled back) |

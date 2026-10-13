@@ -16,7 +16,7 @@ staff member only ever sees the arenas they are an active member of.
 | `schemas/_cluster/extensions/` | `pgcrypto`, `uuid-ossp`, `btree_gist` |
 | `migrations/` | **Generated** by `supabase db schema declarative sync` — never edit. `0001`–`0016` are the original hand-written history. |
 | `tests/` | pgTAP (`supabase test db --local`) |
-| `seed.sql` | One owner-less dev arena with the starter catalog. Local only. |
+| `seed.sql` | Intentionally empty: arenas start with no catalog (owners build it on the dashboard). |
 | `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station |
 | `audit/security_audit.sql` | Read-only report of the API surface (grants, SECURITY DEFINER, RLS) |
 | `functions/staff-admin/` | Edge Function: an owner creates a staff login (already confirmed, starting password) from the admin dashboard. Verifies the caller with `app_is_owner`, then links with `add_member_by_email` (role staff or owner) **as the caller**; deletes the login again if linking fails. The only place the service-role key is used. |
@@ -57,7 +57,11 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   dashboard (`apps/admin`), confirms the e-mail with a 6-digit code, and calls
   `create_my_arena()` (confirmed logins only, one owned arena per login). The operator can also
   attach an owner with `bootstrap_owner()` (SQL editor, no limit). Both go through
-  `_create_arena_with_owner`. A sign-up belongs to no arena until then. Owners add staff from the
+  `_create_arena_with_owner`, which creates the arena **empty**: no station types, prices,
+  stations, games or controllers. The owner adds them on the dashboard through `sync_push`
+  (`activity.upsert`, `rate.upsert`, `resource.upsert`, `controller.upsert`, `game.upsert`,
+  `game.set_compat`). `_seed_arena_catalog` is a pgTAP fixture only. A sign-up belongs to no
+  arena until then. Owners add staff from the
   dashboard's Users screen, as staff or (owners only) as a co-owner: the `staff-admin` Edge
   Function creates the login and links it with `add_member_by_email`; `arena_staff()` lists
   owners and staff with e-mails; changes go through
@@ -91,7 +95,7 @@ cursor), stamped by the `sync_stamp` trigger; deletes leave a row in `sync_tombs
 
 | Group | Functions |
 |---|---|
-| **Client API** (`authenticated`) | `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `app_arena_ids`, `app_has_perm`, `app_is_owner` |
+| **Client API** (`authenticated`) | `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `arena_pricing`, `app_arena_ids`, `app_has_perm`, `app_is_owner` |
 | Operator only | `bootstrap_owner` |
 | Sync ops (`op_*`, via `sync_push`) | sessions: `op_session_start/_reconfigure/_extend/_end/_void`; groups: `op_group_create/_add/_switch/_end_player/_extend/_end/_void`; money: `op_payment`; pads: `op_controller_move/_upsert/_set_status`; customers & bookings: `op_customer_*`, `op_booking_*`; settings: `op_game_*`, `op_resource_*`, `op_rate_*`, `op_policy_save`, `op_settings_save`, `op_holiday_*`, `op_staff_update` |
 | Sync plumbing | `_sync_apply` (op kind → `op_*`), `_sync_sources` |
@@ -117,5 +121,6 @@ checks and which errors it raises; the same summary is stored as `comment on fun
 | `12_ported_pads_test.sql` | Controller allocation, borrowing and moves through `sync_push` |
 | `13_security_hardening_test.sql` | Client surface, RLS shape, owner-level perms, integrity checks |
 | `14_admin_sales_test.sql` | `arena_sales` / `arena_sale`: who may read, half-open close-time ranges, voided bills, group lines |
+| `15_catalog_from_scratch_test.sql` | An empty arena built only through `sync_push` (`activity.upsert` rules, rate, station, pad, game, compat) runs a session |
 
 Every file creates and isolates its own arena and rolls back.

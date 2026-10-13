@@ -1,12 +1,16 @@
--- _seed_arena_catalog(arena) — fill a new arena with the default 404 Arena catalog
+-- _seed_arena_catalog(arena) — pgTAP fixture: fill a test arena with the 404 Arena catalog
+--
+-- TEST FIXTURE ONLY. Real arenas start empty (_create_arena_with_owner no
+-- longer calls this; owners build their catalog on the dashboard) and
+-- supabase/seed.sql seeds nothing. The pgTAP files build their isolated arenas
+-- with it.
 --
 -- Inserts 4 activities (PS5, VR, POOL, LOUNGE), 6 stations and their activity
 -- links, standard/happy rate bands with one 'Current' rate card and its rates
 -- (integer paise), a 'Default' billing policy, 9 game categories, 16 games
 -- (controls for EA FC only), 2 controllers per PS5 station and per-station game
 -- compatibility; game modes and station overrides follow the device seed.
--- Called by bootstrap_owner and supabase/seed.sql. Run once per arena: a
--- second run hits unique keys (e.g. activities code).
+-- Run once per arena: a second run hits unique keys (e.g. activities code).
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._seed_arena_catalog (
   v_arena uuid
@@ -121,7 +125,7 @@ begin
 end;
 $function$;
 
-comment on function public._seed_arena_catalog(uuid) is 'Internal: seed a freshly created arena with the default catalog (activities, stations, rates, billing policy, games, controllers, game compatibility). Not idempotent.';
+comment on function public._seed_arena_catalog(uuid) is 'Test fixture only (pgTAP): fill a test arena with the 404 Arena catalog (activities, stations, rates, billing policy, games, controllers, game compatibility). Real arenas start empty. Not idempotent.';
 
 grant execute on function "public"."_seed_arena_catalog"(uuid) to "postgres", "service_role";
 

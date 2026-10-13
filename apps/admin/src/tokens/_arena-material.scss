@@ -153,6 +153,17 @@
     )
   );
 
+  // Compact fields inside a detail grid (rate cells, time windows): 40px tall.
+  .arena-dense {
+    @include mat.form-field-overrides(
+      (
+        container-height: 40px,
+        container-vertical-padding: 8px,
+        outlined-label-text-populated-size: 12px,
+      )
+    );
+  }
+
   // Search pill above a list (design: 44px, surface fill, no outline).
   .arena-search {
     @include mat.form-field-overrides(

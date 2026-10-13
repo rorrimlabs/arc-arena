@@ -22,7 +22,7 @@ begin
   -- A price-list change retires the previous catalog into
   -- pricing_catalog_history, so a session priced on it still validates.
   if p_kind in ('rate.upsert', 'rate.delete', 'policy.save', 'settings.save',
-                'holiday.upsert', 'holiday.delete') then
+                'holiday.upsert', 'holiday.delete', 'activity.upsert', 'activity.remove') then
     v_before := _pricing_canon(_pricing_snapshot(p_arena));
   end if;
 
@@ -57,6 +57,8 @@ begin
       when 'resource.upsert'      then op_resource_upsert(p_arena, p)
       when 'resource.set_status'  then op_resource_set_status(p_arena, p)
       when 'resource.set_mode'    then op_resource_set_mode(p_arena, p)
+      when 'activity.upsert'      then op_activity_upsert(p_arena, p)
+      when 'activity.remove'      then op_activity_remove(p_arena, p)
       when 'rate.upsert'          then op_rate_upsert(p_arena, p)
       when 'rate.delete'          then op_rate_delete(p_arena, p)
       when 'policy.save'          then op_policy_save(p_arena, p)

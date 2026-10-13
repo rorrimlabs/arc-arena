@@ -7,6 +7,7 @@ import { Shell } from './core/layout/shell';
 /** Screens built so far replace their placeholder here with lazy-loaded feature routes. */
 const BUILT: Readonly<Record<string, () => Promise<Routes>>> = {
   sales: () => import('./features/sales/sales.routes').then((m) => m.SALES_ROUTES),
+  pricing: () => import('./features/pricing/pricing.routes').then((m) => m.PRICING_ROUTES),
   users: () => import('./features/users/users.routes').then((m) => m.USERS_ROUTES),
 };
 

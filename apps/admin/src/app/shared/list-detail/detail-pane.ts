@@ -6,8 +6,8 @@ import { Layout } from '../../core/layout/layout';
 /**
  * Detail pane body from the design (`dt.some` block): sticky 64px bar (close when it is an
  * overlay, breadcrumb, projected `[actions]`), then the hero (initials or icon, display title,
- * projected `[chip]` and subtitle, projected `[big]` amount), projected `[stats]`, and the
- * projected sections.
+ * projected `[chip]` and subtitle, projected `[big]` amount), projected `[stats]`, the projected
+ * sections, and a projected `[footer]` (e.g. the unsaved-changes bar).
  */
 @Component({
   selector: 'app-detail-pane',
@@ -62,6 +62,7 @@ import { Layout } from '../../core/layout/layout';
       <ng-content select="[stats]" />
       <ng-content />
     </div>
+    <ng-content select="[footer]" />
   `,
 })
 export class DetailPane {

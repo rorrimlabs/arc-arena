@@ -24,6 +24,17 @@ insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_co
   ('00000000-0000-0000-0000-000000000000','91000000-0000-4000-8000-000000000004','authenticated',
    'authenticated','signup09@shop.invalid','',now(),now(),now(),'{}','{}',false,false);
 
+-- Every catalog row an arena can hold; a new arena must have none (no seed).
+create function pg_temp.catalog_rows(p_arena uuid) returns int as $$
+  select ((select count(*) from activities where arena_id = p_arena)
+        + (select count(*) from resources where arena_id = p_arena)
+        + (select count(*) from rates where arena_id = p_arena)
+        + (select count(*) from rate_cards where arena_id = p_arena)
+        + (select count(*) from billing_policies where arena_id = p_arena)
+        + (select count(*) from game_categories where arena_id = p_arena)
+        + (select count(*) from games where arena_id = p_arena)
+        + (select count(*) from controllers where arena_id = p_arena))::int $$ language sql;
+
 -- ------------------------------------------------ the app cannot reach these
 -- The legacy create_arena / claim_arena (no confirmation, no limit) stay dropped.
 select hasnt_function('public', f, f || ' does not exist (replaced by create_my_arena)')
@@ -45,8 +56,8 @@ select lives_ok($$ select bootstrap_owner('OWNER09@shop.invalid', 'Shop 09', 'Pr
 select is((select role || '/' || array_length(perms, 1) from staff_profiles sp join arenas a on a.id = sp.arena_id
             where a.name = 'Shop 09' and sp.user_id = '91000000-0000-4000-8000-000000000001'),
   'owner/8', 'the bootstrapped login is the arena''s owner with every permission');
-select is((select count(*)::int from resources r join arenas a on a.id = r.arena_id where a.name = 'Shop 09'),
-  6, 'the new arena has the starter catalog');
+select is(pg_temp.catalog_rows((select id from arenas where name = 'Shop 09')), 0,
+  'the new arena starts empty: no types, prices, stations, games or controllers');
 
 -- ---------------------------------------------- staff: link, never create
 -- The fixture arena's owner is the dashboard login 01.
@@ -119,8 +130,8 @@ select is((select name from arenas where id = (select arena from signup09)),
 select is((select name || '/' || role || '/' || array_length(perms, 1) || '/' || active
              from staff_profiles where arena_id = (select arena from signup09)),
   'Sam/owner/8/true', 'the caller is its only member: an active owner with every permission');
-select is((select count(*)::int from resources where arena_id = (select arena from signup09)),
-  6, 'the new arena has the starter catalog');
+select is(pg_temp.catalog_rows((select arena from signup09)), 0,
+  'the signed-up arena starts empty too: the owner builds the catalog on the dashboard');
 select is((select jsonb_agg(e ->> 'role') from jsonb_array_elements(my_arenas()) e),
   '["owner"]'::jsonb, 'my_arenas now lists it, so the app can open it');
 select throws_ok($$ select create_my_arena('Second', 'Sam') $$,

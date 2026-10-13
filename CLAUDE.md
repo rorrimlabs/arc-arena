@@ -49,7 +49,7 @@ To change the schema:
 
 Security conventions (asserted by `supabase/tests/13_security_hardening_test.sql`):
 - **Every object file states its client grants explicitly.** A new table/view/function/sequence file must end with `revoke all … from anon;` and `revoke all … from authenticated;` (then any deliberate grant). pg-delta's shadow database applies default privileges, so a missing explicit revoke turns into a generated `grant … to anon` — always check generated migrations for that.
-- `anon` can reach nothing. `authenticated` may only `select` tables (RLS: `to authenticated using (arena_id in (select app_arena_ids()))`) and execute the client API: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `app_arena_ids`, `app_has_perm`, `app_is_owner`.
+- `anon` can reach nothing. `authenticated` may only `select` tables (RLS: `to authenticated using (arena_id in (select app_arena_ids()))`) and execute the client API: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `add_member_by_email`, `create_my_arena`, `arena_staff`, `arena_sales`, `arena_sale`, `arena_pricing`, `app_arena_ids`, `app_has_perm`, `app_is_owner`.
 - **All writes go through `sync_push`** → `_sync_apply` → an `op_*` function (`security definer`, `set search_path`, checks `_need(arena, perm)`). No insert/update/delete policies exist.
 - Views use `security_invoker = true`.
 

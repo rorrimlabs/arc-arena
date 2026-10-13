@@ -75,7 +75,7 @@ from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
   'sync_fetch_entity(uuid,jsonb)', 'my_arenas()',
   'add_staff_by_email(uuid,text,text,text[])', 'create_my_arena(text,text)',
   'arena_staff(uuid)', 'add_member_by_email(uuid,text,text,text,text[])',
-  'arena_sales(uuid,timestamptz,timestamptz)', 'arena_sale(uuid,uuid)']) f;
+  'arena_sales(uuid,timestamptz,timestamptz)', 'arena_sale(uuid,uuid)', 'arena_pricing(uuid)']) f;
 -- The only app route to ownership is create_my_arena (confirmed login, one arena
 -- each); the operator tool and the shared body stay server-only.
 select ok(not has_function_privilege('authenticated', f, 'EXECUTE'), 'not client API: ' || f)

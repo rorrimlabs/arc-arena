@@ -38,7 +38,7 @@ loopback URL.
 | `seed.sql` | **Do not apply to hosted.** It creates a dev arena with no owner. `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
 | RLS | Enabled on every public table; every policy is scoped to arena membership. Views are not client-readable (views bypass RLS). |
-| Client API | Signed-in users can call only: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena` (sign-up: confirmed logins, one arena each), `add_member_by_email` (staff or co-owner), `arena_staff` (owner's staff list with e-mails), `arena_sales` / `arena_sale` (owner's Sales screen), and three read-only membership helpers. `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena` is dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
+| Client API | Signed-in users can call only: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `add_staff_by_email`, `create_my_arena` (sign-up: confirmed logins, one arena each), `add_member_by_email` (staff or co-owner), `arena_staff` (owner's staff list with e-mails), `arena_sales` / `arena_sale` (owner's Sales screen), `arena_pricing` (owner's Pricing screen), and three read-only membership helpers. `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena` is dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
 | SECURITY DEFINER | All pin `search_path`. |
 | Role limits | Same as hosted defaults: `authenticated` 8 s statement timeout, 8 s lock timeout. The two-device suite runs under them through PostgREST. Pulls are paged at 2,000 rows; pushes at 50 ops. |
 | Auth design | Per-person logins. A new arena owner registers on the admin dashboard and confirms the e-mail with a 6-digit code, then `create_my_arena` creates their one arena; the operator can also use `bootstrap_owner` (SQL editor). Staff logins are created by the owner on the admin dashboard through the `staff-admin` Edge Function (the only holder of the service-role key); `add_staff_by_email` links an existing login with chosen permissions — it does **not** create logins (verified). People replace their starting password in the app (More → Change password). No service-role key anywhere in the app or repo. |
@@ -184,7 +184,7 @@ still debug-signed until your developer account exists
    ```sql
    select bootstrap_owner('you@example.com', '404 Arena', 'Your Name');
    ```
-   It creates the arena with the starter catalog and makes that login its owner. It refuses an unknown or unconfirmed login. Running it again creates a *second* arena — run it once.
+   It creates an empty arena (the owner adds types, prices, stations, games and controllers on the dashboard) and makes that login its owner. It refuses an unknown or unconfirmed login. Running it again creates a *second* arena — run it once.
 3. **Owner phone**: *Sign in* with that e-mail and password → the arena opens. Check prices, stations and controllers; adjust in Settings.
 
 **Each staff member (owner, any time):**
