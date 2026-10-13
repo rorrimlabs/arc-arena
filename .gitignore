@@ -107,3 +107,20 @@ supabase/.env.*
 *.sqlite-shm
 *.sqlite-journal
 arena_ops-backups/
+
+# Sentry: the downloaded setup wizard (a large executable), the CLI's auth-token
+# config and upload settings, and symbol/source-map upload output. The DSN and
+# the auth token are passed at build time (dart-defines / SENTRY_AUTH_TOKEN),
+# never committed.
+sentry-wizard
+**/sentry-wizard
+.sentryclirc
+**/.sentryclirc
+sentry.properties
+**/sentry.properties
+.env.sentry-build-plugin
+**/.env.sentry-build-plugin
+**/sentry_debug_symbols/
+
+# Node dependencies at any level (apps/admin has its own ignore too).
+node_modules/
