@@ -20,8 +20,7 @@ different networks before a production project is created the same way.
 |---|---|---|---|
 | Project URL (`https://<ref>.supabase.co`) | public | app build config (`dart_define.<env>.json`), docs | — |
 | **Publishable key** (`sb_publishable_…`) or legacy **anon** key | public (it is shipped inside the app; RLS + `sync_push` checks are what protect data) | app build config; admin dashboard `apps/admin/src/environments/environment.production.ts` (filled at deploy time) | — |
-| **Secret key** (`sb_secret_…`) / legacy **service_role** key | **SECRET — bypasses RLS** | password manager only. The `staff-admin` Edge Function gets it from the hosted function environment automatically; nothing else needs it | the app, the dashboard, the repo, `dart_define` files, CI logs, chat, screenshots |
-| `staff-admin` function secrets `ADMIN_SITE_URL`, `ADMIN_ORIGINS` | config (URLs, not secret) | `supabase secrets set` | — |
+| **Secret key** (`sb_secret_…`) / legacy **service_role** key | **SECRET — bypasses RLS** | password manager only. Nothing deployed needs it (no Edge Functions) | the app, the dashboard, the repo, `dart_define` files, CI logs, chat, screenshots |
 | **Database password** | **SECRET** | password manager; typed at the `supabase link` / `db push` prompt | the repo, shell history, chat |
 | JWT secret / signing keys | **SECRET** | stays in the dashboard | anywhere else |
 | Supabase **personal access token** (CLI `supabase login`) | **SECRET** (acts as you, all projects) | the CLI's keychain entry | the repo, chat |
@@ -46,14 +45,14 @@ empty.
 | `seed.sql` | Intentionally empty (arenas start with no catalog). `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created by the owner's sign-up or once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
 | RLS | Enabled on every public table; every policy is scoped to arena membership. Payment and charge rows also need `bill`, `money` or `reports`; customers `start`, `members`, `money` or `reports`; `audit_log` owner level; `staff_invites` has no client access. Views are not client-readable (views bypass RLS). The device feed (`sync_pull`) is unchanged: every active member's device still receives the arena's rows, payments and customers included (an open product decision). |
-| Client API | Signed-in users can execute exactly: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `create_my_arena` (sign-up: confirmed logins, one arena each), `invite_member` / `accept_invite` / `revoke_invite` / `arena_invites` (invitations), `arena_staff` (owner's staff list with e-mails), `arena_sales` / `arena_sale` (owner's Sales screen), `arena_pricing` (owner's Pricing screen), `app_is_owner` (asserted by pgTAP test 13). `anon` can call nothing. `bootstrap_owner` is database-only; `invite_delivery_target` is `service_role` only (the Edge Function); `create_arena`, `add_staff_by_email` and `add_member_by_email` are dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
+| Client API | Signed-in users can execute exactly: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `create_my_arena` (sign-up: confirmed logins, one arena each), `invite_member` / `accept_invite` / `revoke_invite` / `arena_invites` (invitations), `arena_staff` (owner's staff list with e-mails), `arena_sales` / `arena_sale` (owner's Sales screen), `arena_pricing` (owner's Pricing screen), `app_is_owner` (asserted by pgTAP test 13). `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena`, `add_staff_by_email` and `add_member_by_email` are dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
 | SECURITY DEFINER | All pin `search_path`. None in an exposed schema is executable by `anon` or `authenticated` (lints 0028/0029): the client API's definer bodies live in schema `private` (not exposed by the Data API) and `public` holds `security invoker` wrappers. Server-only definer functions (`op_*`, `_pr_*`, `bootstrap_owner`, …) stay in `public` without client EXECUTE. |
 | Realtime | One private channel per arena (`arena:<arena uuid>`); `realtime.messages` policies admit only active members of that arena. Postgres Changes on 29 published tables (INSERT/UPDATE, RLS-filtered); a `sync` broadcast after committed ops. No business data in Realtime — events only trigger authorized pulls/refetches (SYNC.md "Read path"). |
 | Role limits | Same as hosted defaults: `authenticated` 8 s statement timeout, 8 s lock timeout. The two-device suite runs under them through PostgREST. Pulls are paged at 2,000 rows; pushes at 50 ops. |
-| Auth design | Per-person logins. A new arena owner registers on the admin dashboard and confirms the e-mail with a 6-digit code, then `create_my_arena` creates their one arena; the operator can also use `bootstrap_owner` (SQL editor). Everyone else (staff and co-owners) joins **only by accepting an invitation**: the owner invites from the dashboard's Users page, the `staff-admin` Edge Function (the only holder of the service-role key) runs `invite_member` as the caller and e-mails the link through Supabase Auth, and the invited, confirmed login accepts on the dashboard's `/accept-invite` page after choosing its own password (SYNC.md "Auth and roles"). No owner-set passwords, no linking of an existing login without consent. No service-role key anywhere in the app or repo. |
+| Auth design | Per-person logins. A new arena owner registers on the admin dashboard and confirms the e-mail with a 6-digit code, then `create_my_arena` creates their one arena; the operator can also use `bootstrap_owner` (SQL editor). Everyone else (staff and co-owners) joins **only by accepting an invitation**: the owner invites from the dashboard's Users page, which runs `invite_member` as the caller and has Supabase Auth e-mail the link (`signInWithOtp`: a sign-in link for a confirmed login, the sign-up confirmation for a new one), and the invited, confirmed login accepts on the dashboard's `/accept-invite` page (a login that did not arrive by a sign-in link chooses its own password first) (SYNC.md "Auth and roles"). No owner-set passwords, no linking of an existing login without consent. No service-role key anywhere in the app or repo. |
 | Mobile — Android | **Fixed:** the release manifest had no `INTERNET` permission (only debug/profile did), so a release build could not reach Supabase at all. Debug builds now allow cleartext only for the local dev stack. Release builds are cloud-only and need the release key (RELEASE.md). |
 | Mobile — iOS | No ATS exceptions; https works as is. Session (refresh token) stored in the Keychain via `flutter_secure_storage`, one entry per backend (`arena_ops.supabase.session@<host:port>`). |
-| Settings that are NOT migrations | Everything under `[auth]` in `supabase/config.toml` applies to the LOCAL stack only. On hosted you set them in the dashboard (step 3), together with Realtime's "Allow public access" (step 3.7) and the `staff-admin` function and its secrets (step 7). |
+| Settings that are NOT migrations | Everything under `[auth]` in `supabase/config.toml` applies to the LOCAL stack only. On hosted you set them in the dashboard (step 3), together with Realtime's "Allow public access" (step 3.7) and the two e-mail templates (step 3.1). |
 
 Run `supabase/audit/security_audit.sql` after the push (step 5): it re-checks
 grants, RLS, views and `search_path` on the hosted database. Its allowlist of
@@ -76,8 +75,10 @@ client functions predates the current client API (it still names
 1. **Authentication → Sign In / Providers → Email**: enabled.
    * Keep the **Email provider itself ENABLED** — it is how everyone signs in with e-mail + password.
    * **Authentication → Sign In / Providers → User Signups → Allow new users to sign up**: **ON** — new arena owners register on the admin dashboard. A sign-up belongs to no arena until it confirms its e-mail and creates one (`create_my_arena`, one per login).
-   * **Confirm email**: **ON**. The app asks for the 6-digit code, so:
-     * **Authentication → Emails → Templates → Confirm signup**: replace the body with the one in `supabase/templates/confirmation.html` — it must contain `{{ .Token }}` (the default template only has a link the app cannot open).
+   * **Allow new users to sign up** must stay ON for invitations too: inviting a new address creates its login.
+   * **Confirm email**: **ON**. Two templates (**Authentication → Emails → Templates**), copied from the repo:
+     * **Confirm signup**: subject `404 Arena: confirm your e-mail`, body = `supabase/templates/confirmation.html`. It shows the 6-digit `{{ .Token }}` to an owner signing up, and the invitation link to an invited new address (it tells them apart by the redirect). The default template only has a link, which sign-up cannot use.
+     * **Magic Link**: subject `You're invited to 404 Arena`, body = `supabase/templates/magic_link.html` (invitations to an address that already has a confirmed login).
      * **Project Settings → Authentication → SMTP**: set up your own SMTP sender. The built-in one delivers only to the project's team members, at a low rate, so real sign-ups would never get their code and invitations would never arrive.
    * **Attack protection**: turn on **CAPTCHA** (hCaptcha or Turnstile) once the app sends a captcha token — until then leave it off or sign-up fails. Keep the default sign-up rate limits.
    * **Secure password change**: ON. A person whose last sign-in is older than 24 h may be asked to sign out and back in before More → Change password succeeds.
@@ -134,7 +135,8 @@ passed (`verify_all.sh --with-it --with-psql`: no failures, no skips; drift chec
 clean; hosted publication empty). `supabase migration list --linked`: 36/36
 match. `supabase db advisors --linked`: only `auth_leaked_password_protection`
 (an Auth setting, §3). `staff-admin` deployed (`--no-verify-jwt`, no
-`ADMIN_SITE_URL` yet: links use the dashboard's own address). The dashboard's
+`ADMIN_SITE_URL` yet: links use the dashboard's own address) — since removed from
+the repo: delete it there with `supabase functions delete staff-admin`. The dashboard's
 `environment.production.ts` holds the hosted URL and anon key. Still to do by
 the owner: §3.4 redirect URLs (add `http://127.0.0.1:4200/**` and
 `http://localhost:4200/**` while the dashboard runs locally against hosted),
@@ -195,7 +197,7 @@ fields the new checks read as optional. A floor app on the new build also
 needs these migrations: it sends `base_active` on game edits (an older server
 ignores it) and drops games/station types the server deleted.
 
-Items 22–24 (the staff handover audit, `STAFF_HANDOVER_AUDIT_2026-10-14.md`) also
+Items 22–24 (the staff handover audit) also
 only replace function bodies and add one server-only function
 (`op_payment_correct`, no client grant); no table changes. Behaviour a client can
 notice: a void without a reason is refused (`void_reason_required`; the dashboard
@@ -234,9 +236,7 @@ supabase migration list --linked
 ```
 Both columns show the same list.
 
-Right after the push, deploy `staff-admin` from this repo with its secrets
-(step 7.4): earlier versions link logins through functions these migrations
-drop. Then re-run step 5. `supabase db advisors --linked` should no longer
+Right after the push, set the e-mail templates (step 3.1) and re-run step 5. `supabase db advisors --linked` should no longer
 list `function_search_path_mutable` or any
 `authenticated_security_definer_function_executable` /
 `anon_security_definer_function_executable` row (locally, `supabase db
@@ -306,9 +306,9 @@ of the app. Serve it at the https URL you set as Site URL (step 3.4).
 
 **Each staff member or co-owner (owner, any time) — by invitation only:**
 
-4. **Deploy the Edge Function once** (your terminal): `supabase functions deploy staff-admin --no-verify-jwt` (it checks the caller's session itself). Set its secrets with `supabase secrets set`: `ADMIN_SITE_URL=https://<dashboard>` (base of the invitation link) and optionally `ADMIN_ORIGINS` (comma-separated origins allowed by CORS; unset = any origin, for local development only). Its service-role key comes from the hosted environment automatically. Needs steps 3.1 (SMTP) and 3.4 (URL configuration).
+4. **Check the e-mail setup once**: step 3.1 (SMTP, both templates, sign-ups on) and step 3.4 (the dashboard's `/accept-invite` in Redirect URLs). Nothing to deploy: the dashboard asks Supabase Auth to send the invitation itself. If an older version deployed the `staff-admin` Edge Function, delete it (`supabase functions delete staff-admin`).
 5. **Admin dashboard** → Users → **Invite user**: name, e-mail, role (staff, or owner for a co-owner — only an owner may invite an owner) and permissions. No password: the person receives the link by e-mail (valid 7 days; a newer invite to the same address replaces it). Pending invitations are listed on the Users page with **Withdraw**.
-6. The person opens the link → the dashboard's `/accept-invite` page → a new login chooses its own password → accepted. Their confirmed e-mail must be the invited address. On their phone: *Sign in* with that e-mail and password.
+6. The person opens the link → the dashboard's `/accept-invite` page → a new login chooses its own password (an existing one may keep its own) → accepted. Their confirmed e-mail must be the invited address. On their phone: *Sign in* with that e-mail and password.
 7. To remove a staff member's access: admin dashboard → Users → **Deactivate** (their device returns to sign-in; their Realtime access ends within the JWT expiry). To remove the login entirely: Authentication → Users → delete.
 8. Run the multi-device checks on **different networks** (one on mobile data):
    * start a session on one phone, see it on the other within about a second (Realtime), at worst on the next 10 s poll;

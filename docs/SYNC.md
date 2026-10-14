@@ -1,8 +1,7 @@
 # Multi-device sync (Phase 2)
 
 How Owner and Staff devices share one arena through Supabase while each keeps
-working on its own SQLite database. The audit that preceded this work is in
-[SYNC_AUDIT.md](SYNC_AUDIT.md).
+working on its own SQLite database.
 
 ## Modes
 
@@ -277,20 +276,22 @@ unsent work stays in that person's database file and goes after they sign in.
   callable by the app). The legacy `create_arena` / `claim_arena` stay dropped.
 * **Staff and co-owners join only by accepting an invitation.** Admin
   dashboard → Users → *Invite user* (name, e-mail, role, permissions; no
-  password). The `staff-admin` Edge Function calls `invite_member` **as the
-  caller**: staff invites need `settings`, granting `money`/`reports` needs
-  owner level, inviting an owner needs an owner. Only the SHA-256 of a random
-  one-time token is stored; the invite expires in 7 days, and a newer invite to
-  the same address replaces the old link. The function e-mails the link
-  through Supabase Auth, so only the address's owner receives it: no login →
-  Auth invite e-mail (creates the login, unconfirmed until opened); an
-  unconfirmed login → its password is scrubbed first, then the invite e-mail;
-  a confirmed login → a sign-in (magic) link. It replies the same way in every
-  case, so it reveals nothing about whether an address has an account; if the
-  e-mail fails, the invite is withdrawn.
+  password). The dashboard calls `invite_member` **as the caller**: staff
+  invites need `settings`, granting `money`/`reports` needs owner level,
+  inviting an owner needs an owner. Only the SHA-256 of a random one-time token
+  is stored; the invite expires in 7 days, and a newer invite to the same
+  address replaces the old link. The dashboard then has Supabase Auth e-mail
+  the link (`signInWithOtp` from a throwaway client, redirect to
+  `/accept-invite`), so only the address's owner receives it: a confirmed login
+  gets a sign-in (magic) link; a new or unconfirmed one gets the sign-up
+  confirmation, whose template shows the link for invitations
+  (`supabase/templates/`). If the e-mail fails, the invite is withdrawn. No
+  Edge Function and no service-role key are involved.
 * The link opens the dashboard's `/accept-invite?invite=<id>&token=<token>`.
-  The page takes the session from the link, has a new login choose its own
-  password, then calls `accept_invite`: the token must match and be unused,
+  The page takes the session from the link; unless it was a magic link (a
+  login its owner had already confirmed), the person must choose their own
+  password — a password someone else set on an unconfirmed address does not
+  survive — then it calls `accept_invite`: the token must match and be unused,
   unwithdrawn and unexpired; the caller's **confirmed** e-mail must be the
   invited address (`invite_wrong_account`); the inviter must still hold the
   authority; an existing owner is never demoted. It creates or reactivates the
@@ -304,15 +305,12 @@ unsent work stays in that person's database file and goes after they sign in.
 
   | Server | Dashboard (`apps/admin/`) | Floor app (`apps/mobile/`) |
   |---|---|---|
-  | Local stack | `npm run dev` (`environment.ts`) | `bash tool/dev_run.sh`, or VS Code "arena_ops (local stack…)" (`dart_define.dev.json`) |
-  | Hosted project | `npm run dev:hosted`, or a production build (`environment.production.ts`) | `dart_define.prod.json` / `dart_define.hosted-dev.json`; every release build |
+  | Local stack (all development) | `npm run dev` (`environment.ts`) | `dart_define.local.json` / `dart_define.local-android.json` (VS Code "arena_ops (local Supabase: …)") |
+  | Hosted project (manual go-live) | a production build (`environment.production.ts`) | `dart_define.prod.json`; every release build |
 
-  On the local stack the dashboard says so on every page, sign-in and invitation
-  pages included ("Local test server …"), and links its mail catcher, where the
-  local stack's invitation e-mails land. The floor app's sign-in screen does not
-  name its server (removed at the owner's request); a debug build prints it in
-  the log. Inviting on the hosted project also needs the invitation migrations
-  (DEPLOY_SUPABASE.md §4a), `staff-admin` deployed, the dashboard's
+  Neither app names its server on screen. On the local stack, invitation e-mails
+  land in the mail catcher (Mailpit, http://127.0.0.1:54434). Inviting on the hosted project also needs the invitation migrations
+  (DEPLOY_SUPABASE.md §4a), the two e-mail templates, the dashboard's
   `/accept-invite` and `/reset-password` addresses in Auth → Redirect URLs, and
   custom SMTP (the built-in sender only mails the Supabase organisation's team
   members).
@@ -321,8 +319,8 @@ unsent work stays in that person's database file and goes after they sign in.
   the floor app's "Add by e-mail" (it now explains that invitations are sent
   from the dashboard). Permissions, rename and deactivate are `staff.update`
   ops through `sync_push`; a field the op leaves out keeps its value.
-* No service-role key exists anywhere in the app or the repo's app code; only
-  the `staff-admin` function holds it, server-side. `tool/sync_it.sh` uses the
+* No service-role key exists anywhere in the apps or deployed code.
+  `tool/sync_it.sh` uses the
   LOCAL stack's key in a non-exported shell variable to create test logins
   (never printed, never given to a test process).
 * Permissions come from `staff_profiles` and follow an owner's edits live. Turning
@@ -363,7 +361,18 @@ unsent work stays in that person's database file and goes after they sign in.
 ```bash
 supabase start              # project arena_ops, ports 5443x (Zitemonk keeps 5432x)
 bash tool/verify_all.sh --with-it --with-psql   # everything, in order, each step reported separately
-bash tool/dev_run.sh -d "iPhone 17"   # the app in cloud mode against the local stack
+```
+
+The floor app runs against the local stack with the committed
+`apps/mobile/dart_define.local.json` (iOS Simulator / macOS, `127.0.0.1`) or
+`dart_define.local-android.json` (Android emulator, `10.0.2.2`). They hold only
+the localhost URL and the local stack's **publishable** key, the same pair as
+`apps/admin/src/environments/environment.ts`. If `supabase status` ever shows a
+different publishable key, update all three. A physical tablet can't reach the
+Mac's `127.0.0.1`; test on a simulator/emulator, then go live manually.
+
+```bash
+cd apps/mobile && flutter run --dart-define-from-file=dart_define.local.json
 ```
 
 `tool/verify_all.sh` runs, in this order: `flutter analyze`, `flutter test`,
@@ -380,29 +389,16 @@ step failed. The declarative drift check (`supabase db schema declarative sync
 it writes a migration file when there is drift. Each piece can also be run on
 its own, in any order.
 
-**Invitations need the stack's Edge Function runtime.** `supabase start` runs
-it (`config.toml` `[edge_runtime]`), and the dashboard's *Invite user* reaches
-`staff-admin` through it; no extra secret or env file is needed locally (the
-function takes the link base from the dashboard's `Origin`, and the stack's URL
-and keys from the runtime). If the Users page says "The invitation service is
-not running" and the request shows `503 {"message":"name resolution failed"}`,
-the gateway cannot find the runtime's container: `supabase status` lists
-`supabase_edge_runtime_arena_ops` under *Stopped services*. `supabase start` on
-a running stack does not bring it back; run `supabase stop && supabase start`
-(data is kept). It goes missing when a `supabase functions serve` that took it
-over exits, so do not run `functions serve` against this stack by hand;
-`tool/sync_it.sh` uses the stack's runtime and serves its own only when the
-stack has none.
+**Invitation e-mails** are Supabase Auth's own: locally they land in Mailpit
+(http://127.0.0.1:54434). The templates in `supabase/templates/` load at
+`supabase start`; after editing one, `supabase stop && supabase start` (data is
+kept).
 
 `tool/sync_it.sh` is the cross-app suite, on the LOCAL stack only (it refuses
 anything else), one run at a time (a lock in `supabase/.temp`). It provisions
 throw-away `it-*@arena.test` logins (Auth admin API with the local stack's
 service key), an arena via `bootstrap_owner` + `_seed_arena_catalog`, and joins
-the staff login by invite → accept. Step 0 (`tool/it_invitations.sh`) checks
-the invitation service over HTTP as the dashboard calls it: who may invite,
-input checks, the e-mail, a re-invite replacing the first link, accepting once,
-and two brief outages (the mail catcher, then the database API, each stopped
-and restarted): a failed send is withdrawn and never reported as sent. Then: a
+the staff login by invite → accept. Then: a
 Flutter device listens live while
 dashboard phase 1 runs (the Angular data layer under `ng test
 --runner-config=vitest.it.config.mts`, Node environment: builds a game and its
@@ -429,11 +425,9 @@ own data:
 `supabase db reset --local` is still the way to rebuild the dev stack from the
 migrations. Use `--local` explicitly; never `--linked`.
 
-`tool/dev_run.sh` reads only the local API URL and publishable (or anon) key
-from `supabase status` and writes them to `apps/mobile/dart_define.dev.json`;
-`tool/sync_it.sh` also reads the local stack's service-role key into a
-non-exported variable. Neither prints a key, and both refuse anything that is
-not a localhost URL. A release build refuses local mode and any non-https or
+`tool/sync_it.sh` reads the local stack's service-role key into a non-exported
+variable. It never prints a key and refuses anything that is not a localhost
+URL. A release build refuses local mode and any non-https or
 development backend ([RELEASE.md](RELEASE.md)).
 
 ## Not done / known limits
@@ -447,8 +441,8 @@ Blocking production:
    and the 18 generated migrations after it ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md)
    §4a), so invitations, Realtime, the `private` schema and the narrower
    money/customer reads exist only on the local stack. The hosted settings
-   invitations need (custom SMTP, URL configuration, the `staff-admin` deploy
-   with its secrets) are not done either. As of 2026-10-12 no session or op
+   invitations need (custom SMTP, URL configuration, the two e-mail
+   templates) are not done either. As of 2026-10-12 no session or op
    had reached it.
 2. **Real-device, cross-network test** (two phones on different networks, one
    going offline mid-shift) has not been done. Every multi-device claim here

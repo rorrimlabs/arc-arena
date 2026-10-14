@@ -10,24 +10,22 @@ an Android phone (personal staff device) and a counter tablet. Correctness of
 
 ## Running
 
-Flutter commands run from `apps/mobile/`. Default backend is **local**
-(Drift/SQLite, debug builds only) — runs on-device with no server:
+**Development runs entirely on the local Supabase stack.** Validate there; going
+live on the hosted project is a separate, manual step
+([`docs/DEPLOY_SUPABASE.md`](docs/DEPLOY_SUPABASE.md), [`docs/RELEASE.md`](docs/RELEASE.md)).
 
 ```bash
-flutter run
+supabase start                                    # repo root; Docker Desktop running
+cd apps/admin && npm run dev                      # dashboard → local stack (http://localhost:4200)
+cd apps/mobile && flutter run --dart-define-from-file=dart_define.local.json
+                 # Android emulator: dart_define.local-android.json
 ```
 
-Cloud mode (several devices sharing one arena through Supabase) needs the
-backend URL and publishable key at build time:
-
-```bash
-flutter run --dart-define-from-file=dart_define.hosted-dev.json
-```
-
-`bash tool/dev_run.sh -d "<device>"` runs it against the local Supabase stack.
-Release builds are cloud-only (`--dart-define-from-file=dart_define.prod.json`
-plus the signing key — [`docs/RELEASE.md`](docs/RELEASE.md)). The owner's admin
-dashboard is `apps/admin` (`npm run dev`). See **Backend** below.
+Both configs are committed (localhost URL + the local stack's publishable key),
+and VS Code's launch list has them as "arena_ops (local Supabase: …)". Plain
+`flutter run` in a debug build is an offline demo (Drift only, no server).
+Release builds are cloud-only (`dart_define.prod.json` plus the signing key).
+See **Backend** below.
 
 ## Verify
 
