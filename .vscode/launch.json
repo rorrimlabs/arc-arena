@@ -2,47 +2,30 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "arena_ops (local stack: same server as `npm run dev`)",
+      "name": "arena_ops (local Supabase: iOS Simulator / macOS)",
       "request": "launch",
       "type": "dart",
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
       "stopOnEntry": false,
-      "toolArgs": ["--dart-define-from-file=dart_define.dev.json"]
+      "toolArgs": ["--dart-define-from-file=dart_define.local.json"]
     },
     {
-      "name": "arena_ops (hosted: same server as `npm run dev:hosted`)",
+      "name": "arena_ops (local Supabase: Android emulator)",
       "request": "launch",
       "type": "dart",
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
       "stopOnEntry": false,
-      "toolArgs": ["--dart-define-from-file=dart_define.prod.json"]
+      "toolArgs": ["--dart-define-from-file=dart_define.local-android.json"]
     },
     {
-      "name": "arena_ops (Debug)",
+      "name": "arena_ops (offline demo, no server)",
       "request": "launch",
       "type": "dart",
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
-      "stopOnEntry": false,
-      "toolArgs": ["--dart-define-from-file=dart_define.dev.json"]
-    },
-    {
-      "name": "arena_ops (Profile)",
-      "request": "launch",
-      "type": "dart",
-      "cwd": "apps/mobile",
-      "program": "lib/main.dart",
-      "flutterMode": "profile"
-    },
-    {
-      "name": "arena_ops (Release)",
-      "request": "launch",
-      "type": "dart",
-      "cwd": "apps/mobile",
-      "program": "lib/main.dart",
-      "flutterMode": "release"
+      "stopOnEntry": false
     }
   ]
 }

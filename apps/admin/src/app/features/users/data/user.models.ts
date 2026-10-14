@@ -35,7 +35,7 @@ export function userStatus(u: ArenaUser): UserStatus {
 }
 
 /**
- * An invitation to join the arena (staff-admin e-mails a one-time link; the person chooses their
+ * An invitation to join the arena (Supabase Auth e-mails a one-time link; the person chooses their
  * own password and joins when they accept it). Nobody chooses a password for anyone else.
  */
 export interface NewUser {

@@ -1,16 +1,24 @@
-import { Service, inject } from '@angular/core';
-import type { PostgrestError } from '@supabase/supabase-js';
+import { DOCUMENT } from '@angular/common';
+import { InjectionToken, Service, inject } from '@angular/core';
+import type { AuthError, PostgrestError } from '@supabase/supabase-js';
 import { dbError } from '../../../core/arena/arena-api';
 import { AppError } from '../../../core/auth/auth-api';
 import { Supabase } from '../../../core/supabase/supabase';
 import { pushOps } from '../../../core/sync/push-ops';
 import { ArenaUser, NewUser, PendingInvite, UserChange } from './user.models';
 
+/** Where the invitation link opens: this dashboard's own origin (its /accept-invite page). */
+export const INVITE_LINK_BASE = new InjectionToken<string>('INVITE_LINK_BASE', {
+  providedIn: 'root',
+  factory: () => inject(DOCUMENT).location.origin,
+});
+
 /**
  * The arena's users (owners and staff): read through arena_staff(); new people join only by
- * invitation — the staff-admin Edge Function e-mails a one-time link (it holds the service-role
- * key; the browser never does) and the person accepts it on /accept-invite with a password they
- * choose. Open invitations are read through arena_invites() and withdrawn with revoke_invite().
+ * invitation. invite_member (as the owner) creates a one-time token, then Supabase Auth e-mails
+ * the address a link to /accept-invite carrying it (a sign-in link for an existing login, the
+ * sign-up confirmation for a new one); the person accepts there with a password they choose.
+ * Open invitations are read through arena_invites() and withdrawn with revoke_invite().
  * Changes are a `staff.update` op through sync_push — the same path, permission checks and
  * history as the floor app. Tests provide SampleUsersApi.
  */
@@ -45,34 +53,23 @@ export const USER_MESSAGES: Readonly<Record<string, string>> = {
   not_found: 'That person is no longer on the list. Refresh',
   forbidden: 'Only an owner can do that',
   unauthorized: 'Your session has expired. Sign in again',
-  origin_not_allowed:
-    'This dashboard address may not send invitations. Ask the operator to allow it for the staff-admin function',
   email_rate_limited: 'Too many e-mails right now. Wait a while, then try again',
   email_failed: 'The invitation e-mail could not be sent, so nothing was saved. Try again',
-  misconfigured: 'Invitations are not set up on the server yet. Ask the operator',
-  service_unavailable:
-    'The invitation service is not running, so nothing was sent. Try again shortly, or ask the operator',
+  signup_disabled: 'This server does not accept new logins, so the invitation was not sent',
   server_error: 'Could not create the invitation. Try again',
 };
 
-/**
- * A failed staff-admin call → the error to show. The function always answers { error, message };
- * a 502/503/504 without that code came from the gateway (the function was never reached — e.g. a
- * local stack whose edge runtime is not running: `{"message":"name resolution failed"}`), so it
- * must not read as a refused invitation. A 404 without it is the gateway's "Requested function was
- * not found": the function is not deployed on that project.
- */
-export function inviteFailure(status: number, body: { error?: string; message?: string }): AppError {
-  const code =
-    body.error ??
-    ([502, 503, 504].includes(status)
-      ? 'service_unavailable'
-      : status === 404
-        ? 'misconfigured'
-        : 'server_error');
-  // `forbidden` carries the server's reason ("only an owner can grant money or reports").
-  if (code === 'forbidden' && body.message) return new AppError(code, sentence(body.message));
-  return new AppError(code, USER_MESSAGES[code] ?? USER_MESSAGES['server_error']);
+/** Supabase Auth could not send the invitation e-mail → the error to show. */
+export function emailFailure(e: AuthError): AppError {
+  if (e.name === 'AuthRetryableFetchError') return new AppError('network', NETWORK);
+  const code = e.code ?? '';
+  if (e.status === 429 || code.includes('rate_limit')) {
+    return new AppError('email_rate_limited', USER_MESSAGES['email_rate_limited']);
+  }
+  if (code === 'signup_disabled' || code === 'otp_disabled') {
+    return new AppError('signup_disabled', USER_MESSAGES['signup_disabled']);
+  }
+  return new AppError('email_failed', USER_MESSAGES['email_failed']);
 }
 
 /** Refusals of revoke_invite / arena_invites. */
@@ -91,6 +88,7 @@ function sentence(hint: string): string {
 
 class SupabaseUsersApi extends UsersApi {
   private readonly supabase = inject(Supabase);
+  private readonly linkBase = inject(INVITE_LINK_BASE);
 
   async list(arenaId: string): Promise<ArenaUser[]> {
     const client = await this.supabase.client();
@@ -129,28 +127,30 @@ class SupabaseUsersApi extends UsersApi {
 
   async invite(arenaId: string, user: NewUser): Promise<{ inviteId: string; expiresAt: string }> {
     const client = await this.supabase.client();
-    const { data, error } = await client.functions.invoke('staff-admin', {
-      body: {
-        arena_id: arenaId,
-        email: user.email,
-        name: user.name,
-        role: user.role,
-        perms: user.perms,
-      },
+    const { data, error } = await client.rpc('invite_member', {
+      p_arena: arenaId,
+      p_email: user.email,
+      p_name: user.name,
+      p_role: user.role,
+      p_perms: user.perms,
     });
-    if (error) {
-      if (error.name === 'FunctionsHttpError') {
-        const response = error.context as Response;
-        const body = (await response.json().catch(() => ({}))) as {
-          error?: string;
-          message?: string;
-        };
-        throw inviteFailure(response.status, body);
-      }
-      throw new AppError('network', NETWORK);
+    if (error) throw inviteRefusal(error);
+    const made = data as { invite_id: string; token: string; expires_at: string };
+    const link = new URL('/accept-invite', this.linkBase);
+    link.searchParams.set('invite', made.invite_id);
+    link.searchParams.set('token', made.token);
+    // A throwaway client: sending the e-mail never touches the owner's own sign-in.
+    const mailer = await this.supabase.isolatedClient();
+    const { error: sendError } = await mailer.auth.signInWithOtp({
+      email: user.email,
+      options: { shouldCreateUser: true, emailRedirectTo: link.href, data: { name: user.name } },
+    });
+    if (sendError) {
+      // Nothing went out: take the invitation back so the list never shows one nobody received.
+      await client.rpc('revoke_invite', { p_arena: arenaId, p_invite: made.invite_id });
+      throw emailFailure(sendError);
     }
-    const out = data as { invite_id: string; expires_at: string };
-    return { inviteId: String(out.invite_id), expiresAt: String(out.expires_at) };
+    return { inviteId: String(made.invite_id), expiresAt: String(made.expires_at) };
   }
 
   async revokeInvite(arenaId: string, inviteId: string): Promise<void> {
@@ -182,6 +182,17 @@ class SupabaseUsersApi extends UsersApi {
     );
     return { adjusted: result?.['adjusted'] === true };
   }
+}
+
+/** invite_member refused: its reason (`forbidden` carries the server's hint) or the generic one. */
+function inviteRefusal(e: PostgrestError): AppError {
+  if (e.code === '42501') {
+    return new AppError('forbidden', e.hint ? sentence(e.hint) : USER_MESSAGES['forbidden']);
+  }
+  if (e.code === 'P0001' && USER_MESSAGES[e.message]) {
+    return new AppError(e.message, USER_MESSAGES[e.message]);
+  }
+  return dbError(e);
 }
 
 function inviteError(e: PostgrestError): AppError {

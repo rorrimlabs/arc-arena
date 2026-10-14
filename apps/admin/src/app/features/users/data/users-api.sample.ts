@@ -83,7 +83,7 @@ export function sampleInvites(): PendingInvite[] {
 export class SampleUsersApi extends UsersApi {
   users: ArenaUser[] = sampleUsers();
   invites: PendingInvite[] = sampleInvites();
-  /** Every invitation sent, in order (what staff-admin received). */
+  /** Every invitation sent, in order. */
   readonly sent: NewUser[] = [];
   /** Set to make the next invite / withdraw fail with this code. */
   failNext: string | null = null;

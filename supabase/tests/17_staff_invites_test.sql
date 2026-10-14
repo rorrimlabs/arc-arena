@@ -54,14 +54,10 @@ create function pg_temp.tok(p text) returns text as $$
 -- ------------------------------------------- 1. surface
 select ok(not has_function_privilege('anon', f, 'EXECUTE'), 'anon cannot call ' || f)
 from unnest(array['invite_member(uuid,text,text,text,text[])', 'accept_invite(uuid,text)',
-  'revoke_invite(uuid,uuid)', 'arena_invites(uuid)', 'invite_delivery_target(text)']) f;
+  'revoke_invite(uuid,uuid)', 'arena_invites(uuid)']) f;
 select ok(has_function_privilege('authenticated', f, 'EXECUTE'), 'client API: ' || f)
 from unnest(array['invite_member(uuid,text,text,text,text[])', 'accept_invite(uuid,text)',
   'revoke_invite(uuid,uuid)', 'arena_invites(uuid)']) f;
-select ok(not has_function_privilege('authenticated', 'invite_delivery_target(text)', 'EXECUTE'),
-  'invite_delivery_target is not callable by clients (no account-existence oracle)');
-select ok(has_function_privilege('service_role', 'invite_delivery_target(text)', 'EXECUTE'),
-  'only the server (service_role, the Edge Function) can call it');
 select ok((select relrowsecurity from pg_class where oid = 'public.staff_invites'::regclass),
   'staff_invites has RLS on');
 select ok(not has_table_privilege(r, 'public.staff_invites', 'select,insert,update,delete'),
@@ -263,13 +259,6 @@ select throws_ok($$ select arena_invites('e0000000-0000-4000-8000-000000000170')
 select pg_temp.as_user('17000000-0000-4000-8000-000000000008');
 select throws_ok($$ select arena_invites('e0000000-0000-4000-8000-000000000170') $$,
   '42501', null, 'nor can another arena''s owner');
-
--- ------------------------------------------- 6. delivery helper (server only)
-select is(invite_delivery_target('nobody17@test.local'), null, 'no login: send an invite');
-select is(invite_delivery_target(' PENDING17@test.local ') ->> 'confirmed', 'false',
-  'an unconfirmed login is reported as such (the Edge Function scrubs its password first)');
-select is(invite_delivery_target('new17@test.local') ->> 'confirmed', 'true',
-  'a confirmed login gets a sign-in link instead');
 
 select * from finish();
 rollback;

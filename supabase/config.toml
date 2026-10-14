@@ -152,7 +152,7 @@ site_url = "http://127.0.0.1:3000"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-# The local admin dashboard (`ng serve`, port 4200) hosts /accept-invite, the page the staff-admin
+# The local admin dashboard (`ng serve`, port 4200) hosts /accept-invite, the page the
 # invitation e-mail links to. Hosted: add the dashboard's own https URL in Authentication → URL
 # Configuration (docs/DEPLOY_SUPABASE.md).
 additional_redirect_urls = [
@@ -231,7 +231,8 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-# ON: sign-up is confirmed with the 6-digit code in templates/confirmation.html.
+# ON: an owner's sign-up is confirmed with the 6-digit code in templates/confirmation.html;
+# an invited new address confirms through the link in the same template.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
@@ -252,16 +253,17 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Sign-up confirmation: the app asks for the code, so the mail must show
-# {{ .Token }} (the default template only has a link, which the app cannot open).
+# Sign-up confirmation, two uses: an owner signing up enters the code ({{ .Token }}); a NEW
+# address being invited (the dashboard's signInWithOtp, redirect to /accept-invite) gets the
+# link instead. The template tells them apart by the redirect (owner sign-ups send none).
 [auth.email.template.confirmation]
-subject = "Your 404 Arena sign-up code"
+subject = "404 Arena: confirm your e-mail"
 content_path = "./supabase/templates/confirmation.html"
 
-# Uncomment to customize email template
-# [auth.email.template.invite]
-# subject = "You have been invited"
-# content_path = "./supabase/templates/invite.html"
+# Sign-in link: only invitations use it (an address that already has a confirmed login).
+[auth.email.template.magic_link]
+subject = "You're invited to 404 Arena"
+content_path = "./supabase/templates/magic_link.html"
 
 # Uncomment to customize notification email template
 # [auth.email.notification.password_changed]
@@ -386,8 +388,9 @@ authorization_url_path = "/oauth/consent"
 # Allow dynamic client registration
 allow_dynamic_registration = false
 
+# No Edge Functions: invitations are e-mailed by Supabase Auth from the dashboard.
 [edge_runtime]
-enabled = true
+enabled = false
 # Supported request policies: `oneshot`, `per_worker`.
 # `per_worker` (default) — enables hot reload during local development.
 # `oneshot` — fallback mode if hot reload causes issues (e.g. in large repos or with symlinks).
@@ -399,12 +402,6 @@ deno_version = 2
 
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
-
-# Owner creates a staff login from the admin dashboard. The function verifies the
-# caller's session itself (auth.getUser + app_is_owner), so the gateway JWT check
-# is off: publishable keys are not JWTs.
-[functions.staff-admin]
-verify_jwt = false
 
 [analytics]
 enabled = true

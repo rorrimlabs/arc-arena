@@ -16,7 +16,6 @@ import { SampleArenaApi } from '../arena/arena-api.sample';
 import { ArenaContext } from '../arena/arena-context';
 import { AuthApi } from '../auth/auth-api';
 import { SampleAuthApi } from '../auth/auth-api.sample';
-import { LOCAL_SERVER } from '../supabase/local-server';
 import { LoginScope } from '../auth/login-scope';
 import { Session } from '../auth/session';
 import { FloorStore } from '../floor/floor-store';
@@ -32,7 +31,6 @@ describe('Shell', () => {
         { provide: AuthApi, useValue: new SampleAuthApi() },
         { provide: ArenaApi, useValue: new SampleArenaApi() },
         { provide: UsersApi, useValue: new SampleUsersApi() },
-        { provide: LOCAL_SERVER, useValue: null },
       ],
     });
     harness = await RouterTestingHarness.create();

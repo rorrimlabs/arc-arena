@@ -2,7 +2,6 @@ import { A11yModule } from '@angular/cdk/a11y';
 import { CdkMenu, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
 import { Component, computed, effect, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { LocalServerNote } from '../../shared/local-server-note/local-server-note';
 import { AdminNotificationsStore } from '../notifications/admin-notifications.store';
 import { NotificationsMenu } from '../notifications/notifications-menu';
 import { ACCESS_HOME, ArenaContext } from '../arena/arena-context';
@@ -22,7 +21,6 @@ import { NAV_GROUPS } from './nav';
     CdkMenuTrigger,
     CdkMenu,
     CdkMenuItemRadio,
-    LocalServerNote,
     NotificationsMenu,
   ],
   templateUrl: './shell.html',

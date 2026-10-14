@@ -133,7 +133,7 @@ String signInFailureMessage(Object error) {
     final text = error.message.toLowerCase();
     if (code == 'invalid_credentials' ||
         text.contains('invalid login credentials')) {
-      return "That e-mail and password don't match a login on this server. "
+      return "That e-mail and password don't match a login. "
           'Invited? Open the invitation e-mail first and choose your '
           'password there, then sign in here with it.';
     }

@@ -178,7 +178,7 @@ void main() {
         const AuthException('Invalid login credentials',
             statusCode: '400', code: 'invalid_credentials'),
       );
-      expect(m, contains("don't match a login on this server"));
+      expect(m, contains("don't match a login"));
       expect(m, contains('invitation e-mail'));
       // Older Auth servers send no code, only the text.
       expect(

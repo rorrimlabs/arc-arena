@@ -8,8 +8,8 @@
 -- or holding money or reports (holding either makes a member owner level, the
 -- same rule as the app's AppUser.isOwner). Gates add_staff_by_email and the
 -- owner-only branches of op_staff_update. SECURITY DEFINER (reads staff_profiles).
--- Executable by authenticated so the public wrapper (called by the staff-admin
--- Edge Function) can reach it; not exposed over the Data API itself.
+-- Executable by authenticated so the public wrappers can reach it; not exposed
+-- over the Data API itself.
 create or replace function private.app_is_owner (
   p_arena uuid
 )

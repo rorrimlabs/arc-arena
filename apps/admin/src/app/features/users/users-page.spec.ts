@@ -10,7 +10,6 @@ import { ArenaApi } from '../../core/arena/arena-api';
 import { SampleArenaApi } from '../../core/arena/arena-api.sample';
 import { AuthApi } from '../../core/auth/auth-api';
 import { SampleAuthApi } from '../../core/auth/auth-api.sample';
-import { LOCAL_SERVER, LocalServer } from '../../core/supabase/local-server';
 import { UsersApi } from './data/users-api';
 import { SampleUsersApi } from './data/users-api.sample';
 
@@ -32,7 +31,7 @@ describe('Users', () => {
   let api: SampleUsersApi;
   let arenas: SampleArenaApi;
 
-  async function start(url: string, width = 1440, local: LocalServer | null = null) {
+  async function start(url: string, width = 1440) {
     api = new SampleUsersApi();
     arenas = new SampleArenaApi();
     TestBed.configureTestingModule({
@@ -43,7 +42,6 @@ describe('Users', () => {
         { provide: UsersApi, useValue: api },
         { provide: BreakpointObserver, useValue: breakpoints(width) },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
-        { provide: LOCAL_SERVER, useValue: local },
       ],
     });
     harness = await RouterTestingHarness.create();
@@ -214,57 +212,6 @@ describe('Users', () => {
       'Farhan Ali · Staff · invited by Arjun Mehra',
       'Expires 20 Oct',
     ]);
-  });
-
-  it('on the local test server, the page and the invitation say where the login will exist', async () => {
-    await start('/users', 1440, {
-      address: '127.0.0.1:54431',
-      mailUrl: 'http://127.0.0.1:54434',
-    });
-    const note = doc().querySelector('app-local-server-note [role="note"]');
-    expect(note?.textContent).toContain('Local test server (127.0.0.1:54431).');
-    expect(note?.textContent).toContain('dart_define.prod.json');
-    expect(note?.querySelector('a')?.getAttribute('href')).toBe('http://127.0.0.1:54434');
-
-    button('Invite')?.click();
-    await settle();
-    type('Name', 'Farhan Ali');
-    type('Email', 'farhan@404arena.in');
-    button('Send invitation', dialog())?.click();
-    await settle();
-    await settle();
-    expect(snack()).toBe(
-      'Invitation sent to farhan@404arena.in on the local test server: the e-mail is in the local mailbox',
-    );
-  });
-
-  it('in the narrow rail, the local test server is an icon with a label and a spoken description', async () => {
-    await start('/users', 1200, { address: '127.0.0.1:54431', mailUrl: 'http://127.0.0.1:54434' });
-    const note = doc().querySelector('aside app-local-server-note [role="note"]');
-    expect(note?.getAttribute('title')).toContain('Local test server (127.0.0.1:54431)');
-    expect(note?.querySelector('.sr-only')?.textContent).toContain(
-      'Logins made here exist only on this computer.',
-    );
-    // Nothing above the page itself: a full-height page keeps its own height.
-    expect(doc().querySelector('main app-local-server-note')).toBeNull();
-  });
-
-  it('on a local test server without a mailbox, the invitation does not point to one', async () => {
-    await start('/users', 1440, { address: '127.0.0.1:54431', mailUrl: null });
-    expect(doc().querySelector('app-local-server-note a')).toBeNull();
-    button('Invite')?.click();
-    await settle();
-    type('Name', 'Farhan Ali');
-    type('Email', 'farhan@404arena.in');
-    button('Send invitation', dialog())?.click();
-    await settle();
-    await settle();
-    expect(snack()).toBe('Invitation sent to farhan@404arena.in on the local test server');
-  });
-
-  it('on a hosted project there is no local server note', async () => {
-    await start('/users');
-    expect(doc().querySelector('app-local-server-note [role="note"]')).toBeNull();
   });
 
   it('an owner can invite another owner', async () => {

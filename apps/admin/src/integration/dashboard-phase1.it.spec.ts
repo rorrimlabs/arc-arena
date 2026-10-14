@@ -8,18 +8,21 @@ import {
   DEFAULT_FLOOR_OPTIONS,
   FloorOptionsApi,
 } from '../app/features/settings/data/floor-options';
-import { UsersApi } from '../app/features/users/data/users-api';
-import { IT_RUN, handoff, latestAuthLink, need } from './it-env';
+import { INVITE_LINK_BASE, UsersApi } from '../app/features/users/data/users-api';
+import { DASHBOARD_ORIGIN, IT_RUN, handoff, latestAuthLink, need } from './it-env';
 
 /**
  * Dashboard phase 1 (tool/sync_it.sh): the owner configures the arena on the dashboard's real
  * data layer — a new game playable on exactly one station, the floor options — and invites a new
- * person by e-mail through the staff-admin Edge Function; that person accepts from the e-mailed
- * link (local Mailpit) the way the /accept-invite page does. The Flutter phases then check the
- * staff device sees the configuration (dashboard.json).
+ * person by e-mail (invite_member, then Supabase Auth's e-mail); that person accepts from the
+ * e-mailed link (local Mailpit) the way the /accept-invite page does. The Flutter phases then
+ * check the staff device sees the configuration (dashboard.json).
  */
 describe.skipIf(!IT_RUN)('integration · dashboard phase 1 (owner on the local backend)', () => {
   it('builds a playable game, saves floor options, and an e-mailed invitation is accepted', async () => {
+    TestBed.configureTestingModule({
+      providers: [{ provide: INVITE_LINK_BASE, useValue: DASHBOARD_ORIGIN }],
+    });
     const run = need('AO_IT_RUN');
     const arenaId = need('AO_IT_ARENA');
     const password = need('AO_IT_PASSWORD');
@@ -122,7 +125,8 @@ describe.skipIf(!IT_RUN)('integration · dashboard phase 1 (owner on the local b
     expect(inviteId).toBe(sent.inviteId);
     expect(token).toMatch(/^[0-9a-f]{64}$/);
     const fragment = new URLSearchParams(landing.hash.slice(1));
-    expect(fragment.get('type')).toBe('invite');
+    // A new address: Auth's sign-up confirmation, so the page asks for a password first.
+    expect(fragment.get('type')).toBe('signup');
 
     // What the page does for a new login, in the browser where the owner is still signed in:
     // the invitee's session from the link lives on the page's own client (InviteeAuth), a

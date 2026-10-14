@@ -2,8 +2,8 @@
 --
 -- Lives in `private`, which the Data API does not expose: SECURITY DEFINER
 -- code never sits in an API schema. Clients reach it only through the
--- SECURITY INVOKER wrapper public.invite_member (the staff-admin Edge Function
--- calls it as the signed-in owner, then e-mails the link).
+-- SECURITY INVOKER wrapper public.invite_member (the admin dashboard calls it as
+-- the signed-in owner, then has Supabase Auth e-mail the link).
 --
 -- Creates a one-time invitation (staff_invites) and returns
 -- {invite_id, token, expires_at}. Only the token's SHA-256 is stored; it is

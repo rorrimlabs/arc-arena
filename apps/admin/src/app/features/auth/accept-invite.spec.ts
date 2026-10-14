@@ -9,15 +9,14 @@ import { SampleArenaApi } from '../../core/arena/arena-api.sample';
 import { AppError, AuthApi } from '../../core/auth/auth-api';
 import { InviteeAuth } from '../../core/auth/invitee-auth';
 import { SampleAuthApi, SampleInvite } from '../../core/auth/auth-api.sample';
-import { LOCAL_SERVER, LocalServer } from '../../core/supabase/local-server';
 import { UsersApi } from '../users/data/users-api';
 import { SampleUsersApi } from '../users/data/users-api.sample';
 
 const INVITE = 'f47ac10b-58cc-4372-a567-0e02b2c3d479';
 const TOKEN = '9f'.repeat(32);
 const LINK = `/accept-invite?invite=${INVITE}&token=${TOKEN}`;
-/** What Supabase Auth appends for a new login (invite) or an existing one (magic link). */
-const session = (type: 'invite' | 'magiclink', access = 'at-farah') =>
+/** What Supabase Auth appends for a new login (sign-up confirmation) or an existing one (magic link). */
+const session = (type: 'signup' | 'magiclink', access = 'at-farah') =>
   `#access_token=${access}&expires_at=1792000000&expires_in=3600&refresh_token=rt-1&token_type=bearer&type=${type}`;
 
 describe('Accept invitation', () => {
@@ -28,7 +27,7 @@ describe('Accept invitation', () => {
 
   async function start(
     url: string,
-    o: { signedIn?: boolean; role?: 'owner' | 'staff'; local?: LocalServer | null } = {},
+    o: { signedIn?: boolean; role?: 'owner' | 'staff' } = {},
   ) {
     auth = new SampleAuthApi(o.signedIn ?? false);
     arenas = new SampleArenaApi(false);
@@ -60,7 +59,6 @@ describe('Accept invitation', () => {
         { provide: ArenaApi, useValue: arenas },
         { provide: UsersApi, useValue: new SampleUsersApi() },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
-        { provide: LOCAL_SERVER, useValue: o.local ?? null },
       ],
     });
     harness = await RouterTestingHarness.create();
@@ -103,7 +101,7 @@ describe('Accept invitation', () => {
 
   it('an owner signed in on this browser stays themselves while someone accepts here', async () => {
     // The owner's dashboard and the invitee's link share one browser (one stored session).
-    await start(LINK + session('invite'), { signedIn: true });
+    await start(LINK + session('signup'), { signedIn: true });
     arenas.memberships.push({
       arenaId: 'a1',
       arenaName: '404 Arena Koramangala',
@@ -125,14 +123,14 @@ describe('Accept invitation', () => {
   });
 
   it('takes the token out of the address straight away', async () => {
-    await start(LINK + session('invite'));
+    await start(LINK + session('signup'));
     expect(address()).toBe('/accept-invite');
     expect(TestBed.inject(PlatformLocation).href).not.toContain(TOKEN);
     expect(TestBed.inject(PlatformLocation).href).not.toContain('at-farah');
   });
 
   it('a new login chooses its password, then joins as staff', async () => {
-    await start(LINK + session('invite'));
+    await start(LINK + session('signup'));
     expect(heading()).toBe('Choose your password');
     expect(body().textContent).toContain('Signed in as farah@404arena.in');
 
@@ -160,51 +158,6 @@ describe('Accept invitation', () => {
     await press('Done');
     expect(auth.account).toBeNull();
     expect(TestBed.inject(Router).url).toBe('/sign-in');
-  });
-
-  it('on the local test server, choosing a password and joining both say the login is only there in an unobtrusive note', async () => {
-    await start(LINK + session('invite'), {
-      local: { address: '127.0.0.1:54431', mailUrl: null },
-    });
-    const noteEl = () => body().querySelector('app-local-server-note [role="note"]');
-    const note = () => noteEl()?.textContent;
-    expect(heading()).toBe('Choose your password');
-    expect(note()).toContain('Local test server (127.0.0.1:54431).');
-    expect(note()).toContain('exist only on this computer');
-    expect(note()).not.toContain('local mailbox');
-
-    // Unobtrusive styling: dark sunken surface, muted text, no yellow alert warning styling
-    expect(noteEl()?.classList.contains('bg-warning-soft')).toBe(false);
-    expect(noteEl()?.classList.contains('text-warning')).toBe(false);
-    expect(noteEl()?.classList.contains('bg-surface-sunken')).toBe(true);
-
-    // Form fields are top and center; the developer note is positioned below the form
-    const formEl = body().querySelector('form');
-    expect(formEl).not.toBeNull();
-    expect(
-      Boolean(formEl!.compareDocumentPosition(noteEl()!) & Node.DOCUMENT_POSITION_FOLLOWING),
-    ).toBe(true);
-
-    type('Password', 'floor-pass-42');
-    type('Type it again', 'floor-pass-42');
-    await press('Save password and join');
-    expect(heading()).toBe('You have joined 404 Arena Koramangala');
-    expect(note()).toContain('dart_define.prod.json');
-  });
-
-  it('in a production build configuration the invitation page never displays the local server note', async () => {
-    // production: true causes localServer to return null
-    await start(LINK + session('invite'), {
-      local: null,
-    });
-    expect(body().querySelector('app-local-server-note [role="note"]')).toBeNull();
-    expect(heading()).toBe('Choose your password');
-    expect(body().querySelectorAll('input[type="password"]').length).toBe(2);
-  });
-
-  it('on a hosted project the invitation page has no local server note', async () => {
-    await start(LINK + session('invite'));
-    expect(body().querySelector('app-local-server-note [role="note"]')).toBeNull();
   });
 
   it('an existing login opens the magic link and accepts, password optional', async () => {
@@ -256,7 +209,7 @@ describe('Accept invitation', () => {
   });
 
   it('the account was made but accepting failed: try again joins once, password kept', async () => {
-    await start(LINK + session('invite'));
+    await start(LINK + session('signup'));
     type('Password', 'floor-pass-42');
     type('Type it again', 'floor-pass-42');
     auth.invitee.failNext = new AppError(
@@ -334,7 +287,7 @@ describe('Accept invitation', () => {
   });
 
   it('a link without its token is incomplete and asks nothing of the server', async () => {
-    await start(`/accept-invite?invite=${INVITE}` + session('invite'));
+    await start(`/accept-invite?invite=${INVITE}` + session('signup'));
     expect(heading()).toBe('Invitation link incomplete');
     expect(alert()).toContain('This invitation link is incomplete.');
     expect(auth.calls).toEqual([]);

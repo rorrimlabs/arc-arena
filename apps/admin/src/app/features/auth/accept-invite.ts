@@ -39,7 +39,7 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
 
 /**
  * Opened from the invitation e-mail: `/accept-invite?invite=<id>&token=<hex>` plus the
- * fragment Supabase Auth appends (`#access_token…&type=invite` for a new login,
+ * fragment Supabase Auth appends (`#access_token…&type=signup` for a new login,
  * `type=magiclink` for an existing one, or `#error…`). The token is read once and the address
  * replaced with `/accept-invite` straight away. A new login chooses its password before
  * joining; anyone without a link session can sign in to accept. Owners continue to the
@@ -361,8 +361,10 @@ export class AcceptInvite {
         this.step.set('link-error');
         return;
       }
-      // A new login has no password yet: it chooses one before joining.
-      this.step.set(this.link.type !== 'magiclink' ? 'password' : 'confirm');
+      // Only a sign-in link (`magiclink`) is for a login its owner had already confirmed. Any other
+      // link (the sign-up confirmation) is a new or unconfirmed login, whose password — if any —
+      // may have been chosen by someone else: it must choose its own before joining.
+      this.step.set(this.link.type === 'magiclink' ? 'confirm' : 'password');
       return;
     }
     // No link session: the invitee signs in here (whoever the dashboard is signed in as).

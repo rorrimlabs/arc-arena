@@ -68,6 +68,9 @@ dart_define*.json
 !*.example.env
 !dart_define.example.json
 !*.example.json
+# The local Supabase stack (fixed localhost URL + its publishable key, same as apps/admin environment.ts).
+!dart_define.local.json
+!dart_define.local-android.json
 
 # Private signing keys, keystores, and certificate files
 *.keystore

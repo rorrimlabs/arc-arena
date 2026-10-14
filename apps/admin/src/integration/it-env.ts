@@ -29,33 +29,12 @@ export function need(name: string): string {
   return v;
 }
 
-/** The local dashboard's origin (`ng serve`), the base of the invitation link. */
-export const DASHBOARD_ORIGIN = itEnv['AO_IT_DASHBOARD_ORIGIN'] ?? 'http://127.0.0.1:4200';
-
 /**
- * Requests to the local API carry the Origin header a browser adds to every cross-origin POST;
- * Node's fetch adds none. The staff-admin function builds the invitation link from it when
- * ADMIN_SITE_URL is not set — as on the stack's own Edge Function runtime (`supabase start`) —
- * so without it a spec's invitation would have no link to send. Installed once, at import, before
- * any Supabase client exists (supabase-js keeps the fetch it was created with).
+ * The local dashboard's origin (`ng serve`): the invitation link's base (INVITE_LINK_BASE), as
+ * when an owner invites from the dashboard running there. Under the test DOM the page's own
+ * origin is not one Auth may redirect to.
  */
-function sendOriginLikeABrowser(): void {
-  const api = itEnv['AO_SUPABASE_URL'];
-  const original = globalThis.fetch;
-  if (!api || (original as { withBrowserOrigin?: true }).withBrowserOrigin) return;
-  const withOrigin = (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const isRequest = typeof Request !== 'undefined' && input instanceof Request;
-    const url =
-      typeof input === 'string' ? input : input instanceof URL ? input.href : (input as Request).url;
-    if (!url.startsWith(api)) return original(input, init);
-    const headers = new Headers(init?.headers ?? (isRequest ? (input as Request).headers : undefined));
-    if (!headers.has('Origin')) headers.set('Origin', DASHBOARD_ORIGIN);
-    return original(input, { ...init, headers });
-  };
-  globalThis.fetch = Object.assign(withOrigin, { withBrowserOrigin: true as const });
-}
-
-if (IT_RUN) sendOriginLikeABrowser();
+export const DASHBOARD_ORIGIN = itEnv['AO_IT_DASHBOARD_ORIGIN'] ?? 'http://127.0.0.1:4200';
 
 function fs(): Fs {
   return nodeProcess!.getBuiltinModule('node:fs') as Fs;
