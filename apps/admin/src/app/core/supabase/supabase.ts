@@ -84,7 +84,7 @@ export const CONFIG_PROBLEM = configProblem(environment);
 /**
  * The one Supabase client, created on first use. supabase-js is loaded lazily so it stays out
  * of the initial bundle. Only the publishable key is ever in the browser; every write goes
- * through the database's client API (sync_push, create_my_arena, …) or the staff-admin function.
+ * through the database's client API (sync_push, create_my_arena, invite_member, …).
  */
 @Service()
 export class Supabase {

@@ -3,7 +3,7 @@
 -- The Data API exposes `public`, so nothing here runs with raised privileges:
 -- this runs as the caller and hands over to private.invite_member, which holds
 -- the SECURITY DEFINER body and its checks (private/functions/invite_member.sql).
--- Called by the staff-admin Edge Function as the signed-in owner.
+-- Called by the admin dashboard as the signed-in owner.
 create or replace function public.invite_member (
   p_arena uuid,
   p_email text,

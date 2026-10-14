@@ -11,7 +11,6 @@ import { AuthApi } from '../core/auth/auth-api';
 import { SampleAuthApi } from '../core/auth/auth-api.sample';
 import { FloorApi } from '../core/floor/floor-api';
 import { SampleFloorApi } from '../core/floor/floor-api.sample';
-import { LOCAL_SERVER } from '../core/supabase/local-server';
 import { Clock } from '../core/time/clock';
 import { ControllersApi } from '../features/controllers/data/controllers-api';
 import { SampleControllersApi } from '../features/controllers/data/controllers-api.sample';
@@ -73,8 +72,6 @@ export async function startPage(
       { provide: Clock, useValue: { now: () => NOW } },
       { provide: BreakpointObserver, useValue: breakpoints(width) },
       { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
-      // The sample APIs stand in for a hosted project; a spec may override this in `setup`.
-      { provide: LOCAL_SERVER, useValue: null },
     ],
   });
   const harness = await RouterTestingHarness.create();

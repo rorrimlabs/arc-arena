@@ -133,7 +133,7 @@ String signInFailureMessage(Object error) {
     final text = error.message.toLowerCase();
     if (code == 'invalid_credentials' ||
         text.contains('invalid login credentials')) {
-      return "That e-mail and password don't match a login on this server. "
+      return "That e-mail and password don't match a login. "
           'Invited? Open the invitation e-mail first and choose your '
           'password there, then sign in here with it.';
     }
@@ -192,18 +192,6 @@ String firstDownloadFailureMessage(SyncStatus status, String arenaName) {
       "$arenaName couldn't be downloaded. Try again; if it keeps failing, "
           'tell the owner.',
   };
-}
-
-/// "Local test server (127.0.0.1:54431)" or "abcd.supabase.co": which backend
-/// this build signs in to, so a login made on another server is easy to spot.
-String serverLabel(String url) {
-  final uri = Uri.tryParse(url);
-  final host = uri?.host ?? '';
-  if (host.isEmpty) return url;
-  const local = {'127.0.0.1', 'localhost', '10.0.2.2'};
-  return local.contains(host)
-      ? 'Local test server (${uri!.authority})'
-      : uri!.authority;
 }
 
 /// No answer from the server: sockets, timeouts, TLS, and http's

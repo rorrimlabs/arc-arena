@@ -1,7 +1,8 @@
 /// Build-time configuration, selected with `--dart-define-from-file`.
 ///
-/// * Development: `tool/dev_run.sh` writes `dart_define.dev.json` (git-ignored)
-///   from the local stack's `supabase status` and runs with it. Without any
+/// * Development: the local Supabase stack, via the committed
+///   `dart_define.local.json` (`dart_define.local-android.json` for an Android
+///   emulator): localhost URL and the stack's publishable key. Without any
 ///   defines a DEBUG build runs local-only mode (Drift/SQLite, demo catalog and
 ///   demo PINs) so the app is usable with no server.
 /// * Release: always cloud mode, from a `dart_define.prod.json` kept outside git

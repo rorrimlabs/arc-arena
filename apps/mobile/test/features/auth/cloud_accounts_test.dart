@@ -90,7 +90,7 @@ void main() {
       await tester.pump();
       // Plain words, with what an invited person must do first.
       expect(
-        find.textContaining("don't match a login on this server"),
+        find.textContaining("don't match a login"),
         findsOneWidget,
       );
       expect(find.text('Invalid login credentials'), findsNothing);

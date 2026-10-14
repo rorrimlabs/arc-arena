@@ -3,7 +3,7 @@
 -- The only way a login becomes a member of an arena (besides bootstrap_owner /
 -- create_my_arena for an arena's first owner). invite_member stores the invite
 -- and the SHA-256 of a random one-time token; the token itself travels only in
--- the link the staff-admin Edge Function e-mails to the invited address. The
+-- the link Supabase Auth e-mails to the invited address. The
 -- membership is created when the invited person — signed in with a confirmed
 -- login whose e-mail is the invited address — presents that token
 -- (accept_invite). Nobody is attached to an arena without accepting, and an

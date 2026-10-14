@@ -6,7 +6,6 @@ import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/notifications/reminder_startup.dart';
 import 'package:arena_ops/app/sync/cloud_root.dart';
 import 'package:arena_ops/app/sync/secure_session_storage.dart';
-import 'package:arena_ops/app/sync/staff_access.dart' show serverLabel;
 import 'package:arena_ops/core/config/app_config.dart';
 import 'package:arena_ops/core/monitoring/sentry_setup.dart';
 import 'package:arena_ops/data/local/database.dart';
@@ -56,11 +55,6 @@ Future<void> main() async {
             localStorage: SecureSessionStorage(backendUrl: config.supabaseUrl!),
           ),
         );
-        // Which project this build signs in to, in the `flutter run` console
-        // only: logins exist only on the project they were invited on.
-        if (kDebugMode) {
-          debugPrint('Staff app signs in to: ${serverLabel(config.supabaseUrl!)}');
-        }
         final documents = await getApplicationDocumentsDirectory();
         runApp(SentryWidget(child: CloudRoot(documentsPath: documents.path)));
         return;

@@ -1,14 +1,11 @@
 import { Component, input } from '@angular/core';
-import { LocalServerNote } from '../../shared/local-server-note/local-server-note';
 
 /**
  * The signed-out card from the design (`signedOut` block): 404 badge, display title, muted
- * subtitle, then the projected form. Shared by sign in, register and create arena. On the local
- * stack it also says so, before anyone signs in or chooses a password there.
+ * subtitle, then the projected form. Shared by sign in, register and create arena.
  */
 @Component({
   selector: 'app-auth-card',
-  imports: [LocalServerNote],
   host: { class: 'flex min-h-dvh items-center justify-center bg-bg p-6 text-fg' },
   template: `
     <main
@@ -24,7 +21,6 @@ import { LocalServerNote } from '../../shared/local-server-note/local-server-not
         <h1 class="font-display text-[28px] leading-[1.1] font-bold">{{ heading() }}</h1>
         <p class="text-sm leading-[1.4] text-muted">{{ subtitle() }}</p>
       </div>
-      <app-local-server-note framed />
       <ng-content />
     </main>
   `,
