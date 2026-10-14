@@ -7,7 +7,9 @@ library;
 import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/domain/pricing/billing_policy.dart';
+import 'package:arena_ops/domain/pricing/pricing_rule.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
+import 'package:arena_ops/domain/pricing/rule_engine.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:meta/meta.dart';
 
@@ -21,10 +23,13 @@ class PricingSnapshot {
     required this.hours,
     Set<IstDate> holidays = const {},
     Set<IstDate> closedDays = const {},
+    List<PricingRule> rules = const [],
   })  : rates = List.unmodifiable(rates),
         activities = {for (final a in activities) a.code: a},
         holidays = Set.unmodifiable(holidays),
-        closedDays = Set.unmodifiable(closedDays);
+        closedDays = Set.unmodifiable(closedDays),
+        rules = List<PricingRule>.unmodifiable(
+            <PricingRule>[...rules]..sort(compareRuleOrder));
 
   final String rateCardName;
   final List<Rate> rates;
@@ -36,6 +41,15 @@ class PricingSnapshot {
   /// Dates the centre was closed outright (distinct from a trading holiday).
   final Set<IstDate> closedDays;
 
+  /// The arena's active pricing rules when the snapshot was frozen, in rule
+  /// order (priority, name, id). Empty for an arena without rules.
+  final List<PricingRule> rules;
+
+  /// The rule that prices [activityCode] for a session (or group) started at
+  /// [at], or null (`_pr_rule`).
+  PricingRule? ruleFor(String activityCode, DateTime at) => matchRule(rules,
+      activityCode: activityCode, at: at, holidays: holidays);
+
   BusinessCalendar get calendar => BusinessCalendar(
         hours: hours,
         holidays: holidays,
@@ -44,8 +58,7 @@ class PricingSnapshot {
 
   ActivitySpec? activity(String code) => activities[code];
 
-  /// Exact rate match for (activity, band, controllerCount). No fallback — the
-  /// pricer handles happy→standard fallback.
+  /// Exact rate match for (activity, band, controllerCount); no fallback.
   Rate? rateFor({
     required String activityCode,
     required Band band,
@@ -61,6 +74,10 @@ class PricingSnapshot {
     return null;
   }
 
+  /// The server's `_pricing_snapshot` shape (compared via `_pricing_canon` at
+  /// session.start / group.create). `rules` is present only when there are
+  /// any, exactly like the server, so a rule-free arena's snapshot is the one
+  /// older builds produced.
   Map<String, dynamic> toJson() => {
         'rate_card_name': rateCardName,
         'rates': rates.map((r) => r.toJson()).toList(),
@@ -69,13 +86,17 @@ class PricingSnapshot {
         'hours': hours.toJson(),
         'holidays': holidays.map((d) => d.iso).toList(),
         'closed_days': closedDays.map((d) => d.iso).toList(),
+        if (rules.isNotEmpty) 'rules': rules.map((r) => r.toJson()).toList(),
       };
 
   factory PricingSnapshot.fromJson(Map<String, dynamic> j) => PricingSnapshot(
         rateCardName: j['rate_card_name'] as String,
-        rates: (j['rates'] as List)
-            .map((e) => Rate.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        // A snapshot frozen by an older build can hold rates of a retired
+        // band; they were never chosen by the pricer now, so they are dropped.
+        rates: [
+          for (final e in j['rates'] as List)
+            ?Rate.tryFromJson(e as Map<String, dynamic>),
+        ],
         activities: (j['activities'] as List)
             .map((e) => ActivitySpec.fromJson(e as Map<String, dynamic>))
             .toList(),
@@ -88,5 +109,10 @@ class PricingSnapshot {
         closedDays: ((j['closed_days'] as List?) ?? const [])
             .map((e) => IstDate.parse(e as String))
             .toSet(),
+        // Absent when the arena had no active rule.
+        rules: [
+          for (final e in (j['rules'] as List?) ?? const [])
+            PricingRule.fromJson(e as Map<String, dynamic>),
+        ],
       );
 }

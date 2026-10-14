@@ -24,6 +24,7 @@ export class SalesStore {
   readonly revision = signal(0);
   /** Arena + period: another day (or arena, or period) loads again. */
   private loadedKey: string | null = null;
+  private outOfDate = false;
   private current: SalesPeriod | null = null;
   private latest = 0;
 
@@ -46,9 +47,10 @@ export class SalesStore {
     if (!arenaId) return;
     const { from, to } = periodBounds(period);
     const key = `${arenaId}|${period.first}|${period.last}`;
-    if (!force && key === this.loadedKey) return;
+    if (!force && !this.outOfDate && key === this.loadedKey) return;
     const call = ++this.latest;
     if (this.loadedKey !== key) this.bills.set([]);
+    this.outOfDate = false;
     this.loadedKey = key;
     this.loading.set(true);
     this.loadError.set('');
@@ -93,6 +95,16 @@ export class SalesStore {
    * reconnect: reloads the list and bumps `revision`, so an open bill's detail reads it again
    * instead of showing the old state.
    */
+  /**
+   * Marks the data out of date without reading it (a live update while no screen shows it): the
+   * next screen that loads it reads it again, instead of a download nobody looks at.
+   */
+  stale(): void {
+    if (!this.loadedKey) return;
+    this.outOfDate = true;
+    this.revision.update((n) => n + 1);
+  }
+
   async refresh(): Promise<void> {
     if (this.current && (this.loadedKey || this.loadError())) {
       this.revision.update((n) => n + 1);

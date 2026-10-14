@@ -1,9 +1,10 @@
 import { Service, effect, inject } from '@angular/core';
+import { Router } from '@angular/router';
 import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
-import { FloorStore } from '../floor/floor-store';
-import { ControllersStore } from '../../features/controllers/data/controllers-store';
+import { FloorRead, FloorStore } from '../floor/floor-store';
+import { AccessoriesStore } from '../../features/accessories/data/accessories-store';
 import { FloorOptionsStore } from '../../features/settings/data/floor-options';
 import { OverviewStore } from '../../features/overview/data/overview-store';
 import { PricingStore } from '../../features/pricing/data/pricing-store';
@@ -24,8 +25,11 @@ export type RefreshTarget =
   | 'pricing'
   | 'settings'
   | 'users'
-  | 'controllers'
+  | 'accessories'
   | 'arena';
+
+/** How long a burst of events is gathered before one refresh. */
+export const DEBOUNCE_MS = 800;
 
 const BILLS: readonly RefreshTarget[] = ['floor_plays', 'overview', 'sales'];
 const PRICES: readonly RefreshTarget[] = ['pricing', 'settings'];
@@ -62,14 +66,18 @@ export const TABLE_TARGETS: Readonly<Record<string, readonly RefreshTarget[]>> =
   game_resources: ['game_resources'],
   customers: ['customers'],
   staff_profiles: STAFF,
-  // Business and happy hours live in settings rows: a settings change refreshes pricing too.
+  // Opening hours live in settings rows: a settings change refreshes pricing too.
   settings: PRICES,
   rates: PRICES,
   rate_cards: PRICES,
   rate_bands: PRICES,
   holidays: PRICES,
   billing_policies: PRICES,
-  controllers: ['controllers'],
+  pricing_rules: PRICES,
+  discounts: PRICES,
+  bill_discounts: ['sales', 'overview'],
+  controllers: ['accessories', 'stations'],
+  accessory_kinds: ['accessories'],
 };
 
 const ALL_TARGETS: readonly RefreshTarget[] = [
@@ -84,7 +92,7 @@ const ALL_TARGETS: readonly RefreshTarget[] = [
   'pricing',
   'settings',
   'users',
-  'controllers',
+  'accessories',
   'arena',
 ];
 
@@ -107,7 +115,10 @@ const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
   ['customer.', ['customers']],
   ['staff.', STAFF],
   ['arena.', ['arena', 'settings']],
-  ['controller.', ['controllers']],
+  ['controller.', ['accessories', 'stations']],
+  ['accessory_kind.', ['accessories']],
+  ['rule.', PRICES],
+  ['discount.', PRICES],
   // Floor-only records the dashboard does not show.
   ['booking.', []],
 ];
@@ -138,8 +149,9 @@ export class RealtimeSync {
   private readonly overview = inject(OverviewStore);
   private readonly pricing = inject(PricingStore);
   private readonly floorOptions = inject(FloorOptionsStore);
-  private readonly controllers = inject(ControllersStore);
+  private readonly accessories = inject(AccessoriesStore);
   private readonly users = inject(UsersStore);
+  private readonly router = inject(Router);
 
   private activeChannel: RealtimeChannel | null = null;
   private subscribedArenaId: string | null = null;
@@ -318,7 +330,7 @@ export class RealtimeSync {
     this.schedule(ALL_TARGETS);
   }
 
-  /** Coalesces rapid events within a 150ms window. */
+  /** Coalesces a burst of events (a session end writes several tables) into one refresh. */
   private schedule(targets: readonly RefreshTarget[]): void {
     if (!targets.length) return;
     for (const t of targets) {
@@ -332,56 +344,59 @@ export class RealtimeSync {
     this.debounceTimer = setTimeout(() => {
       this.debounceTimer = null;
       void this.flush();
-    }, 150);
+    }, DEBOUNCE_MS);
   }
 
+  /**
+   * Reloads what the open screen shows; anything else is only marked out of date, so it is read
+   * again when a screen next needs it instead of being downloaded in the background.
+   */
   private async flush(): Promise<void> {
     const targets = new Set(this.pendingTargets);
     this.pendingTargets.clear();
-
+    const page = this.router.url.split(/[?#]/)[0].split('/')[1] ?? '';
+    const on = (...pages: string[]) => pages.includes(page);
     const jobs: Promise<void>[] = [];
 
-    // Floor reads refresh only when a screen has loaded them: a nudge never downloads a list
-    // (90 days of plays) no open screen shows; a screen opened later loads it fresh.
+    const floor = (what: FloorRead[]) => {
+      if (on('stations', 'games', 'members', 'overview')) jobs.push(this.floor.refresh(what));
+      else this.floor.stale(what);
+    };
     if (targets.has('floor_plays')) {
-      jobs.push(this.floor.refresh(['plays', 'visits']));
+      floor(['live', 'stationFigures', 'gameFigures']);
     }
-    if (targets.has('floor_charges')) {
-      jobs.push(this.floor.refresh(['charges']));
-    }
-    if (targets.has('stations')) {
-      jobs.push(this.floor.refresh(['stations']));
-    }
-    if (targets.has('games')) {
-      jobs.push(this.floor.refresh(['games']));
-    }
-    if (targets.has('game_resources')) {
-      jobs.push(this.floor.refresh(['gameResources']));
-    }
-    if (targets.has('customers')) {
-      jobs.push(this.floor.refresh(['customers']));
-    }
+    if (targets.has('floor_charges')) floor(['stationFigures']);
+    if (targets.has('stations')) floor(['stations', 'stationFigures']);
+    if (targets.has('games')) floor(['games']);
+    if (targets.has('game_resources')) floor(['gameResources']);
+    // Members are read on demand; a member change only bumps what those reads depend on.
+    if (targets.has('customers')) floor(['live']);
     if (targets.has('sales')) {
-      jobs.push(this.sales.refresh());
+      if (on('sales')) jobs.push(this.sales.refresh());
+      else this.sales.stale();
     }
     if (targets.has('overview')) {
-      jobs.push(this.overview.refresh());
+      if (on('overview')) jobs.push(this.overview.refresh());
+      else this.overview.stale();
     }
     if (targets.has('pricing')) {
-      jobs.push(this.pricing.load(true));
+      if (on('pricing', 'settings', 'stations', 'overview')) jobs.push(this.pricing.refresh());
+      else this.pricing.stale();
     }
     if (targets.has('settings')) {
-      jobs.push(this.floorOptions.load(true));
+      if (on('settings')) jobs.push(this.floorOptions.refresh());
+      else this.floorOptions.stale();
     }
     if (targets.has('users')) {
-      jobs.push(this.users.refresh());
+      if (on('users')) jobs.push(this.users.refresh());
+      else this.users.stale();
     }
-    if (targets.has('controllers')) {
-      jobs.push(this.controllers.refresh());
+    if (targets.has('accessories')) {
+      if (on('stations', 'settings')) jobs.push(this.accessories.refresh());
+      else this.accessories.stale();
     }
-    if (targets.has('arena')) {
-      jobs.push(this.arena.load(true));
-    }
+    // Memberships decide what this login may still do: always read again.
+    if (targets.has('arena')) jobs.push(this.arena.load(true));
 
     await Promise.allSettled(jobs);
   }

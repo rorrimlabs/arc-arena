@@ -90,8 +90,10 @@ select is(
   (select array_agg(p.proname::text order by p.proname) from pg_proc p
     where p.pronamespace = 'public'::regnamespace
       and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['accept_invite', 'app_is_owner', 'arena_invites', 'arena_pricing', 'arena_sale',
-        'arena_sales', 'arena_staff', 'create_my_arena', 'invite_member', 'my_arenas', 'revoke_invite',
+  array['accept_invite', 'app_is_owner', 'arena_activity', 'arena_discount_usage', 'arena_game_fans',
+        'arena_game_stats', 'arena_invites', 'arena_members', 'arena_overview', 'arena_pricing', 'arena_sale',
+        'arena_sales', 'arena_staff', 'arena_station_stats', 'create_my_arena', 'invite_member', 'my_arenas',
+        'revoke_invite',
         'sync_fetch_entity', 'sync_pull', 'sync_push'],
   'the client API is exactly these functions');
 -- Security Advisor lints 0028/0029: no SECURITY DEFINER function in an exposed

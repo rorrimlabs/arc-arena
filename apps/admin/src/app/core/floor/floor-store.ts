@@ -7,18 +7,20 @@ import { writeThenReload } from '../sync/push-ops';
 import { Clock } from '../time/clock';
 import { FloorApi } from './floor-api';
 import {
-  Charge,
+  Activity,
   CompatStatus,
-  Customer,
   Game,
   GameCompat,
+  GameFan,
+  GameFigures,
   GameInput,
   GameUsage,
+  MemberPage,
   Play,
   Station,
+  StationFigures,
   StationInput,
   StationStatus,
-  Visit,
 } from './floor.models';
 
 /** History windows the screens read, in IST days (today included). */
@@ -35,6 +37,7 @@ class Cached<T> {
   private readonly empty: T;
   private key: string | null = null;
   private latest = 0;
+  private outOfDate = false;
 
   /** Read at least once (and the last read did not fail). */
   get loaded(): boolean {
@@ -47,7 +50,8 @@ class Cached<T> {
   }
 
   async load(key: string, force: boolean, read: () => Promise<T>): Promise<void> {
-    if (!force && key === this.key) return;
+    if (!force && !this.outOfDate && key === this.key) return;
+    this.outOfDate = false;
     const call = ++this.latest;
     if (this.key?.split('|')[0] !== key.split('|')[0]) {
       this.value.set(this.empty);
@@ -70,6 +74,11 @@ class Cached<T> {
     } finally {
       if (call === this.latest) this.loading.set(false);
     }
+  }
+
+  /** Keeps the value but reads it again on the next load (a live update nobody is looking at). */
+  stale(): void {
+    if (this.key !== null) this.outOfDate = true;
   }
 
   /** Forgets the value (another login): a read still in flight does not land. */
@@ -97,10 +106,9 @@ export class FloorStore {
   private readonly stationsC = new Cached<Station[]>([]);
   private readonly gamesC = new Cached<Game[]>([]);
   private readonly gameResourcesC = new Cached<GameCompat[]>([]);
-  private readonly customersC = new Cached<Customer[]>([]);
-  private readonly playsC = new Cached<Play[]>([]);
-  private readonly visitsC = new Cached<Visit[]>([]);
-  private readonly chargesC = new Cached<Charge[]>([]);
+  private readonly liveC = new Cached<Play[]>([]);
+  private readonly stationFiguresC = new Cached<ReadonlyMap<string, StationFigures>>(new Map());
+  private readonly gameFiguresC = new Cached<ReadonlyMap<string, GameFigures>>(new Map());
 
   readonly stations: Signal<readonly Station[]> = this.stationsC.value;
   readonly stationsReady: Signal<boolean> = this.stationsC.ready;
@@ -109,16 +117,14 @@ export class FloorStore {
   readonly gameResources: Signal<readonly GameCompat[]> = this.gameResourcesC.value;
   /** gameResources holds the current arena's rows (warnings wait for it). */
   readonly gameResourcesReady: Signal<boolean> = this.gameResourcesC.ready;
-  readonly customers: Signal<readonly Customer[]> = this.customersC.value;
-  /** Plays of the last PLAY_DAYS days plus every open one. */
-  readonly plays: Signal<readonly Play[]> = this.playsC.value;
-  /** Bills of the last PLAY_DAYS days plus every running one. */
-  readonly visits: Signal<readonly Visit[]> = this.visitsC.value;
-  /** Billed lines of the last CHARGE_DAYS days. */
-  readonly charges: Signal<readonly Charge[]> = this.chargesC.value;
+  /** Play open right now (what the floor shows as playing): a small read, unlike `plays`. */
+  readonly live: Signal<readonly Play[]> = this.liveC.value;
+  /** Station id → figures for today and the last CHARGE_DAYS days, aggregated on the server. */
+  readonly stationFigures: Signal<ReadonlyMap<string, StationFigures>> = this.stationFiguresC.value;
+  /** Game id → figures for the last CHARGE_DAYS days, aggregated on the server. */
+  readonly gameFigures: Signal<ReadonlyMap<string, GameFigures>> = this.gameFiguresC.value;
 
   readonly gameById = computed(() => new Map(this.games().map((g) => [g.id, g])));
-  readonly customerById = computed(() => new Map(this.customers().map((c) => [c.id, c])));
   readonly stationById = computed(() => new Map(this.stations().map((s) => [s.id, s])));
   /** game id → station id → status. */
   readonly compatByGame = computed(() => {
@@ -135,12 +141,16 @@ export class FloorStore {
     this.stationsC,
     this.gamesC,
     this.gameResourcesC,
-    this.customersC,
-    this.playsC,
-    this.visitsC,
-    this.chargesC,
+    this.liveC,
+    this.stationFiguresC,
+    this.gameFiguresC,
   ];
   readonly loading = computed(() => this.all.some((c) => c.loading()));
+  /**
+   * Bumped by every live refresh of play or members: reads made on demand (a station's or
+   * member's recent bills, the members list) depend on it to read again.
+   */
+  readonly revision = signal(0);
   /** The first read that failed, worded for the screen. */
   readonly loadError = computed(() => this.all.map((c) => c.error()).find(Boolean) ?? '');
 
@@ -174,21 +184,18 @@ export class FloorStore {
           return this.gamesC.load(key(), force, () => this.api.games(arenaId));
         case 'gameResources':
           return this.gameResourcesC.load(key(), force, () => this.api.gameResources(arenaId));
-        case 'customers':
-          return this.customersC.load(key(), force, () => this.api.customers(arenaId));
-        case 'plays': {
-          const from = since(PLAY_DAYS);
-          return this.playsC.load(key(from), force, () => this.api.plays(arenaId, from));
-        }
-        case 'visits': {
-          const from = since(PLAY_DAYS);
-          return this.visitsC.load(key(from), force, () => this.api.visits(arenaId, from));
-        }
-        case 'charges': {
+        case 'live':
+          // Open play only: nothing started after now, so `since = now` keeps just the open rows.
+          return this.liveC.load(key(), force, () => this.api.plays(arenaId, now));
+        case 'stationFigures': {
           const from = since(CHARGE_DAYS);
-          return this.chargesC.load(key(from), force, () =>
-            this.api.charges(arenaId, from, tomorrow),
+          return this.stationFiguresC.load(key(from), force, () =>
+            this.api.stationFigures(arenaId, since(1), from, tomorrow),
           );
+        }
+        case 'gameFigures': {
+          const from = since(CHARGE_DAYS);
+          return this.gameFiguresC.load(key(from), force, () => this.api.gameFigures(arenaId, from));
         }
       }
     });
@@ -197,8 +204,16 @@ export class FloorStore {
 
   /** Reads again those of `what` a screen has already loaded (live updates). */
   async refresh(what: readonly FloorRead[]): Promise<void> {
+    if (what.includes('live')) {
+      this.revision.update((n) => n + 1);
+    }
     const loaded = what.filter((w) => this.cache(w).loaded);
     if (loaded.length) await this.load(loaded, true);
+  }
+
+  /** Marks `what` out of date: the next screen that loads it reads it again. */
+  stale(what: readonly FloorRead[]): void {
+    for (const w of what) this.cache(w).stale();
   }
 
   private cache(what: FloorRead): Cached<unknown> {
@@ -206,12 +221,43 @@ export class FloorStore {
       stations: this.stationsC,
       games: this.gamesC,
       gameResources: this.gameResourcesC,
-      customers: this.customersC,
-      plays: this.playsC,
-      visits: this.visitsC,
-      charges: this.chargesC,
+      live: this.liveC,
+      stationFigures: this.stationFiguresC,
+      gameFigures: this.gameFiguresC,
     };
     return caches[what];
+  }
+
+  /**
+   * A station's or member's newest bills over the PLAY_DAYS window, and a member's minutes per
+   * game: read when one is opened, never kept (each opening reads it fresh).
+   */
+  activity(of: { stationId?: string; customerId?: string }, limit = 6): Promise<Activity> {
+    const now = this.clock.now();
+    return this.api.activity(this.arena.current().id, of, istDayStart(now, PLAY_DAYS - 1), limit);
+  }
+
+  /** The members who played a game most over the last CHARGE_DAYS days (read when it is opened). */
+  gameFans(gameId: string, limit = 4): Promise<GameFan[]> {
+    const now = this.clock.now();
+    return this.api.gameFans(
+      this.arena.current().id,
+      gameId,
+      istDayStart(now, CHARGE_DAYS - 1),
+      limit,
+    );
+  }
+
+  /** One page of members (visits over PLAY_DAYS, spend over CHARGE_DAYS), searched on the server. */
+  members(search: string, limit: number, offset: number): Promise<MemberPage> {
+    const now = this.clock.now();
+    return this.api.members(this.arena.current().id, {
+      since: istDayStart(now, PLAY_DAYS - 1),
+      since30: istDayStart(now, CHARGE_DAYS - 1),
+      search,
+      limit,
+      offset,
+    });
   }
 
   async saveStation(station: StationInput): Promise<void> {
@@ -278,4 +324,9 @@ export class FloorStore {
 }
 
 export type FloorRead =
-  'stations' | 'games' | 'gameResources' | 'customers' | 'plays' | 'visits' | 'charges';
+  | 'stations'
+  | 'games'
+  | 'gameResources'
+  | 'live'
+  | 'stationFigures'
+  | 'gameFigures';

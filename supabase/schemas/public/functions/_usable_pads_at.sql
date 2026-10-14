@@ -1,6 +1,6 @@
 -- _usable_pads_at(p_arena, p_resource) — usable pads at a station, allocated or not.
 --
--- Counts controllers whose current_resource_id is p_resource and status is 'usable'.
+-- Counts pads (_is_pad) whose current_resource_id is p_resource and status is 'usable'.
 -- Used by _group_assignable (plus pads being borrowed) for 'controllers_unavailable'.
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._usable_pads_at (
@@ -14,7 +14,8 @@ create or replace function public._usable_pads_at (
   set search_path to 'public'
   AS $function$
   select count(*)::int from controllers
-   where arena_id = p_arena and current_resource_id = p_resource and status = 'usable';
+   where arena_id = p_arena and current_resource_id = p_resource and status = 'usable'
+     and _is_pad(kind_id);
 $function$;
 
 comment on function public._usable_pads_at(uuid, uuid) is 'Counts usable controllers currently at a station, whether allocated or not.';

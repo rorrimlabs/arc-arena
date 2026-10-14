@@ -11,6 +11,8 @@ describe('Members', () => {
     const input = t.doc().querySelector('input[type="search"]') as HTMLInputElement;
     input.value = q;
     input.dispatchEvent(new Event('input'));
+    // The server is searched a moment after typing stops.
+    await new Promise((r) => setTimeout(r, 300));
     await t.settle();
   };
 
@@ -61,5 +63,18 @@ describe('Members', () => {
     expect(bills[1].getAttribute('href')).toBe('/sales?id=b-1');
     expect(t.text(detail())).toContain('Age 25 · born 2001');
     expect(t.text(detail())).toContain('Membership plans aren');
+  });
+
+  it('reads one page of members from the server, never the play history', async () => {
+    t = await startPage('/members');
+    expect(t.floor.reads).not.toContain('plays');
+    expect(t.floor.reads).not.toContain('customers');
+    expect(t.floor.reads.filter((r) => r === 'members')).toHaveLength(1);
+  });
+
+  it('a link from a game opens the list searched on that member', async () => {
+    t = await startPage('/members?q=Rahul&id=c-rahul');
+    expect(t.rows().map((r) => t.rowText(r)[0])).toEqual(['Rahul Verma']);
+    expect(t.text(t.doc().querySelector('app-member-detail h2'))).toBe('Rahul Verma');
   });
 });

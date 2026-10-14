@@ -10,9 +10,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Public holidays and one-off closures (brief §8).
 ///
-/// A holiday suspends **happy hour** for that date. Whether the arena also
-/// shuts is a separate switch, because the rate rules only ever said happy
-/// hour is excluded — see OWNER CONFIRMATION #26.
+/// A holiday is a date pricing rules can target or skip (set on the
+/// dashboard). Whether the arena also shuts is a separate switch — see OWNER
+/// CONFIRMATION #26.
 class HolidaysScreen extends ConsumerStatefulWidget {
   const HolidaysScreen({super.key});
 
@@ -60,7 +60,7 @@ class _HolidaysScreenState extends ConsumerState<HolidaysScreen> {
                   AppSpacing.lg, AppSpacing.lg, AppSpacing.lg, 96),
               children: [
                 Text(
-                  'Happy-hour pricing never applies on these dates. Tick '
+                  'Time-based prices can include or skip these dates. Tick '
                   '"closed" as well if the arena does not open at all.',
                   style: ArenaType.caption.copyWith(color: arena.textMuted),
                 ),
@@ -90,7 +90,7 @@ class _HolidaysScreenState extends ConsumerState<HolidaysScreen> {
                       title: Text(h.name),
                       subtitle: Text(
                         '${h.day.iso}'
-                        '${h.closed ? ' · closed all day' : ' · open, no happy hour'}',
+                        '${h.closed ? ' · closed all day' : ' · open'}',
                       ),
                       trailing: Switch(
                         value: h.closed,

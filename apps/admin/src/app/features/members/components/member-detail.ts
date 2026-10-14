@@ -1,6 +1,6 @@
-import { Component, computed, inject, input, output } from '@angular/core';
+import { Component, computed, inject, input, output, resource } from '@angular/core';
 import { FloorStore, PLAY_DAYS } from '../../../core/floor/floor-store';
-import { initials } from '../../../core/floor/floor.models';
+import { MemberRow, initials } from '../../../core/floor/floor.models';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailRow } from '../../../shared/list-detail/detail-row';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
@@ -10,12 +10,12 @@ import { NotConnected } from '../../../shared/not-connected/not-connected';
 import { StatTile } from '../../../shared/stat-tile/stat-tile';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import { formatIsoDate, formatMinutes } from '../../../shared/time/ist';
-import { billLines } from '../../stations/data/station-view';
-import { MemberSummary, daysAgo, maskPhone } from '../data/member-view';
+import { activityLines } from '../../stations/data/station-view';
+import { daysAgo, maskPhone } from '../data/member-view';
 
 /**
- * Design: `if (p === 'members')` detail, read-only: visits, play, spend, favourite games and
- * recent bills. Age comes from the birth year given at registration on the floor app; plans
+ * One member, read-only: visits, play, spend (from the list's row), and favourite games and
+ * recent bills (read when the member is opened). Age comes from the birth year given at registration on the floor app; plans
  * await the owner's decision (docs/OWNER_CONFIRMATION.md) and stay not connected.
  */
 @Component({
@@ -24,9 +24,9 @@ import { MemberSummary, daysAgo, maskPhone } from '../data/member-view';
   template: `
     @let m = member();
     <app-detail-pane
-      [crumb]="'Members / ' + m.customer.name"
-      [initials]="initials(m.customer.name)"
-      [heading]="m.customer.name"
+      [crumb]="'Members / ' + m.name"
+      [initials]="initials(m.name)"
+      [heading]="m.name"
       [subtitle]="subtitle()"
       (closed)="closed.emit()"
     >
@@ -41,10 +41,18 @@ import { MemberSummary, daysAgo, maskPhone } from '../data/member-view';
       </div>
 
       <app-detail-section heading="Favourite games">
-        @for (g of favourites(); track g.name) {
-          <app-detail-row [label]="g.name" [value]="minutes(g.minutes)" />
-        } @empty {
-          <p class="text-[13px] leading-[1.45] text-muted">No sessions yet.</p>
+        @if (activity.error()) {
+          <p role="alert" class="text-[13px] leading-[1.45] text-danger">
+            Play history couldn't load.
+          </p>
+        } @else if (!activity.hasValue()) {
+          <p class="text-[13px] leading-[1.45] text-muted">Loading…</p>
+        } @else {
+          @for (g of favourites(); track g.name) {
+            <app-detail-row [label]="g.name" [value]="minutes(g.minutes)" />
+          } @empty {
+            <p class="text-[13px] leading-[1.45] text-muted">No sessions yet.</p>
+          }
         }
       </app-detail-section>
 
@@ -58,12 +66,14 @@ import { MemberSummary, daysAgo, maskPhone } from '../data/member-view';
             [queryParams]="{ id: b.billId }"
           />
         } @empty {
-          <p class="text-[13px] leading-[1.45] text-muted">No bills yet.</p>
+          @if (activity.hasValue()) {
+            <p class="text-[13px] leading-[1.45] text-muted">No bills yet.</p>
+          }
         }
       </app-detail-section>
 
       <app-detail-section heading="Age and plan">
-        <app-detail-row label="Age" [value]="ageLine()" [muted]="!m.customer.birthYear" />
+        <app-detail-row label="Age" [value]="ageLine()" [muted]="!m.birthYear" />
         <app-detail-row label="Plan" value="—" [muted]="true" />
         <app-not-connected>Membership plans aren't set up yet.</app-not-connected>
       </app-detail-section>
@@ -79,7 +89,7 @@ import { MemberSummary, daysAgo, maskPhone } from '../data/member-view';
 export class MemberDetail {
   private readonly floor = inject(FloorStore);
 
-  readonly member = input.required<MemberSummary>();
+  readonly member = input.required<MemberRow>();
   readonly now = input.required<Date>();
   readonly closed = output<void>();
 
@@ -87,10 +97,10 @@ export class MemberDetail {
   protected readonly initials = initials;
   protected readonly rupees = formatRupees;
   protected readonly minutes = formatMinutes;
-  protected readonly phone = computed(() => maskPhone(this.member().customer.phone));
+  protected readonly phone = computed(() => maskPhone(this.member().phone));
   /** Age from the birth year alone (may be one too high before the birthday). */
   private readonly age = computed(() => {
-    const born = this.member().customer.birthYear;
+    const born = this.member().birthYear;
     return born == null ? null : Number(formatIsoDate(this.now()).slice(0, 4)) - born;
   });
   protected readonly subtitle = computed(() => {
@@ -99,29 +109,22 @@ export class MemberDetail {
   });
   protected readonly ageLine = computed(() => {
     const age = this.age();
-    return age == null ? 'Not given' : `${age} · born ${this.member().customer.birthYear}`;
+    return age == null ? 'Not given' : `${age} · born ${this.member().birthYear}`;
   });
   protected readonly last = computed(() => daysAgo(this.member().lastVisit, this.now()));
-  protected readonly favourites = computed(() =>
-    [...this.member().games]
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 3)
-      .map(([id, minutes]) => ({
-        name: this.floor.gameById().get(id)?.name ?? 'Unknown game',
-        minutes,
-      })),
-  );
-  protected readonly bills = computed(() => {
-    const games = this.floor.gameById();
-    const stations = this.floor.stationById();
-    return billLines(
-      this.floor.plays().filter((p) => p.customerId === this.member().customer.id),
-      new Map(this.floor.visits().map((v) => [v.id, v])),
-      this.floor.customerById(),
-      games,
-      (p, game) =>
-        [stations.get(p.resourceId)?.name ?? 'Station', game].filter(Boolean).join(' · '),
-      { gameInSubtitle: false },
-    );
+  /** Minutes per game and newest bills, read when the member is opened. */
+  protected readonly activity = resource({
+    params: () => ({ id: this.member().id, revision: this.floor.revision() }),
+    loader: ({ params }) => this.floor.activity({ customerId: params.id }),
   });
+  protected readonly favourites = computed(() =>
+    this.activity.hasValue() ? this.activity.value().games.slice(0, 3) : [],
+  );
+  protected readonly bills = computed(() =>
+    activityLines(
+      this.activity.hasValue() ? this.activity.value().bills : [],
+      (b) => [b.station ?? 'Station', b.game].filter(Boolean).join(' · '),
+      { gameInSubtitle: false },
+    ),
+  );
 }

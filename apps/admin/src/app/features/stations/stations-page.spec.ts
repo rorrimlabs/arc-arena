@@ -14,8 +14,8 @@ describe('Stations', () => {
   it('lists stations with what is on now; removed ones are left out', async () => {
     t = await startPage('/stations');
     expect(t.rows().map(t.rowText)).toEqual([
-      ['HEX', 'EA SPORTS FC 25 · 25m left', 'Playing'],
-      ['VOID', 'Tekken 8 · 8m left', 'Playing'],
+      ['HEX', 'EA SPORTS FC 25 · 25m left · 2 accessories', 'Playing'],
+      ['VOID', 'Tekken 8 · 8m left · 2 accessories', 'Playing'],
       ['GHOST', 'PlayStation 5', 'Free'],
       ['RIFT', 'PlayStation 5, VR', 'Free'],
       ['NOVA', 'PlayStation 5', 'Out of service'],
@@ -211,5 +211,92 @@ describe('Stations', () => {
     await t.settle();
     expect(t.doc().querySelector('[role="dialog"][aria-label="Station"]')).not.toBeNull();
     expect(t.url()).toBe('/stations?id=s-ghost');
+  });
+
+  it('reads only stations, open play and server figures; recent bills when a station opens', async () => {
+    t = await startPage('/stations');
+    expect([...new Set(t.floor.reads)].sort()).toEqual(
+      ['activity', 'games', 'plays', 'stationFigures', 'stations'].sort(),
+    );
+    // `plays` is read once, from now: open play only, not the 90-day history.
+    expect(t.floor.reads.filter((r) => r === 'plays')).toHaveLength(1);
+    // The wide screen opens HEX: its recent bills are one small read.
+    expect(t.floor.reads.filter((r) => r === 'activity')).toHaveLength(1);
+  });
+
+  describe('accessories', () => {
+    const section = () =>
+      [...detail()!.querySelectorAll('app-detail-section')].find(
+        (x) => t.text(x.querySelector('h3')) === 'Accessories',
+      ) as HTMLElement;
+    /** A row's text without its icon glyph name. */
+    const rowText = (li: Element) => {
+      const copy = li.cloneNode(true) as Element;
+      copy.querySelectorAll('.icon').forEach((i) => i.remove());
+      return t.text(copy);
+    };
+    const own = () =>
+      [...section().querySelectorAll('ul[aria-label="Belongs to this station"] li')].map(rowText);
+
+    it('lists what belongs to the station and where each is now', async () => {
+      t = await startPage('/stations?id=s-hex');
+      expect(own()).toEqual([
+        'HEX-1 Controller · here Usable',
+        'HEX-2 Controller · lent to VOID Usable',
+      ]);
+      expect(t.text(section().querySelector('p'))).toBe('1 of 2 here and usable');
+    });
+
+    it('a station shows what it borrowed, and can send it back or keep it', async () => {
+      t = await startPage('/stations?id=s-void');
+      const borrowed = [
+        ...section().querySelectorAll('ul[aria-label="Borrowed here now"] li'),
+      ] as HTMLElement[];
+      expect(borrowed.map(rowText)).toEqual([
+        'HEX-2 Controller · belongs to HEX Send back Keep here',
+      ]);
+      t.button('Send back', borrowed[0])!.click();
+      await t.settle();
+      await t.settle();
+      expect(t.accessories.ops.at(-1)).toEqual({
+        kind: 'controller.move',
+        payload: { controller_id: 'c-hex-2', kind: 'returnHome', to_resource_id: null, move_id: '' },
+      });
+      expect(t.snack()).toBe('HEX-2 sent back to HEX');
+    });
+
+    it('a VR headset on RIFT is tracked, not counted as a controller', async () => {
+      t = await startPage('/stations?id=s-rift');
+      expect(own()).toEqual(['RIFT VR VR headset · here Usable', 'RIFT-1 Controller · here Usable']);
+    });
+
+    it('adds an accessory with a kind and the next free name', async () => {
+      t = await startPage('/stations?id=s-ghost');
+      t.button('Accessory', section())!.click();
+      await t.settle();
+      t.button('Add', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
+      await t.settle();
+      await t.settle();
+      expect(t.accessories.ops.at(-1)).toEqual({
+        kind: 'controller.upsert',
+        payload: expect.objectContaining({
+          label: 'GHOST-2',
+          kind_id: 'k-pad',
+          home_resource_id: 's-ghost',
+          current_resource_id: 's-ghost',
+          status: 'usable',
+        }),
+      });
+      expect(t.snack()).toBe('GHOST-2 added to GHOST');
+    });
+
+    it('editing one shows its moves, read only when it is opened', async () => {
+      t = await startPage('/stations?id=s-hex');
+      expect(t.accessories.moveReads).toEqual([]);
+      (section().querySelectorAll('ul[aria-label="Belongs to this station"] button')[1] as HTMLElement).click();
+      await t.settle();
+      expect(t.accessories.moveReads).toEqual(['c-hex-2']);
+      expect(t.text(t.dialog()!.querySelector('section'))).toContain('Lent to VOID');
+    });
   });
 });

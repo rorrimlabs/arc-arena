@@ -95,8 +95,8 @@ abstract class SessionExtension with _$SessionExtension {
 }
 
 /// Immutable final pricing segment written at end (spec §14, §31). Tied to the
-/// [SessionSegment] it was priced from (a segment can yield several charges when
-/// it spans a happy-hour boundary).
+/// [SessionSegment] it was priced from (one charge per priced segment; charges
+/// written by older builds can hold several per segment).
 @freezed
 abstract class SessionCharge with _$SessionCharge {
   const factory SessionCharge({

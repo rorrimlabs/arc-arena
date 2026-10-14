@@ -42,7 +42,7 @@ class SettingsScreen extends StatelessWidget {
               ArenaListRow(
                 icon: Icons.sell_outlined,
                 title: 'Pricing & price bands',
-                subtitle: 'Rates, happy hour and holidays',
+                subtitle: 'Rates and holidays',
                 onTap: () => _push(context, const PricingScreen()),
               ),
               ArenaListRow(
@@ -54,7 +54,7 @@ class SettingsScreen extends StatelessWidget {
               ArenaListRow(
                 icon: Icons.schedule_outlined,
                 title: 'Opening hours',
-                subtitle: 'Trading days and the happy-hour window',
+                subtitle: 'Trading days and times',
                 onTap: () => _push(context, const HoursScreen()),
               ),
               ArenaListRow(

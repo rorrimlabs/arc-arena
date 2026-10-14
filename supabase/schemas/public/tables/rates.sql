@@ -1,7 +1,7 @@
 -- rates — one price on a rate card: activity x band x controller count
 --
 -- price_paise is charged per unit_minutes of play for that activity in that band
--- (standard / happy hour), optionally for a specific controller count. Written by
+-- (always standard), optionally for a specific controller count. Written by
 -- op_rate_upsert / op_rate_delete (rate.upsert / rate.delete) on the active card
 -- (_active_card; bands are created on demand by _band_id); seeded by
 -- _seed_arena_catalog. Rates are part of the pricing snapshot: changing one
@@ -41,7 +41,7 @@ comment on table public.rates is 'Prices on a rate card: for an activity, band a
 
 comment on column public.rates.arena_id is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column public.rates.band_id is 'Time band the price applies in (rate_bands, e.g. standard or happy). A happy-hour period with no happy rate falls back to the standard rate.';
+comment on column public.rates.band_id is 'Rate band (rate_bands); the pricer only uses standard. Time-of-day prices are pricing_rules.';
 
 comment on column public.rates.controller_count is 'Number of controllers the price is for (e.g. PS5 with 1-4 pads); null = the price does not depend on controllers. Matched exactly, null to null.';
 

@@ -1,4 +1,13 @@
-import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
+import {
+  Component,
+  computed,
+  inject,
+  input,
+  linkedSignal,
+  output,
+  resource,
+  signal,
+} from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
@@ -21,20 +30,15 @@ import { UnsavedBar } from '../../../shared/list-detail/unsaved-bar';
 import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { StatTile } from '../../../shared/stat-tile/stat-tile';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
+import { StationAccessories } from '../../accessories/components/station-accessories';
 import { PricingStore } from '../../pricing/data/pricing-store';
-import {
-  STATE_TONE,
-  billLines,
-  customerName,
-  rateLine,
-  stationIcon,
-  stationStats,
-} from '../data/station-view';
+import { STATE_TONE, activityLines, rateLine, stationIcon } from '../data/station-view';
 
 /**
- * Design: `if (p === 'floor')` detail. What is on now, 30-day figures (billed amounts from the
- * bill lines), name and type (saved together from the unsaved-changes bar), in service, recent
- * bills. Remove takes the station off the floor for good; past bills keep its name.
+ * One station: what is on now, figures for today and 30 days (aggregated on the server), name and
+ * type (saved together from the unsaved-changes bar), in service, its accessories, and recent
+ * bills (read when the station is opened). Remove takes the station off the floor; past bills
+ * keep its name.
  */
 @Component({
   selector: 'app-station-detail',
@@ -47,6 +51,7 @@ import {
     UnsavedBar,
     StatTile,
     StatusPill,
+    StationAccessories,
     MatButton,
     MatIcon,
     MatFormField,
@@ -153,7 +158,16 @@ import {
         }
       </app-detail-section>
 
+      <app-station-accessories [station]="s" />
+
       <app-detail-section heading="Recent bills">
+        @if (activity.error()) {
+          <p role="alert" class="text-[13px] leading-[1.45] text-danger">
+            Recent bills couldn't load.
+          </p>
+        } @else if (activity.isLoading() && !bills().length) {
+          <p class="text-[13px] leading-[1.45] text-muted">Loading…</p>
+        }
         @for (b of bills(); track b.billId) {
           <app-line-row
             [title]="b.title"
@@ -163,7 +177,9 @@ import {
             [queryParams]="{ id: b.billId }"
           />
         } @empty {
-          <p class="text-[13px] leading-[1.45] text-muted">No bills yet.</p>
+          @if (activity.hasValue()) {
+            <p class="text-[13px] leading-[1.45] text-muted">No bills yet.</p>
+          }
         }
       </app-detail-section>
 
@@ -212,21 +228,27 @@ export class StationDetail {
   });
   protected readonly stateLabel = computed(() => FLOOR_STATE_LABEL[this.live().state]);
   protected readonly tone = computed(() => STATE_TONE[this.live().state]);
-  protected readonly stats = computed(() =>
-    stationStats(this.station().id, this.floor.plays(), this.floor.charges(), this.now()),
+  protected readonly stats = computed(
+    () =>
+      this.floor.stationFigures().get(this.station().id) ?? {
+        billedToday: 0,
+        sessionsToday: 0,
+        minutes30: 0,
+        billed30: 0,
+        accessories: 0,
+      },
   );
   protected readonly game = computed(() => {
     const id = this.live().gameId;
     return id ? (this.floor.gameById().get(id)?.name ?? null) : null;
   });
+  /** The station's newest bills, read when it is opened (and again when its play changes). */
+  protected readonly activity = resource({
+    params: () => ({ id: this.station().id, revision: this.floor.revision() }),
+    loader: ({ params }) => this.floor.activity({ stationId: params.id }),
+  });
   protected readonly bills = computed(() =>
-    billLines(
-      this.floor.plays().filter((p) => p.resourceId === this.station().id),
-      new Map(this.floor.visits().map((v) => [v.id, v])),
-      this.floor.customerById(),
-      this.floor.gameById(),
-      (p) => customerName(p.customerId, this.floor.customerById()),
-    ),
+    activityLines(this.activity.hasValue() ? this.activity.value().bills : [], (b) => b.customer ?? 'Guest'),
   );
 
   protected readonly name = linkedSignal(() => this.station().name);

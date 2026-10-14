@@ -2,7 +2,8 @@
 -- bill in full). Bills are built through the only client write path
 -- (sync_push → op_*), so the read side sees exactly what the floor app writes.
 --
--- Thu 2026-10-01; happy hour 14:00–17:00 IST = 08:30–11:30Z.
+-- Thu 2026-10-01; the 'Happy hours' rule (PS5 started 14:00–17:00 IST = 08:30–11:30Z, 20% lower)
+-- makes a 1-pad hour ₹120.
 begin;
 create extension if not exists pgtap;
 select * from no_plan();
@@ -10,6 +11,10 @@ select * from no_plan();
 -- Isolated fixture: this file's own arena, rolled back with the transaction.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000140'::uuid, 'pgtap 14');
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000140'::uuid);
+insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
+    adjust_kind, adjust_value)
+  values ('e0000000-0000-4000-8000-000000000140'::uuid, 'Happy hours', '{2,3,4,5}', 840, 1020,
+    'skip', '{PS5}', 'percent', -20);
 
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
     created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_sso_user,is_anonymous)
@@ -44,14 +49,14 @@ create function pg_temp.start(p_id text, p_seg text, p_res text, p_at text, p_en
     'pricing_snapshot', _pricing_snapshot('e0000000-0000-4000-8000-000000000140'::uuid),
     'resource_id', pg_temp.r(p_res), 'activity_code', 'PS5', 'game_id', null,
     'controller_count', 1, 'allocations', '[]'::jsonb, 'moves', '[]'::jsonb) $$ language sql;
--- End a 1-pad PS5 session with one happy-hour charge line of p_amount.
+-- End a 1-pad PS5 session with one charge line of p_amount.
 create function pg_temp.end_(p_id text, p_seg text, p_res text, p_from text, p_to text, p_amount int)
   returns jsonb as $$
   select pg_temp.push('session.end', jsonb_build_object('session_id', p_id,
     'ended_at', p_to, 'billed_amount_paise', p_amount, 'mark_waived', false,
     'expected_segment_ids', jsonb_build_array(p_seg), 'expected_scheduled_end_at', p_to,
     'charges', jsonb_build_array(jsonb_build_object('id', gen_random_uuid(),
-      'segment_id', p_seg, 'segment_index', 0, 'band_code', 'happy',
+      'segment_id', p_seg, 'segment_index', 0, 'band_code', 'standard',
       'activity_code', 'PS5', 'resource_id', pg_temp.r(p_res), 'controller_count', 1,
       'segment_start', p_from, 'segment_end', p_to,
       'played_minutes', 60, 'billed_minutes', 60, 'unit_minutes', 60,
@@ -65,7 +70,7 @@ create function pg_temp.asg(p_id text, p_player int, p_res text) returns jsonb a
     'allocations','[]'::jsonb, 'moves','[]'::jsonb) $$ language sql;
 create function pg_temp.gch(p_player int, p_res text, p_price int) returns jsonb as $$
   select jsonb_build_object('id', gen_random_uuid(), 'player_number', p_player, 'charge_index', 0,
-    'band_code', 'happy', 'activity_code','PS5','resource_id', pg_temp.r(p_res),'controller_count', 1,
+    'band_code', 'standard', 'activity_code','PS5','resource_id', pg_temp.r(p_res),'controller_count', 1,
     'segment_start','2026-10-01T09:00:00Z','segment_end','2026-10-01T10:00:00Z',
     'played_minutes',60,'billed_minutes',60,'unit_minutes',60,'unit_price_paise', p_price,
     'amount_paise', p_price) $$ language sql;
@@ -179,7 +184,8 @@ select is((select pg_temp.bill(l, 'a1400000-0000-0000-0000-00000000000a')
     'games', '[]'::jsonb, 'players', 1, 'player_minutes', 60,
     'billed_paise', 12000, 'paid_paise', 12000, 'refunded_paise', 0,
     'methods', jsonb_build_object('upi', 10000, 'cash', 2000),
-    'started_by', 'Staff', 'void_reason', null, 'voided_at', null, 'voided_by', null),
+    'started_by', 'Staff', 'void_reason', null, 'voided_at', null, 'voided_by', null,
+    'discount_paise', 0, 'discount', null),
   'A: billed ₹120, paid by method, station, activity, started by Staff');
 select is((select (pg_temp.bill(l, 'a1400000-0000-0000-0000-00000000000a')->>'at')::timestamptz from day),
   '2026-10-01T10:00:00Z'::timestamptz, 'A closed at its end');

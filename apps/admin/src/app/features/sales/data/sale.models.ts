@@ -72,6 +72,31 @@ export interface Bill {
   readonly voidReason: string | null;
   readonly voidedAt: string | null;
   readonly voidedBy: string | null;
+  /** Taken off the subtotal before cash rounding (0 without a discount). */
+  readonly discountPaise: number;
+  /** The preset, coupon or manual discount applied, as it was then; null without one. */
+  readonly discount: BillDiscount | null;
+}
+
+/** A discount on a bill (bill_discounts): a copy of what was applied, who and why. */
+export interface BillDiscount {
+  readonly source: 'preset' | 'coupon' | 'manual';
+  readonly name: string;
+  readonly code: string | null;
+  readonly discountId: string | null;
+  readonly valueKind: 'percent' | 'flat';
+  readonly value: number;
+  readonly amountPaise: number;
+  readonly reason: string | null;
+  readonly by: string | null;
+}
+
+/** "Coupon DIWALI20 · 20%", "Student · ₹50 off", "Manual · 10%". */
+export function discountLabel(d: BillDiscount): string {
+  const value = d.valueKind === 'percent' ? `${d.value}%` : `${formatRupees(d.value)} off`;
+  const what =
+    d.source === 'coupon' ? `Coupon ${d.code ?? d.name}` : d.source === 'manual' ? 'Manual' : d.name;
+  return `${what} · ${value}`;
 }
 
 export interface BillLine {
@@ -79,7 +104,6 @@ export interface BillLine {
   readonly player: number | null;
   readonly station: string;
   readonly activity: string;
-  readonly band: string;
   readonly controllers: number | null;
   readonly start: string | null;
   readonly end: string | null;
@@ -112,6 +136,12 @@ export interface BillDetail extends Bill {
   readonly extensions: readonly BillExtension[];
   readonly history: readonly BillHistoryEntry[];
   readonly voidRecord: { readonly at: string; readonly by: string | null } | null;
+  /** The time rule the bill was priced with (judged at its start); null without one. */
+  readonly rule: {
+    readonly name: string;
+    readonly adjustKind: 'percent' | 'per_hour';
+    readonly adjustValue: number;
+  } | null;
 }
 
 export type SalesPreset = 'today' | 'yesterday' | '7d' | '30d';

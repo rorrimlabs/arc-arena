@@ -1,8 +1,7 @@
-import { Charge } from '../../../core/floor/floor.models';
 import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { formatDate, formatMinutes, istDayStart } from '../../../shared/time/ist';
 import { WeekWindows } from '../../pricing/data/pricing.models';
-import { Bill, PayMethod, playedMinutes, summarize } from '../../sales/data/sale.models';
+import { Bill, PayMethod } from '../../sales/data/sale.models';
 
 export type Period = 'today' | '7d' | '30d' | '12m';
 
@@ -81,15 +80,6 @@ export function periodRange(period: Period, now: Date): PeriodRange {
   }
 }
 
-/** [from, to) split into spans the sales API accepts (at most `maxDays` each). */
-export function chunks(from: Date, to: Date, maxDays = 90): { from: Date; to: Date }[] {
-  const out: { from: Date; to: Date }[] = [];
-  for (let t = from.getTime(); t < to.getTime(); t += maxDays * DAY_MS) {
-    out.push({ from: new Date(t), to: new Date(Math.min(to.getTime(), t + maxDays * DAY_MS)) });
-  }
-  return out;
-}
-
 export interface Totals {
   readonly takingsPaise: number;
   readonly bills: number;
@@ -97,16 +87,30 @@ export interface Totals {
   readonly averagePaise: number;
 }
 
-/** Takings are what was collected on bills that were not voided (as on the Sales screen). */
-export function totals(bills: readonly Bill[]): Totals {
-  const live = bills.filter((b) => !b.voided);
-  const s = summarize(live);
-  return {
-    takingsPaise: s.takingsPaise,
-    bills: s.count,
-    minutes: live.reduce((n, b) => n + playedMinutes(b), 0),
-    averagePaise: s.count ? s.takingsPaise / s.count : 0,
-  };
+/** What arena_overview returns for a period (every figure aggregated on the server). */
+export interface OverviewData {
+  /** Bills that were not voided: collected, count, minutes played; discounts given. */
+  readonly totals: Totals & { readonly discountPaise: number; readonly discounts: number };
+  readonly previous: Totals;
+  /** Collected per IST hour / day / month (empty buckets left out). */
+  readonly buckets: readonly { readonly start: string; readonly paise: number }[];
+  readonly methods: Readonly<Partial<Record<PayMethod, { paise: number; bills: number }>>>;
+  /** Billed per station type code, from the bill lines. */
+  readonly byType: ReadonlyMap<string, number>;
+  readonly topGames: readonly { readonly name: string; readonly minutes: number }[];
+  readonly byStaff: readonly { readonly name: string; readonly bills: number; readonly paise: number }[];
+  /** The newest bills closed today (any status). */
+  readonly latest: readonly Bill[];
+}
+
+/** The bucket a period's chart is drawn in. */
+export function bucketOf(period: Period): 'hour' | 'day' | 'month' {
+  return period === 'today' ? 'hour' : period === '12m' ? 'month' : 'day';
+}
+
+/** Totals with the average bill worked out. */
+export function withAverage(t: Omit<Totals, 'averagePaise'>): Totals {
+  return { ...t, averagePaise: t.bills ? t.takingsPaise / t.bills : 0 };
 }
 
 /** "+12%" / "−8%" with its tone, or "—" when there is nothing to compare with. */
@@ -124,15 +128,15 @@ export interface Bar {
   readonly future: boolean;
 }
 
-/** Takings bars: by hour today (opening hours, widened to any bill), by day, or by month. */
+/** Takings bars: by hour today (opening hours, widened to any takings), by day, or by month. */
 export function takingsBars(
   period: Period,
   range: PeriodRange,
-  bills: readonly Bill[],
+  buckets: OverviewData['buckets'],
   open: WeekWindows | null,
   now: Date,
 ): Bar[] {
-  const live = bills.filter((b) => !b.voided);
+  const live = buckets.map((b) => ({ at: b.start, paidPaise: b.paise }));
   if (period === 'today') {
     const weekday = String(((new Date(now.getTime() + IST_OFFSET_MS).getUTCDay() + 6) % 7) + 1);
     const w = open?.[weekday];
@@ -216,9 +220,7 @@ export interface MethodRow {
 }
 
 /** UPI and Cash always; Card and Other only when used. */
-export function paymentRows(bills: readonly Bill[]): MethodRow[] {
-  const live = bills.filter((b) => !b.voided);
-  const s = summarize(live);
+export function paymentRows(methods: OverviewData['methods']): MethodRow[] {
   const rows: MethodRow[] = (
     [
       ['upi', 'UPI'],
@@ -229,42 +231,13 @@ export function paymentRows(bills: readonly Bill[]): MethodRow[] {
   ).map(([method, label]) => ({
     method,
     label,
-    paise: s.byMethod[method],
-    bills: live.filter((b) => (b.methods[method] ?? 0) > 0).length,
+    paise: methods[method]?.paise ?? 0,
+    bills: methods[method]?.bills ?? 0,
   }));
   return rows.filter((r) => r.method === 'upi' || r.method === 'cash' || r.paise);
 }
 
-/** Billed amount per station type code. */
-export function billedByType(charges: readonly Charge[]): Map<string, number> {
-  const out = new Map<string, number>();
-  for (const c of charges) out.set(c.activityCode, (out.get(c.activityCode) ?? 0) + c.amountPaise);
-  return out;
-}
-
-/** Most-played games by bill time (a bill's time is shared between its games). */
-export function topGames(bills: readonly Bill[], limit = 5): { name: string; time: string }[] {
-  const by = new Map<string, number>();
-  for (const b of bills) {
-    if (b.voided || !b.games.length) continue;
-    const share = playedMinutes(b) / b.games.length;
-    for (const g of b.games) by.set(g, (by.get(g) ?? 0) + share);
-  }
-  return [...by]
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, limit)
-    .map(([name, minutes]) => ({ name, time: formatMinutes(minutes) }));
-}
-
-/** Bills and takings by the staff member who started them. */
-export function byStaff(bills: readonly Bill[]): { name: string; bills: number; paise: number }[] {
-  const by = new Map<string, { bills: number; paise: number }>();
-  for (const b of bills) {
-    if (b.voided || !b.startedBy) continue;
-    const s = by.get(b.startedBy) ?? { bills: 0, paise: 0 };
-    s.bills++;
-    s.paise += b.paidPaise;
-    by.set(b.startedBy, s);
-  }
-  return [...by].map(([name, s]) => ({ name, ...s })).sort((a, b) => b.paise - a.paise);
+/** "2h 30m" per game. */
+export function topGames(games: OverviewData['topGames']): { name: string; time: string }[] {
+  return games.map((g) => ({ name: g.name, time: formatMinutes(g.minutes) }));
 }

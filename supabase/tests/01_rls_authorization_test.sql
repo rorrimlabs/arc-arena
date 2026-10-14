@@ -91,7 +91,7 @@ from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
 -- ===================== as STAFF (reads) =====================
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
-select is((select count(*)::int from rates), 12, 'staff can READ config (rates)');
+select is((select count(*)::int from rates), 7, 'staff can READ config (rates)');
 select is((select count(*)::int from staff_profiles), 2, 'staff can READ the roster');
 select throws_ok($$ insert into customers(arena_id,name) values ('e0000000-0000-4000-8000-000000000001'::uuid,'x') $$,
   '42501', NULL, 'staff CANNOT insert a customer directly (sync_push only)');
@@ -105,7 +105,7 @@ select throws_ok($$
   insert into rates(arena_id,rate_card_id,activity_id,band_id,unit_minutes,price_paise)
     select 'e0000000-0000-4000-8000-000000000001'::uuid, rc.id, a.id, b.id, 60, 9900
     from rate_cards rc, activities a, rate_bands b
-    where a.code='LOUNGE' and b.code='happy' limit 1 $$,
+    where a.code='LOUNGE' and b.code='standard' limit 1 $$,
   '42501', NULL, 'even an owner CANNOT write config directly (sync_push only)');
 select throws_ok($$
   insert into staff_profiles(arena_id,user_id,name,role,perms)

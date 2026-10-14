@@ -24,7 +24,7 @@ import '../../support/pricing_fixtures.dart';
 void main() {
   const service = ReportsService();
 
-  // Tuesday 2026-10-06, a trading day with happy hour 2–5 PM.
+  // Tuesday 2026-10-06, a trading day.
   final day = tuesdayDate;
 
   Session session({
@@ -414,7 +414,8 @@ void main() {
             start: ist(2026, 10, 6, 16, 30),
             end: ist(2026, 10, 6, 17, 0),
             amount: 6000,
-            band: 'happy',
+            // A charge written by an older build under a retired band code.
+            band: 'off_peak',
           ),
           charge(
             sessionId: 's1',
@@ -437,9 +438,11 @@ void main() {
       expect(ps5.paise, 13500);
       expect(pool.paise, 27500);
 
-      final happy = report.byBand.firstWhere((m) => m.label == 'Happy hour');
+      // Standard first, then retired codes labelled from the stored code.
+      expect(report.byBand.map((m) => m.label), ['Standard', 'Off peak']);
+      final retired = report.byBand.firstWhere((m) => m.label == 'Off peak');
       final standard = report.byBand.firstWhere((m) => m.label == 'Standard');
-      expect(happy.paise, 6000);
+      expect(retired.paise, 6000);
       expect(standard.paise, 7500 + 27500);
     });
   });

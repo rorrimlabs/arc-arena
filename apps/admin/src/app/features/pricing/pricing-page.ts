@@ -1,43 +1,50 @@
 import { Component, computed, effect, inject, input } from '@angular/core';
 import { MatButton } from '@angular/material/button';
-import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
 import { MatProgressBar } from '@angular/material/progress-bar';
-import { MatSnackBar } from '@angular/material/snack-bar';
-import { Router } from '@angular/router';
+import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
+import { Router, RouterLink } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
 import { Layout } from '../../core/layout/layout';
 import { Clock } from '../../core/time/clock';
-import { formatIsoDate } from '../../shared/time/ist';
+import { formatDate, formatIsoDate } from '../../shared/time/ist';
 import { DetailPane } from '../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../shared/list-detail/detail-section';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
-import { NotConnected } from '../../shared/not-connected/not-connected';
 import { StatusPill } from '../../shared/status-pill/status-pill';
-import { HappyHourDetail } from './components/happy-hour-detail';
+import { DiscountDetail } from './components/discount-detail';
+import { COUPON_STATE } from './components/discount-state';
 import { HolidaysDetail } from './components/holidays-detail';
+import { RuleDetail } from './components/rule-detail';
 import { TypeDetail } from './components/type-detail';
 import { PricingStore } from './data/pricing-store';
 import {
+  Discount,
+  PricingRule,
   StationType,
+  adjustLabel,
+  discountState,
+  discountValueLabel,
   formatHolidayDay,
   headlinePrice,
   maxPlayers,
-  summarizeWindows,
+  ruleWhen,
   typeIcon,
 } from './data/pricing.models';
-import { TypeDialog, TypeDialogData, TypeDialogResult } from './dialogs/type-dialog';
 
-const HAPPY = 'happy';
 const HOLIDAYS = 'holidays';
+const NEW_RULE = 'new-rule';
+const NEW_DISCOUNT = 'new-discount';
+const NEW_COUPON = 'new-coupon';
 
 /**
- * Pricing (design: `if (p === 'pricing')`) on the engine's model: station types with their
- * prices, and happy hour and holidays in place of the design's percentage rules. The selection is
- * in the URL (`?id=<type id>`, `?id=happy` or `?id=holidays`); on a wide screen the first entry
- * shows when none is chosen.
+ * Pricing: each station type's prices, the owner's day/time rules that change them (in the order
+ * they are tried; happy hours are one of them), holidays, preset discounts and coupons. Station
+ * types themselves are managed in Settings. The selection is in the URL (`?id=<type, rule or
+ * discount id>`, `holidays`, `new-rule`, `new-discount`, `new-coupon`); on a wide screen the
+ * first type shows when none is chosen.
  */
 @Component({
   selector: 'app-pricing-page',
@@ -47,14 +54,18 @@ const HOLIDAYS = 'holidays';
     ListRow,
     StatusPill,
     TypeDetail,
-    HappyHourDetail,
     HolidaysDetail,
-    NotConnected,
+    RuleDetail,
+    DiscountDetail,
     DetailPane,
     DetailSection,
     MatButton,
     MatIcon,
+    MatMenu,
+    MatMenuItem,
+    MatMenuTrigger,
     MatProgressBar,
+    RouterLink,
   ],
   template: `
     <app-list-detail
@@ -66,18 +77,25 @@ const HOLIDAYS = 'holidays';
       <ng-container list>
         <app-list-pane-header title="Pricing">
           <div actions class="flex gap-2">
-            <button mat-stroked-button type="button" [disabled]="!arena.canEdit()" (click)="add()">
-              <mat-icon aria-hidden="true">add</mat-icon>Type
-            </button>
             <button
               mat-flat-button
               type="button"
-              disabled
-              aria-describedby="pricing-rules-note"
-              title="Pricing rules aren't connected yet"
+              [disabled]="!arena.canEdit() || !store.data()"
+              [matMenuTriggerFor]="addMenu"
             >
-              <mat-icon aria-hidden="true">add</mat-icon>Rule
+              <mat-icon aria-hidden="true">add</mat-icon>Add
             </button>
+            <mat-menu #addMenu="matMenu">
+              <button mat-menu-item type="button" (click)="open(newRule)">
+                <mat-icon aria-hidden="true">schedule</mat-icon>Time rule
+              </button>
+              <button mat-menu-item type="button" (click)="open(newDiscount)">
+                <mat-icon aria-hidden="true">percent</mat-icon>Discount
+              </button>
+              <button mat-menu-item type="button" (click)="open(newCoupon)">
+                <mat-icon aria-hidden="true">confirmation_number</mat-icon>Coupon
+              </button>
+            </mat-menu>
           </div>
         </app-list-pane-header>
         @if (store.loading()) {
@@ -91,14 +109,11 @@ const HOLIDAYS = 'holidays';
             </div>
           }
           <section aria-labelledby="pricing-types">
-            <h2
-              id="pricing-types"
-              class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
-            >
-              Station types
+            <h2 id="pricing-types" class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle">
+              Prices
             </h2>
             <ul class="flex flex-col gap-0.5">
-              @for (t of store.types(); track t.id) {
+              @for (t of priced(); track t.id) {
                 <li>
                   <app-list-row
                     [title]="t.name"
@@ -108,9 +123,7 @@ const HOLIDAYS = 'holidays';
                     [queryParams]="{ id: t.id }"
                   >
                     @if (price(t); as p) {
-                      <span class="text-sm leading-none font-semibold tabular-nums">{{
-                        p.price
-                      }}</span>
+                      <span class="text-sm leading-none font-semibold tabular-nums">{{ p.price }}</span>
                       <span class="text-xs leading-none text-muted">{{ p.per }}</span>
                     } @else {
                       <app-status-pill tone="warning">No price</app-status-pill>
@@ -120,8 +133,9 @@ const HOLIDAYS = 'holidays';
               } @empty {
                 <li class="px-3 py-4 text-sm leading-[1.45] text-muted">
                   @if (store.data()) {
-                    No station types yet. Add what staff can start, e.g. PlayStation 5, VR or Pool,
-                    then set its prices.
+                    No station types yet.
+                    <a routerLink="/settings" [queryParams]="{ id: 'types' }">Add them in Settings</a>,
+                    then set their prices here.
                   } @else if (!store.loading()) {
                     Not loaded.
                   }
@@ -129,28 +143,41 @@ const HOLIDAYS = 'holidays';
               }
             </ul>
           </section>
-          <section aria-labelledby="pricing-rules">
-            <h2
-              id="pricing-rules"
-              class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
-            >
-              Pricing rules
-            </h2>
-            <ul class="flex flex-col gap-0.5">
-              @if (store.data()) {
-                <li>
-                  <app-list-row
-                    title="Happy hour"
-                    [subtitle]="happySummary() || 'Not set'"
-                    icon="trending_down"
-                    [selected]="selectedId() === happy"
-                    [queryParams]="{ id: happy }"
-                  >
-                    <app-status-pill [tone]="happySummary() ? 'primary' : 'info'">{{
-                      happySummary() ? 'On' : 'Off'
-                    }}</app-status-pill>
-                  </app-list-row>
-                </li>
+          @if (store.data()) {
+            <section aria-labelledby="pricing-rules">
+              <h2 id="pricing-rules" class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle">
+                Time rules
+              </h2>
+              <ul class="flex flex-col gap-0.5">
+                @for (r of store.rules(); track r.id; let i = $index) {
+                  <li>
+                    <app-list-row
+                      [title]="i + 1 + '. ' + r.name"
+                      [subtitle]="ruleSub(r)"
+                      icon="schedule"
+                      [selected]="r.id === selectedId()"
+                      [queryParams]="{ id: r.id }"
+                    >
+                      <app-status-pill [tone]="r.active ? 'primary' : 'info'">{{
+                        r.active ? adjust(r) : 'Off'
+                      }}</app-status-pill>
+                    </app-list-row>
+                  </li>
+                } @empty {
+                  <li class="px-3 py-2 text-[13px] leading-[1.45] text-muted">
+                    None yet. Rules change prices by day and time.
+                  </li>
+                }
+              </ul>
+              <p class="px-3 pt-2 pb-1 text-[13px] leading-[1.45] text-muted">
+                Happy hours: add a rule, e.g. Tue–Fri 2–5 PM, 20% lower.
+              </p>
+            </section>
+            <section aria-labelledby="pricing-holidays">
+              <h2 id="pricing-holidays" class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle">
+                Holidays
+              </h2>
+              <ul class="flex flex-col gap-0.5">
                 <li>
                   <app-list-row
                     title="Holidays"
@@ -164,42 +191,70 @@ const HOLIDAYS = 'holidays';
                     }}</app-status-pill>
                   </app-list-row>
                 </li>
-              } @else if (!store.loading()) {
-                <li class="px-3 py-4 text-sm leading-[1.45] text-muted">Not loaded.</li>
-              }
-            </ul>
-            <div class="px-3 py-3">
-              <app-not-connected id="pricing-rules-note"
-                >Percentage and flat-rate rules (weekends, holidays) can't be saved
-                yet.</app-not-connected
-              >
-            </div>
-          </section>
+              </ul>
+            </section>
+            @for (group of discountGroups(); track group.key) {
+              <section [attr.aria-labelledby]="'pricing-' + group.key">
+                <h2
+                  [id]="'pricing-' + group.key"
+                  class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle"
+                >
+                  {{ group.title }}
+                </h2>
+                <ul class="flex flex-col gap-0.5">
+                  @for (d of group.items; track d.id) {
+                    <li>
+                      <app-list-row
+                        [title]="d.kind === 'coupon' ? (d.code ?? d.name) : d.name"
+                        [subtitle]="discountSub(d)"
+                        [icon]="d.kind === 'coupon' ? 'confirmation_number' : 'percent'"
+                        [selected]="d.id === selectedId()"
+                        [queryParams]="{ id: d.id }"
+                      >
+                        <app-status-pill [tone]="state(d).tone">{{ state(d).label }}</app-status-pill>
+                      </app-list-row>
+                    </li>
+                  } @empty {
+                    <li class="px-3 py-2 text-[13px] leading-[1.45] text-muted">{{ group.empty }}</li>
+                  }
+                </ul>
+              </section>
+            }
+          } @else if (!store.loading()) {
+            <p class="px-3 py-4 text-sm leading-[1.45] text-muted">Not loaded.</p>
+          }
         </div>
       </ng-container>
       <ng-container detail>
         @if (failedWide()) {
-          <!-- The design's type detail, with nothing in it: the price list did not load. -->
           <app-detail-pane
             crumb="Pricing"
             icon="sell"
-            heading="Station type"
+            heading="Prices"
             subtitle="Not loaded"
             (closed)="close()"
           >
-            <app-detail-section heading="Base rate">
+            <app-detail-section heading="Base price">
               <p role="alert" class="text-[13px] leading-[1.45] text-danger">
                 Prices couldn't load: {{ store.loadError() }}
               </p>
             </app-detail-section>
-            <app-detail-section heading="With rules applied">
-              <p class="text-[13px] leading-[1.45] text-muted">Not loaded.</p>
-            </app-detail-section>
           </app-detail-pane>
-        } @else if (selectedId() === happy && store.hours()) {
-          <app-happy-hour-detail (closed)="close()" />
         } @else if (selectedId() === holidays && store.data()) {
           <app-holidays-detail (closed)="close()" />
+        } @else if (selectedId() === newRule) {
+          <app-rule-detail [rule]="null" (closed)="close()" (created)="open($event)" />
+        } @else if (selectedRule(); as r) {
+          <app-rule-detail [rule]="r" (closed)="close()" />
+        } @else if (selectedId() === newDiscount || selectedId() === newCoupon) {
+          <app-discount-detail
+            [discount]="null"
+            [kind]="selectedId() === newCoupon ? 'coupon' : 'preset'"
+            (closed)="close()"
+            (created)="open($event)"
+          />
+        } @else if (selectedDiscount(); as d) {
+          <app-discount-detail [discount]="d" (closed)="close()" />
         } @else if (selectedType(); as t) {
           <app-type-detail [type]="t" (closed)="close()" />
         }
@@ -212,20 +267,21 @@ export class PricingPage {
   protected readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
-  private readonly dialog = inject(MatDialog);
-  private readonly snack = inject(MatSnackBar);
+  private readonly now = inject(Clock).now();
 
-  /** `?id=` — a type id, `happy` or `holidays`. */
+  /** `?id=` — a type, rule or discount id, `holidays` or a `new-…` form. */
   readonly id = input<string>();
 
-  protected readonly happy = HAPPY;
   protected readonly holidays = HOLIDAYS;
+  protected readonly newRule = NEW_RULE;
+  protected readonly newDiscount = NEW_DISCOUNT;
+  protected readonly newCoupon = NEW_COUPON;
   protected readonly icon = typeIcon;
-  protected readonly happySummary = computed(() =>
-    summarizeWindows(this.store.hours()?.happy ?? {}),
-  );
+  protected readonly adjust = adjustLabel;
+  /** Enabled types are priced here; turned-off ones live in Settings. */
+  protected readonly priced = computed(() => this.store.types().filter((t) => t.active));
   /** Today in the arena (IST), "2026-10-13". */
-  private readonly today = formatIsoDate(inject(Clock).now());
+  private readonly today = formatIsoDate(this.now);
   protected readonly upcomingHolidays = computed(() =>
     this.store.holidays().filter((h) => h.day >= this.today),
   );
@@ -233,21 +289,51 @@ export class PricingPage {
     const next = this.upcomingHolidays()[0];
     return next
       ? `Next: ${next.name} · ${formatHolidayDay(next.day)}`
-      : 'No happy hour on these days';
+      : 'Special days and closures';
   });
+  protected readonly discountGroups = computed(() => [
+    {
+      key: 'discounts',
+      title: 'Discounts',
+      empty: 'None yet. Add ones staff can pick at checkout, e.g. Student 10%.',
+      items: this.store.discounts().filter((d) => d.kind === 'preset'),
+    },
+    {
+      key: 'coupons',
+      title: 'Coupons',
+      empty: 'None yet. Add a code customers can bring, with an expiry.',
+      items: this.store.discounts().filter((d) => d.kind === 'coupon'),
+    },
+  ]);
+  private readonly ruleById = computed(() => new Map(this.store.rules().map((r) => [r.id, r])));
+  private readonly discountById = computed(
+    () => new Map(this.store.discounts().map((d) => [d.id, d])),
+  );
   protected readonly selectedId = computed<string | undefined>(() => {
     const id = this.id();
-    if (id === HAPPY || id === HOLIDAYS || (id && this.store.byId().has(id))) return id;
+    const fixed = [HOLIDAYS, NEW_RULE, NEW_DISCOUNT, NEW_COUPON];
+    if (id && (fixed.includes(id) || this.store.byId().has(id) || this.ruleById().has(id) ||
+        this.discountById().has(id))) {
+      return id;
+    }
     if (!this.layout.wideDetail() || !this.store.data()) return undefined;
-    return this.store.types()[0]?.id ?? HAPPY;
+    return this.priced()[0]?.id ?? HOLIDAYS;
   });
-  /** Wide screen, price list failed: the detail side shows the empty type detail. */
+  /** Wide screen, price list failed: the detail side says so. */
   protected readonly failedWide = computed(
     () => !!this.store.loadError() && !this.store.data() && this.layout.wideDetail(),
   );
   protected readonly selectedType = computed(() => {
     const id = this.selectedId();
-    return id && id !== HAPPY && id !== HOLIDAYS ? this.store.byId().get(id) : undefined;
+    return id ? this.store.byId().get(id) : undefined;
+  });
+  protected readonly selectedRule = computed(() => {
+    const id = this.selectedId();
+    return id ? this.ruleById().get(id) : undefined;
+  });
+  protected readonly selectedDiscount = computed(() => {
+    const id = this.selectedId();
+    return id ? this.discountById().get(id) : undefined;
   });
 
   constructor() {
@@ -258,7 +344,6 @@ export class PricingPage {
   }
 
   protected typeSub(t: StationType): string {
-    if (!t.active) return 'Off';
     const stations = `${t.stations} station${t.stations === 1 ? '' : 's'}`;
     const players = maxPlayers(t, this.store.rates());
     return players ? `${stations} · up to ${players} player${players === 1 ? '' : 's'}` : stations;
@@ -268,22 +353,31 @@ export class PricingPage {
     return headlinePrice(t, this.store.rates());
   }
 
-  protected close(): void {
-    void this.router.navigate([], { queryParams: { id: null }, queryParamsHandling: 'merge' });
+  protected ruleSub(r: PricingRule): string {
+    const scope = r.activityCodes.length
+      ? r.activityCodes
+          .map((c) => this.store.types().find((t) => t.code === c)?.name ?? c)
+          .join(', ')
+      : 'All types';
+    return `${ruleWhen(r)} · ${scope}`;
   }
 
-  protected add(): void {
-    this.dialog
-      .open<TypeDialog, TypeDialogData, TypeDialogResult>(TypeDialog, {
-        data: {},
-        width: '520px',
-        maxWidth: 'calc(100vw - 32px)',
-      })
-      .afterClosed()
-      .subscribe((result) => {
-        if (!result) return;
-        this.snack.open(result.snack, undefined, { duration: 3200 });
-        void this.router.navigate([], { queryParams: { id: result.id } });
-      });
+  protected discountSub(d: Discount): string {
+    const until = d.validUntil ? ` · until ${formatDate(d.validUntil)}` : '';
+    return d.kind === 'coupon'
+      ? `${d.name} · ${discountValueLabel(d)}${until}`
+      : `${discountValueLabel(d)}${until}`;
+  }
+
+  protected state(d: Discount) {
+    return COUPON_STATE[discountState(d, this.now)];
+  }
+
+  protected open(id: string): void {
+    void this.router.navigate([], { queryParams: { id } });
+  }
+
+  protected close(): void {
+    void this.router.navigate([], { queryParams: { id: null }, queryParamsHandling: 'merge' });
   }
 }

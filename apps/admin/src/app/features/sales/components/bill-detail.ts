@@ -13,6 +13,7 @@ import { DetailSection } from '../../../shared/list-detail/detail-section';
 import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import { formatDate, formatMinutes, formatTime } from '../../../shared/time/ist';
+import { adjustLabel } from '../../pricing/data/pricing.models';
 import { SalesStore } from '../data/sales-store';
 import {
   Bill,
@@ -28,6 +29,8 @@ import {
   paidMethods,
   playedMinutes,
   writtenOffPaise,
+  BillDiscount,
+  discountLabel,
 } from '../data/sale.models';
 import { MoneyDialog, MoneyDialogData, MoneyMode, movable } from '../dialogs/money-dialog';
 import { VoidDialog, VoidDialogData } from '../dialogs/void-dialog';
@@ -109,11 +112,26 @@ const LATE_MS = 5 * 60_000;
           @for (line of d.lines; track $index) {
             <app-detail-row [label]="lineLabel(line)" [value]="rupees(line.amountPaise)" />
           }
+          @if (d.rule; as rule) {
+            <p class="text-[13px] leading-[1.45] text-muted">
+              Priced with the time rule {{ rule.name }} ({{ adjust(rule) }}).
+            </p>
+          }
+          @if (d.discount; as disc) {
+            <app-detail-row
+              [label]="'Discount · ' + discountText(disc)"
+              [value]="'−' + rupees(disc.amountPaise)"
+            />
+            @if (disc.reason || disc.by) {
+              <p class="text-[13px] leading-[1.45] text-muted">
+                {{ discountNote(disc) }}
+              </p>
+            }
+          }
           @if (rounding(); as r) {
             <app-detail-row label="Rounding" [value]="signed(r)" />
           }
-          <!-- Design rows the bills don't record yet (GST is not configured per arena). -->
-          <app-detail-row label="Discount" value="Not connected yet" [muted]="true" />
+          <!-- GST is not configured per arena yet. -->
           <app-detail-row label="GST" value="Not connected yet" [muted]="true" />
           <div class="h-px bg-border" role="presentation"></div>
           <app-detail-row label="Total" [value]="rupees(d.billedPaise ?? 0)" [strong]="true" />
@@ -214,6 +232,13 @@ export class BillDetail {
   protected readonly shown = computed<Bill>(() => this.full() ?? this.bill());
 
   protected readonly rupees = formatRupees;
+  protected readonly discountText = discountLabel;
+  /** "Regular customer · by Priya" (the manual reason and who applied it). */
+  protected discountNote(d: BillDiscount): string {
+    return [d.reason, d.by ? `by ${d.by}` : null].filter(Boolean).join(' · ');
+  }
+  protected readonly adjust = (r: { adjustKind: 'percent' | 'per_hour'; adjustValue: number }) =>
+    adjustLabel(r);
   protected readonly minutes = formatMinutes;
   protected readonly chip = computed(() => {
     const b = this.shown();
@@ -251,7 +276,9 @@ export class BillDetail {
   protected readonly rounding = computed(() => {
     const d = this.full();
     if (!d || d.billedPaise == null || !d.lines.length) return 0;
-    return d.billedPaise - d.lines.reduce((sum, l) => sum + l.amountPaise, 0);
+    return (
+      d.billedPaise - d.lines.reduce((sum, l) => sum + l.amountPaise, 0) + d.discountPaise
+    );
   });
   protected readonly voidNote = computed(() => {
     const d = this.full();
@@ -288,8 +315,7 @@ export class BillDetail {
     const who = line.player != null ? `Player ${line.player} · ` : '';
     const span =
       line.start && line.end ? ` · ${formatTime(line.start)}–${formatTime(line.end)}` : '';
-    const band = line.band === 'happy' ? ' · happy hour' : '';
-    return `${who}${line.station}${span} · ${formatMinutes(line.billedMinutes)}${band}`;
+    return `${who}${line.station}${span} · ${formatMinutes(line.billedMinutes)}`;
   }
 
   protected extensionLabel(e: BillExtension): string {

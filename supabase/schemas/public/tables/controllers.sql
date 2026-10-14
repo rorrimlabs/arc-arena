@@ -1,6 +1,9 @@
--- controllers — physical game pads, tracked by station
+-- controllers — station accessories (game pads, VR headsets, wheels …), tracked by station
 --
--- One row per labelled pad. home_resource_id is the station it belongs to,
+-- One row per labelled accessory; the dashboard calls them accessories. kind_id
+-- (accessory_kinds) says what it is: only pads (no kind, or a kind with
+-- counts_as_controller) are allocated to players and borrowed by session starts;
+-- the rest are tracked physically (home, location, moves, status) only. home_resource_id is the station it belongs to,
 -- current_resource_id where it physically is now. Moving a pad away from home on
 -- loan records the return it owes (loan_return_to / loan_session_ref) and appends
 -- a controller_moves row. Written by op_controller_upsert / op_controller_set_status
@@ -17,6 +20,8 @@ create table "public"."controllers" (
   "notes"               text,
   "loan_return_to"      text,
   "loan_session_ref"    text,
+  "kind_id"             uuid,
+  "created_at"          timestamp with time zone not null default now(),
   "updated_at"          timestamp with time zone not null default now(),
   "sync_xid"            xid8                     not null default pg_current_xact_id(),
   constraint "controllers_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
@@ -31,10 +36,14 @@ create table "public"."controllers" (
   constraint "controllers_current_resource_id_fkey" foreign key (current_resource_id)
     references public.resources(id),
   constraint "controllers_home_resource_id_fkey" foreign key (home_resource_id)
-    references public.resources(id)
+    references public.resources(id),
+  -- A kind in use is retired, never deleted (op_accessory_kind_remove).
+  constraint "controllers_kind_id_fkey" foreign key (kind_id) references public.accessory_kinds(id)
 );
 
-comment on table public.controllers is 'Physical controllers (pads): label, home station, current location, condition and any outstanding loan.';
+comment on table public.controllers is 'Station accessories (pads, headsets, wheels …): label, kind, home station, current location, condition and any outstanding loan.';
+
+comment on column public.controllers.kind_id is 'What the accessory is (accessory_kinds). Null = a game pad. Only pads (null, or a kind with counts_as_controller) can be allocated or borrowed by a session start.';
 
 comment on column public.controllers.arena_id is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
@@ -66,6 +75,8 @@ create index ix_controllers_sync on public.controllers using btree (arena_id, sy
 -- Foreign-key index (joins and cascading deletes).
 create index ix_controllers_home_resource_id on public.controllers using btree (home_resource_id);
 
+create index ix_controllers_kind_id on public.controllers using btree (kind_id);
+
 create trigger t_controllers_sync
   before insert or update on public.controllers
   for each row
@@ -81,12 +92,13 @@ create trigger t_controllers_updated
   for each row
   execute function public.set_updated_at();
 
--- Both stations must belong to the pad's arena (raises cross_arena_reference).
+-- Both stations and the kind must belong to the pad's arena (raises cross_arena_reference).
 create trigger t_same_arena
   before insert or update on public.controllers
   for each row
   execute function
-    public._assert_same_arena('current_resource_id', 'resources', 'home_resource_id', 'resources');
+    public._assert_same_arena('current_resource_id', 'resources', 'home_resource_id', 'resources',
+      'kind_id', 'accessory_kinds');
 
 create policy "p_sel_controllers" on "public"."controllers"
   for select

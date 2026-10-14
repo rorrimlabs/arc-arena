@@ -4,8 +4,8 @@ import { ListDetail } from './list-detail/list-detail';
 import { ListPaneHeader } from './list-detail/list-pane-header';
 
 /**
- * Stand-in for a screen that has not been built yet (build it with `/design-build <screen>`).
- * It shows the design's frame for that screen with no data: `list` is the list/detail frame,
+ * Stand-in for a screen that has not been built yet.
+ * It shows the screen's empty frame: `list` is the list/detail frame,
  * `page` a plain page under the top bar (Overview).
  */
 @Component({

@@ -1,9 +1,10 @@
--- rate_bands — time bands a rate can apply in (standard, happy hour)
+-- rate_bands — the band a rate belongs to; only 'standard' is priced
 --
--- The pricer labels each stretch of play 'happy' (inside the day's happy-hour
--- window, for happy-hour-eligible activities) or 'standard' and looks up the rate
--- for that band code. Seeded with 'standard' and 'happy' by _seed_arena_catalog;
--- _band_id creates a missing band on rate.upsert. Not in the sync feed: devices
+-- The pricer looks up every rate at the 'standard' band. Time-of-day prices (happy
+-- hours, weekend surcharges) are pricing_rules on top of it; rate.upsert refuses any
+-- other band, and rows of the retired 'happy' band are never chosen (rate.delete can
+-- still remove them). Seeded with 'standard' by _seed_arena_catalog; _band_id
+-- creates it on the first rate.upsert. Not in the sync feed: devices
 -- see band codes through sync_v_rates.band.
 create table "public"."rate_bands" (
   "id"         uuid                     not null default gen_random_uuid(),
@@ -20,11 +21,11 @@ create table "public"."rate_bands" (
   constraint "rate_bands_pkey" primary key (id)
 );
 
-comment on table public.rate_bands is 'Pricing time bands per arena, identified by code. The server pricer uses the codes standard and happy.';
+comment on table public.rate_bands is 'Rate bands per arena, identified by code. The pricer only uses standard; time-of-day prices are pricing_rules.';
 
 comment on column public.rate_bands.arena_id is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column public.rate_bands.code is 'Band code, unique per arena; the pricer selects standard or happy. Any other code is stored but never chosen.';
+comment on column public.rate_bands.code is 'Band code, unique per arena; the pricer selects standard. Any other code (e.g. the retired happy) is stored but never chosen.';
 
 comment on column public.rate_bands.sync_xid is 'Id of the transaction that last wrote the row (set by trigger sync_stamp). The table is not in the sync_pull feed; devices see band codes through sync_v_rates.';
 

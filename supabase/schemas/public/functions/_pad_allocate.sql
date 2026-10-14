@@ -1,6 +1,7 @@
 -- _pad_allocate(p_arena, p_allocs, p_scope, ...) — record pads as in use by a segment or group assignment.
 --
 -- p_allocs is [{controller_id, id?}]. Raises controller_duplicate, controller_missing,
+-- not_a_controller (an accessory whose kind is not a pad, see _is_pad),
 -- controller_unusable (hint: status), controller_elsewhere (not at p_resource) or controller_taken
 -- (already allocated, or untracked play at the station other than p_segment / p_assignment).
 -- All checks run before any controller_allocations row is inserted. Pads are locked by the caller.
@@ -28,7 +29,7 @@ create or replace function public._pad_allocate (
   AS $function$
 declare
   v_now timestamptz := statement_timestamp();
-  v_a jsonb; v_cid uuid; v_status text; v_loc uuid;
+  v_a jsonb; v_cid uuid; v_status text; v_loc uuid; v_kind uuid;
   v_ids uuid[] := _pad_ids(p_allocs);
 begin
   if coalesce(array_length(v_ids, 1), 0) = 0 then return; end if;
@@ -37,9 +38,10 @@ begin
   end if;
   for v_a in select value from jsonb_array_elements(p_allocs) loop
     v_cid := (v_a->>'controller_id')::uuid;
-    select status, current_resource_id into v_status, v_loc
+    select status, current_resource_id, kind_id into v_status, v_loc, v_kind
       from controllers where id = v_cid and arena_id = p_arena;
     if not found then raise exception 'controller_missing'; end if;
+    if not _is_pad(v_kind) then raise exception 'not_a_controller'; end if;
     if v_status <> 'usable' then raise exception 'controller_unusable' using hint = v_status; end if;
     if v_loc <> p_resource then raise exception 'controller_elsewhere'; end if;
     if exists (select 1 from controller_allocations where controller_id = v_cid and ended_at is null) then

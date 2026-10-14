@@ -15,6 +15,19 @@ class StringListConverter extends TypeConverter<List<String>, String> {
   String toSql(List<String> value) => jsonEncode(value);
 }
 
+/// Stores a `List<int>` (a pricing rule's ISO weekdays) as a JSON array in a
+/// TEXT column.
+class IntListConverter extends TypeConverter<List<int>, String> {
+  const IntListConverter();
+
+  @override
+  List<int> fromSql(String fromDb) =>
+      (jsonDecode(fromDb) as List).map((e) => (e as num).toInt()).toList();
+
+  @override
+  String toSql(List<int> value) => jsonEncode(value);
+}
+
 /// Stores a JSON map (the immutable pricing snapshot) as a TEXT column.
 class JsonMapConverter extends TypeConverter<Map<String, dynamic>, String> {
   const JsonMapConverter();

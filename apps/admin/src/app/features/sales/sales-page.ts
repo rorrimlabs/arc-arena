@@ -22,7 +22,6 @@ import { ArenaContext } from '../../core/arena/arena-context';
 import { Session } from '../../core/auth/session';
 import { Clock } from '../../core/time/clock';
 import { injectNow } from '../../core/time/ticker';
-import { Layout } from '../../core/layout/layout';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
@@ -79,7 +78,13 @@ const PAGE = 40;
     MatProgressBar,
   ],
   template: `
-    <app-list-detail listLabel="Bills" detailLabel="Bill" [open]="!!selected()" (closed)="close()">
+    <app-list-detail
+      listLabel="Bills"
+      detailLabel="Bill"
+      emptyText="Pick a bill to see its lines, payments and history"
+      [open]="!!selected()"
+      (closed)="close()"
+    >
       <ng-container list>
         <app-list-pane-header title="Sales">
           <mat-form-field class="arena-search">
@@ -278,7 +283,6 @@ export class SalesPage {
   private readonly arena = inject(ArenaContext);
   private readonly session = inject(Session);
   private readonly clock = inject(Clock);
-  private readonly layout = inject(Layout);
   private readonly router = inject(Router);
   private readonly snack = inject(MatSnackBar);
   private readonly document = inject(DOCUMENT);
@@ -350,7 +354,8 @@ export class SalesPage {
       const linked = this.linked.hasValue() ? this.linked.value() : undefined;
       return linked?.id === id ? linked : undefined;
     }
-    return this.layout.wideDetail() ? this.visible()[0] : undefined;
+    // Nothing is opened (and no bill detail read) until a bill is picked.
+    return undefined;
   });
 
   constructor() {

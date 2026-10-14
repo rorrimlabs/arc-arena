@@ -1,9 +1,18 @@
 import { AppError } from '../../../core/auth/auth-api';
 import { istDayStart } from '../../../shared/time/ist';
-import { MethodCorrection, PaymentEntry, RefundEntry, SALES_MESSAGES, SalesApi } from './sales-api';
+import { OverviewData, withAverage } from '../../overview/data/overview.models';
+import {
+  MethodCorrection,
+  OverviewQuery,
+  PaymentEntry,
+  RefundEntry,
+  SALES_MESSAGES,
+  SalesApi,
+} from './sales-api';
 import {
   Bill,
   BillDetail,
+  BillDiscount,
   BillKind,
   BillPayment,
   PayMethod,
@@ -27,6 +36,7 @@ interface Spec {
   readonly payments: readonly (readonly [PayMethod, number])[];
   readonly status?: PaymentStatus;
   readonly voidReason?: string;
+  readonly discount?: BillDiscount;
 }
 
 /** Sample bills in rupees, closing at fixed IST times relative to `now` (today first). */
@@ -196,6 +206,8 @@ function build(spec: Spec, now: Date, n: number): BillDetail {
     voidReason: spec.voidReason ?? null,
     voidedAt: spec.voidReason ? at.toISOString() : null,
     voidedBy: spec.voidReason ? 'Arjun Mehra' : null,
+    discountPaise: spec.discount?.amountPaise ?? 0,
+    discount: spec.discount ?? null,
   };
   return {
     ...bill,
@@ -204,7 +216,6 @@ function build(spec: Spec, now: Date, n: number): BillDetail {
         player: kind === 'group' ? 1 : null,
         station: spec.station,
         activity: bill.activities[0],
-        band: 'standard',
         controllers: players,
         start: startedAt.toISOString(),
         end: at.toISOString(),
@@ -227,6 +238,7 @@ function build(spec: Spec, now: Date, n: number): BillDetail {
         ]
       : [],
     voidRecord: spec.voidReason ? { at: at.toISOString(), by: 'Arjun Mehra' } : null,
+    rule: null,
   };
 }
 
@@ -254,6 +266,88 @@ export class SampleSalesApi extends SalesApi {
     return this.bills
       .filter((b) => Date.parse(b.at) >= from.getTime() && Date.parse(b.at) < to.getTime())
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
+  }
+
+  /** Reads of the Overview's figures (laziness checks). */
+  overviewReads = 0;
+
+  /** Like arena_overview, over the sample bills (IST buckets, voided bills left out). */
+  async overview(_arenaId: string, q: OverviewQuery): Promise<OverviewData> {
+    this.fail();
+    this.overviewReads++;
+    const within = (from: Date, to: Date) =>
+      this.bills.filter((b) => Date.parse(b.at) >= from.getTime() && Date.parse(b.at) < to.getTime());
+    const cur = within(q.from, q.to);
+    const live = cur.filter((b) => !b.voided);
+    const minutes = (b: Bill) =>
+      Math.max(0, Math.round((Date.parse(b.endedAt ?? b.at) - Date.parse(b.startedAt)) / 60_000));
+    const totals = (bills: readonly Bill[]) =>
+      withAverage({
+        takingsPaise: bills.reduce((n, b) => n + b.paidPaise, 0),
+        bills: bills.length,
+        minutes: bills.reduce((n, b) => n + minutes(b), 0),
+      });
+    const ist = (at: string) => new Date(Date.parse(at) + 330 * 60_000);
+    const bucketStart = (at: string) => {
+      const d = ist(at);
+      const y = d.getUTCFullYear();
+      const m = d.getUTCMonth();
+      const start =
+        q.bucket === 'month'
+          ? Date.UTC(y, m, 1)
+          : q.bucket === 'day'
+            ? Date.UTC(y, m, d.getUTCDate())
+            : Date.UTC(y, m, d.getUTCDate(), d.getUTCHours());
+      return new Date(start - 330 * 60_000).toISOString();
+    };
+    const buckets = new Map<string, number>();
+    for (const b of live) buckets.set(bucketStart(b.at), (buckets.get(bucketStart(b.at)) ?? 0) + b.paidPaise);
+    const methods: Partial<Record<PayMethod, { paise: number; bills: number }>> = {};
+    for (const b of live) {
+      for (const [m, v] of Object.entries(b.methods) as [PayMethod, number][]) {
+        const row = methods[m] ?? { paise: 0, bills: 0 };
+        methods[m] = { paise: row.paise + v, bills: row.bills + (v > 0 ? 1 : 0) };
+      }
+    }
+    const games = new Map<string, number>();
+    for (const b of live) {
+      for (const g of b.games) games.set(g, (games.get(g) ?? 0) + minutes(b) / b.games.length);
+    }
+    const staff = new Map<string, { bills: number; paise: number }>();
+    for (const b of live) {
+      if (!b.startedBy) continue;
+      const s = staff.get(b.startedBy) ?? { bills: 0, paise: 0 };
+      staff.set(b.startedBy, { bills: s.bills + 1, paise: s.paise + b.paidPaise });
+    }
+    const byType = new Map<string, number>();
+    for (const b of live) {
+      const code = b.activities[0] === 'Pool' ? 'POOL' : 'PS5';
+      byType.set(code, (byType.get(code) ?? 0) + (b.billedPaise ?? 0));
+    }
+    return {
+      totals: {
+        ...totals(live),
+        discountPaise: live.reduce((n, b) => n + b.discountPaise, 0),
+        discounts: live.filter((b) => b.discountPaise > 0).length,
+      },
+      previous: totals(within(q.prevFrom, q.prevTo).filter((b) => !b.voided)),
+      buckets: [...buckets]
+        .sort((a, b) => a[0].localeCompare(b[0]))
+        .map(([start, paise]) => ({ start, paise })),
+      methods,
+      byType,
+      topGames: [...games]
+        .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+        .slice(0, 5)
+        .map(([name, m]) => ({ name, minutes: Math.round(m) })),
+      byStaff: [...staff]
+        .map(([name, s]) => ({ name, ...s }))
+        .sort((a, b) => b.paise - a.paise || a.name.localeCompare(b.name)),
+      latest: cur
+        .filter((b) => Date.parse(b.at) >= q.today.getTime())
+        .sort((a, b) => Date.parse(b.at) - Date.parse(a.at))
+        .slice(0, 8),
+    };
   }
 
   async get(_arenaId: string, id: string): Promise<BillDetail> {

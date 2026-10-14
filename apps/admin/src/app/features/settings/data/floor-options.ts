@@ -112,6 +112,7 @@ export class FloorOptionsStore {
   readonly loading = signal(false);
   readonly loadError = signal('');
   private loadedArena: string | null = null;
+  private outOfDate = false;
   /** Each load's number; only the newest one's answer lands (a switch of arena mid-load). */
   private latest = 0;
 
@@ -129,8 +130,9 @@ export class FloorOptionsStore {
 
   async load(force = false): Promise<void> {
     const arenaId = this.arena.current().id;
-    if (!arenaId || (!force && this.loadedArena === arenaId)) return;
+    if (!arenaId || (!force && !this.outOfDate && this.loadedArena === arenaId)) return;
     if (this.loadedArena !== arenaId) this.options.set(null);
+    this.outOfDate = false;
     const call = ++this.latest;
     this.loading.set(true);
     this.loadError.set('');
@@ -145,6 +147,19 @@ export class FloorOptionsStore {
     } finally {
       if (call === this.latest) this.loading.set(false);
     }
+  }
+
+  /**
+   * Marks the data out of date without reading it (a live update while no screen shows it): the
+   * next screen that loads it reads it again, instead of a download nobody looks at.
+   */
+  stale(): void {
+    this.outOfDate = true;
+  }
+
+  /** Reads again if a screen has loaded the options (live updates). */
+  async refresh(): Promise<void> {
+    if (this.loadedArena) await this.load(true);
   }
 
   async save(options: FloorOptions): Promise<void> {

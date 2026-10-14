@@ -1,35 +1,29 @@
-import { Service, computed, inject, signal } from '@angular/core';
+import { Service, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { LoginScope } from '../../../core/auth/login-scope';
-import { FloorApi } from '../../../core/floor/floor-api';
-import { Charge } from '../../../core/floor/floor.models';
 import { Clock } from '../../../core/time/clock';
+import { istDayStart } from '../../../shared/time/ist';
 import { SalesApi } from '../../sales/data/sales-api';
-import { Bill } from '../../sales/data/sale.models';
-import { Period, PeriodRange, chunks, periodRange } from './overview.models';
+import { OverviewData, Period, PeriodRange, bucketOf, periodRange } from './overview.models';
 
 /**
- * The Overview's figures for one period: closed bills of the period and the one before it
- * (arena_sales, fetched in spans the API accepts) and the period's billed lines by type.
+ * The Overview's figures for one period, aggregated on the server in one read (arena_overview):
+ * totals for the period and the one before it, takings per hour / day / month, payment split,
+ * by type, top games, by staff, and today's latest bills.
  */
 @Service()
 export class OverviewStore {
   private readonly sales = inject(SalesApi);
-  private readonly floor = inject(FloorApi);
   private readonly arena = inject(ArenaContext);
   private readonly clock = inject(Clock);
 
   readonly range = signal<PeriodRange | null>(null);
-  /** Bills of the period, newest first. */
-  readonly bills = signal<readonly Bill[]>([]);
-  /** Bills of the period before, for the comparisons. */
-  readonly previous = signal<readonly Bill[]>([]);
-  readonly charges = signal<readonly Charge[]>([]);
+  readonly data = signal<OverviewData | null>(null);
   readonly loading = signal(false);
   readonly loadError = signal('');
-  readonly empty = computed(() => !this.bills().length);
   private loadedKey: string | null = null;
+  private outOfDate = false;
   private currentPeriod: Period = 'today';
   private latest = 0;
 
@@ -39,9 +33,7 @@ export class OverviewStore {
       this.latest++;
       this.loadedKey = null;
       this.range.set(null);
-      this.bills.set([]);
-      this.previous.set([]);
-      this.charges.set([]);
+      this.data.set(null);
       this.loading.set(false);
       this.loadError.set('');
     });
@@ -51,33 +43,28 @@ export class OverviewStore {
     this.currentPeriod = period;
     const arenaId = this.arena.current().id;
     if (!arenaId) return;
-    const range = periodRange(period, this.clock.now());
+    const now = this.clock.now();
+    const range = periodRange(period, now);
     const key = `${arenaId}|${period}|${range.from.toISOString()}`;
-    if (!force && key === this.loadedKey) return;
+    if (!force && !this.outOfDate && key === this.loadedKey) return;
     const call = ++this.latest;
-    if (!this.loadedKey?.startsWith(`${arenaId}|${period}|`)) {
-      this.bills.set([]);
-      this.previous.set([]);
-      this.charges.set([]);
-    }
+    if (!this.loadedKey?.startsWith(`${arenaId}|${period}|`)) this.data.set(null);
     this.loadedKey = key;
+    this.outOfDate = false;
     this.range.set(range);
     this.loading.set(true);
     this.loadError.set('');
     try {
-      const span = (from: Date, to: Date) =>
-        Promise.all(chunks(from, to).map((c) => this.sales.list(arenaId, c.from, c.to))).then(
-          (parts) => parts.flat().sort((a, b) => Date.parse(b.at) - Date.parse(a.at)),
-        );
-      const [bills, previous, charges] = await Promise.all([
-        span(range.from, range.to),
-        span(range.prevFrom, range.prevTo),
-        this.floor.charges(arenaId, range.from, range.to),
-      ]);
+      const data = await this.sales.overview(arenaId, {
+        from: range.from,
+        to: range.to,
+        prevFrom: range.prevFrom,
+        prevTo: range.prevTo,
+        bucket: bucketOf(period),
+        today: istDayStart(now),
+      });
       if (call !== this.latest) return;
-      this.bills.set(bills);
-      this.previous.set(previous);
-      this.charges.set(charges);
+      this.data.set(data);
     } catch (e) {
       if (call === this.latest) {
         this.loadError.set(toAppError(e).message);
@@ -89,8 +76,11 @@ export class OverviewStore {
   }
 
   async refresh(): Promise<void> {
-    if (this.loadedKey) {
-      await this.load(this.currentPeriod, true);
-    }
+    if (this.loadedKey) await this.load(this.currentPeriod, true);
+  }
+
+  /** Marks the figures out of date (a live update while the Overview is not open). */
+  stale(): void {
+    if (this.loadedKey) this.outOfDate = true;
   }
 }

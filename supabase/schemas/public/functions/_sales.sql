@@ -9,7 +9,7 @@
 --    customer, guest, returning, stations[], activities[], games[], players,
 --    player_minutes, billed_paise, paid_paise, refunded_paise,
 --    methods{method: net paise}, payments[], started_by, void_reason,
---    voided_at, voided_by}
+--    voided_at, voided_by, discount_paise, discount}
 -- stations/activities/games are names in play order; recorded_at is when the
 -- server received the start (the device stamps started_at; see sessions);
 -- returning is true when the customer (never a walk-in guest) has an earlier
@@ -24,7 +24,9 @@
 -- correction, reason, note, by} where correction marks the two rows each
 -- payment.correct wrote (op_payment_correct; their ids are in its audit entry);
 -- started_by / voided_by / by are staff names; voided_at / voided_by come from
--- the first void in the audit log. Unordered. Shared body of arena_sales and
+-- the first void in the audit log; discount is the bill_discounts row {source,
+-- name, code, discount_id, value_kind, value, base_paise, amount_paise, reason,
+-- by} or null, discount_paise its amount (0 without one). Unordered. Shared body of arena_sales and
 -- arena_sale, which check the caller. Server-only: not executable by
 -- anon/authenticated.
 create or replace function public._sales (
@@ -55,7 +57,8 @@ create or replace function public._sales (
       'billed_paise', s.billed_amount_paise, 'paid_paise', pay.net,
       'refunded_paise', pay.refunded, 'methods', pay.methods, 'payments', pay.ledger,
       'started_by', sp.name, 'void_reason', s.void_reason,
-      'voided_at', vd.at, 'voided_by', vd.by)
+      'voided_at', vd.at, 'voided_by', vd.by,
+      'discount_paise', coalesce(dsc.amount, 0), 'discount', dsc.j)
     from sessions s
     cross join lateral (select coalesce(s.actual_ended_at, s.updated_at) as at) b
     join customers c on c.id = s.customer_id
@@ -112,6 +115,16 @@ create or replace function public._sales (
          and l.action = 'void'
        order by l.created_at limit 1
     ) vd on true
+    left join lateral (
+      select d.amount_paise as amount,
+             jsonb_build_object('source', d.source, 'name', d.name, 'code', d.code,
+               'discount_id', d.discount_id, 'value_kind', d.value_kind, 'value', d.value,
+               'base_paise', d.base_paise, 'amount_paise', d.amount_paise, 'reason', d.reason,
+               'by', sd.name) as j
+        from bill_discounts d
+        left join staff_profiles sd on sd.arena_id = d.arena_id and sd.user_id = d.applied_by
+       where d.session_id = s.id
+    ) dsc on true
    where s.arena_id = p_arena and s.status <> 'active'
      and (case when p_id is null then b.at >= p_from and b.at < p_to else s.id = p_id end)
   union all
@@ -132,7 +145,8 @@ create or replace function public._sales (
       'billed_paise', gs.billed_amount_paise, 'paid_paise', pay.net,
       'refunded_paise', pay.refunded, 'methods', pay.methods, 'payments', pay.ledger,
       'started_by', sp.name, 'void_reason', gs.void_reason,
-      'voided_at', vd.at, 'voided_by', vd.by)
+      'voided_at', vd.at, 'voided_by', vd.by,
+      'discount_paise', coalesce(dsc.amount, 0), 'discount', dsc.j)
     from group_sessions gs
     cross join lateral (select coalesce(gs.actual_ended_at, gs.updated_at) as at) b
     join customers c on c.id = gs.primary_customer_id
@@ -188,6 +202,16 @@ create or replace function public._sales (
          and l.action = 'void'
        order by l.created_at limit 1
     ) vd on true
+    left join lateral (
+      select d.amount_paise as amount,
+             jsonb_build_object('source', d.source, 'name', d.name, 'code', d.code,
+               'discount_id', d.discount_id, 'value_kind', d.value_kind, 'value', d.value,
+               'base_paise', d.base_paise, 'amount_paise', d.amount_paise, 'reason', d.reason,
+               'by', sd.name) as j
+        from bill_discounts d
+        left join staff_profiles sd on sd.arena_id = d.arena_id and sd.user_id = d.applied_by
+       where d.group_id = gs.id
+    ) dsc on true
    where gs.arena_id = p_arena and gs.status <> 'active'
      and (case when p_id is null then b.at >= p_from and b.at < p_to else gs.id = p_id end);
 $function$;

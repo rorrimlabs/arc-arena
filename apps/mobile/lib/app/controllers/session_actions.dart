@@ -303,6 +303,8 @@ class SessionActions {
           controllerCount: count,
           start: now,
           end: now.add(const Duration(hours: 1)),
+          // The rule is the session's, judged at its start.
+          ruleAt: session.startedAt,
         )
         .valueOrNull
         ?.amount;
@@ -392,6 +394,7 @@ class SessionActions {
     snapshot: active.session.snapshot,
     segments: active.segments,
     openEndAt: now,
+    sessionStart: active.session.startedAt,
   );
 
   // --- in-session changes (close current, open new at the exact instant) -----
@@ -634,6 +637,7 @@ class SessionActions {
     snapshot: session.snapshot,
     segments: segments,
     openEndAt: at ?? clock.now(),
+    sessionStart: session.startedAt,
   );
 
   Future<Result<Session>> end(

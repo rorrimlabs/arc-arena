@@ -16,7 +16,7 @@ create or replace function public.arena_pricing (
   select private.arena_pricing(p_arena);
 $function$;
 
-comment on function public.arena_pricing(uuid) is 'Client API (owner level): the arena''s station types with station counts, active rates and business/happy hours, for the admin dashboard''s Pricing screen.';
+comment on function public.arena_pricing(uuid) is 'Client API (owner level): the arena''s station types with station counts, active standard rates and opening hours, for the admin dashboard''s Pricing screen.';
 
 grant execute on function "public"."arena_pricing"(uuid) to "authenticated", "postgres", "service_role";
 

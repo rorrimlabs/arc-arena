@@ -86,7 +86,7 @@ describe('Shell: a login’s data and access', () => {
   /** Fills every store, as the screens would. */
   async function loadEverything() {
     await Promise.all([
-      TestBed.inject(FloorStore).load(['stations', 'games', 'plays']),
+      TestBed.inject(FloorStore).load(['stations', 'games', 'live']),
       TestBed.inject(OverviewStore).load('today'),
       TestBed.inject(PricingStore).load(),
       TestBed.inject(FloorOptionsStore).load(),
@@ -111,10 +111,10 @@ describe('Shell: a login’s data and access', () => {
     const floor = TestBed.inject(FloorStore);
     expect(floor.stations()).toEqual([]);
     expect(floor.games()).toEqual([]);
-    expect(floor.plays()).toEqual([]);
+    expect(floor.live()).toEqual([]);
     expect(floor.stationsReady()).toBe(false);
     expect(TestBed.inject(SalesStore).bills()).toEqual([]);
-    expect(TestBed.inject(OverviewStore).bills()).toEqual([]);
+    expect(TestBed.inject(OverviewStore).data()).toBeNull();
     expect(TestBed.inject(OverviewStore).range()).toBeNull();
     expect(TestBed.inject(PricingStore).data()).toBeNull();
     expect(TestBed.inject(FloorOptionsStore).options()).toBeNull();

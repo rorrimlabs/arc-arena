@@ -24,7 +24,6 @@ import {
   ageTone,
   gameIcon,
   gameStations,
-  gameStats,
   knownPlatforms,
   libraryOrder,
   platformLabel,
@@ -162,19 +161,21 @@ export class GamesPage {
   /** `?id=` — the selected game. */
   readonly id = input<string>();
 
-  /** What this screen reads (and reports errors for). */
+  /**
+   * What this screen reads (and reports errors for): the catalog, where each game is installed
+   * and its 30-day figures aggregated on the server. A game's top players are read when opened.
+   */
   protected readonly reads: readonly FloorRead[] = [
     'games',
-    'customers',
-    'plays',
     'stations',
     'gameResources',
+    'gameFigures',
   ];
   protected readonly now = injectNow(60_000);
   protected readonly loading = computed(() => this.floor.loading());
   protected readonly query = signal('');
 
-  protected readonly stats = computed(() => gameStats(this.floor.plays(), this.now()));
+  protected readonly stats = computed(() => this.floor.gameFigures());
   protected readonly platforms = computed(() => knownPlatforms(this.floor.games()));
   protected readonly platform = computed(() => {
     const p = this.platformParam();

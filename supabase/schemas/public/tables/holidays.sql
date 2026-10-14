@@ -1,7 +1,8 @@
--- holidays — special calendar days: no happy hour, optionally closed
+-- holidays — special calendar days for pricing rules, optionally closed
 --
--- One row per Asia/Kolkata calendar day. On any listed day the happy-hour band is
--- off (_pr_happy); closed = true also marks the arena shut that day. Written by
+-- One row per Asia/Kolkata calendar day. Pricing rules decide per rule whether
+-- they apply on a listed day (holiday_mode any / only / skip, _pr_rule);
+-- closed = true also marks the arena shut that day. Written by
 -- op_holiday_upsert / op_holiday_delete (holiday.upsert / holiday.delete). Part
 -- of the pricing snapshot, so a change retires the previous price list into
 -- pricing_catalog_history.
@@ -21,13 +22,13 @@ create table "public"."holidays" (
   constraint "holidays_pkey" primary key (id)
 );
 
-comment on table public.holidays is 'Holiday and closure days per arena. Every listed day has no happy hour; closed days are also shut. Part of the pricing snapshot.';
+comment on table public.holidays is 'Holiday and closure days per arena. Pricing rules apply on a listed day per their holiday_mode; closed days are also shut. Part of the pricing snapshot.';
 
 comment on column public.holidays.arena_id is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
 comment on column public.holidays.day is 'Business calendar day in Asia/Kolkata (IST); unique per arena.';
 
-comment on column public.holidays.closed is 'True when the arena is closed that day (listed in the snapshot''s closed_days); false = open, but without happy hour.';
+comment on column public.holidays.closed is 'True when the arena is closed that day (listed in the snapshot''s closed_days); false = open (rules follow their holiday_mode).';
 
 comment on column public.holidays.sync_xid is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull.';
 

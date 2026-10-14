@@ -7,13 +7,16 @@
 -- arenas' row ids), so deletions travel as the authorized broadcast nudge on
 -- the private arena channel (realtime/policies.sql). Events only trigger a
 -- refetch / sync_pull; no client treats a payload as data.
+alter publication "supabase_realtime" add table "public"."accessory_kinds";
 alter publication "supabase_realtime" add table "public"."activities";
+alter publication "supabase_realtime" add table "public"."bill_discounts";
 alter publication "supabase_realtime" add table "public"."billing_policies";
 alter publication "supabase_realtime" add table "public"."bookings";
 alter publication "supabase_realtime" add table "public"."controller_allocations";
 alter publication "supabase_realtime" add table "public"."controller_moves";
 alter publication "supabase_realtime" add table "public"."controllers";
 alter publication "supabase_realtime" add table "public"."customers";
+alter publication "supabase_realtime" add table "public"."discounts";
 alter publication "supabase_realtime" add table "public"."game_categories";
 alter publication "supabase_realtime" add table "public"."game_controls";
 alter publication "supabase_realtime" add table "public"."game_resources";
@@ -25,6 +28,7 @@ alter publication "supabase_realtime" add table "public"."group_payments";
 alter publication "supabase_realtime" add table "public"."group_sessions";
 alter publication "supabase_realtime" add table "public"."holidays";
 alter publication "supabase_realtime" add table "public"."payments";
+alter publication "supabase_realtime" add table "public"."pricing_rules";
 alter publication "supabase_realtime" add table "public"."rate_bands";
 alter publication "supabase_realtime" add table "public"."rate_cards";
 alter publication "supabase_realtime" add table "public"."rates";

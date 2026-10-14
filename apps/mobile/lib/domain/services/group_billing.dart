@@ -18,6 +18,9 @@
 /// Subtotals are summed in paise and cash rounding is applied ONCE to the group
 /// total, exactly like [SegmentBilling] for a single session.
 ///
+/// Pricing rules are judged once, at the GROUP's start, for every stretch
+/// (`_pr_group_bill`, `_pr_sweep`).
+///
 /// SERVER PARITY: the server re-prices every bill with a plpgsql port of this
 /// code (migration 0013, `_pr_*`) and refuses any difference. Changing how
 /// money is computed here needs a matching new migration and a green
@@ -28,6 +31,7 @@ import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/money/rounding.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/pricing/pricing_quote.dart';
+import 'package:arena_ops/domain/pricing/pricing_rule.dart';
 import 'package:arena_ops/domain/pricing/pricing_service.dart';
 import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -39,6 +43,7 @@ class GroupBill {
     required this.total,
     required this.subtotal,
     required this.charges,
+    this.rules = const [],
   });
 
   /// Final payable amount after cash rounding.
@@ -47,8 +52,11 @@ class GroupBill {
   /// Sum of all sub-charge subtotals before cash rounding.
   final Paise subtotal;
 
-  /// Immutable charge rows (one per happy-hour band of each priced stretch).
+  /// Immutable charge rows (one per priced stretch).
   final List<GroupCharge> charges;
+
+  /// The pricing rules that adjusted this bill's prices, without repeats.
+  final List<PricingRule> rules;
 }
 
 class GroupBilling {
@@ -58,6 +66,7 @@ class GroupBilling {
   /// Prices [assignments]. Open assignments (endedAt == null) are priced up to
   /// [openEndAt] (now for a live amount, or the actual end at close). The pooled
   /// mode bills purchased controllers over `[groupStart, openEndAt]`.
+  /// [groupStart] is also the pricing-rule instant for every stretch.
   GroupBill bill({
     required PricingSnapshot snapshot,
     required List<GroupAssignment> assignments,
@@ -68,6 +77,7 @@ class GroupBilling {
   }) {
     final groupId = assignments.isEmpty ? '' : assignments.first.groupId;
     final charges = <GroupCharge>[];
+    final rules = <PricingRule>{};
     var subtotal = 0;
     var index = 0;
 
@@ -80,6 +90,7 @@ class GroupBilling {
       String? assignmentId,
     }) {
       subtotal += q.subtotal.value;
+      if (q.rule != null) rules.add(q.rule!);
       for (final ps in q.segments) {
         charges.add(GroupCharge(
           id: '',
@@ -136,6 +147,7 @@ class GroupBilling {
           controllerCount: controllers == 0 ? null : controllers,
           start: s,
           end: e,
+          ruleAt: groupStart,
         );
         final q = quoted.valueOrNull;
         if (q == null) continue; // misconfigured rate; excluded from the bill
@@ -173,6 +185,7 @@ class GroupBilling {
             controllerCount: purchasedControllerCount,
             start: groupStart,
             end: openEndAt,
+            ruleAt: groupStart,
           );
           final q = quoted.valueOrNull;
           if (q != null) {
@@ -200,6 +213,7 @@ class GroupBilling {
       total: Paise(total),
       subtotal: Paise(subtotal),
       charges: charges,
+      rules: rules.toList(),
     );
   }
 }

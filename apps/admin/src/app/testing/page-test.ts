@@ -12,8 +12,8 @@ import { SampleAuthApi } from '../core/auth/auth-api.sample';
 import { FloorApi } from '../core/floor/floor-api';
 import { SampleFloorApi } from '../core/floor/floor-api.sample';
 import { Clock } from '../core/time/clock';
-import { ControllersApi } from '../features/controllers/data/controllers-api';
-import { SampleControllersApi } from '../features/controllers/data/controllers-api.sample';
+import { AccessoriesApi } from '../features/accessories/data/accessories-api';
+import { SampleAccessoriesApi } from '../features/accessories/data/accessories-api.sample';
 import { PricingApi } from '../features/pricing/data/pricing-api';
 import { FloorOptionsApi } from '../features/settings/data/floor-options';
 import { SampleFloorOptionsApi } from '../features/settings/data/floor-options.sample';
@@ -38,7 +38,7 @@ function breakpoints(width: number) {
 }
 
 /**
- * Opens a dashboard URL on the sample APIs (floor, pricing, sales, controllers) at NOW, and
+ * Opens a dashboard URL on the sample APIs (floor, pricing, sales, accessories) at NOW, and
  * returns DOM helpers shared by the screen specs.
  */
 export async function startPage(
@@ -48,7 +48,7 @@ export async function startPage(
     floor: SampleFloorApi;
     pricing: SamplePricingApi;
     sales: SampleSalesApi;
-    controllers: SampleControllersApi;
+    accessories: SampleAccessoriesApi;
     arena: SampleArenaApi;
   }) => void = () => undefined,
 ) {
@@ -56,16 +56,16 @@ export async function startPage(
   const pricing = new SamplePricingApi();
   const sales = new SampleSalesApi(NOW);
   const floorOptions = new SampleFloorOptionsApi();
-  const controllers = new SampleControllersApi();
+  const accessories = new SampleAccessoriesApi();
   const arena = new SampleArenaApi();
-  setup({ floor, pricing, sales, controllers, arena });
+  setup({ floor, pricing, sales, accessories, arena });
   TestBed.configureTestingModule({
     providers: [
       provideRouter(routes, withComponentInputBinding()),
       { provide: AuthApi, useValue: new SampleAuthApi() },
       { provide: ArenaApi, useValue: arena },
       { provide: FloorApi, useValue: floor },
-      { provide: ControllersApi, useValue: controllers },
+      { provide: AccessoriesApi, useValue: accessories },
       { provide: PricingApi, useValue: pricing },
       { provide: SalesApi, useValue: sales },
       { provide: FloorOptionsApi, useValue: floorOptions },
@@ -130,7 +130,7 @@ export async function startPage(
     pricing,
     sales,
     floorOptions,
-    controllers,
+    accessories,
     settle,
     doc,
     text,

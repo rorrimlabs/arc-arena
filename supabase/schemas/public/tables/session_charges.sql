@@ -1,6 +1,6 @@
 -- session_charges — itemised bill lines of an ended single session
 --
--- One row per priced band piece (standard / happy hour) of each segment, written
+-- One row per priced band piece (standard) of each segment, written
 -- once by op_session_end. The server re-prices the session from its segments and
 -- pricing_snapshot (_pr_session_bill) and refuses the op (price_mismatch) unless
 -- the set of charge rows and the total match exactly. Immutable afterwards.
@@ -45,7 +45,7 @@ comment on column public.session_charges.arena_id is 'Owning arena (tenant); RLS
 
 comment on column public.session_charges.segment_index is '0-based ordinal of this charge line within the session''s bill (one segment can yield several lines); not session_segments.idx.';
 
-comment on column public.session_charges.band_code is 'Price band: standard or happy (happy hour).';
+comment on column public.session_charges.band_code is 'Price band: standard (happy only on charges billed before happy hour became a pricing rule).';
 
 comment on column public.session_charges.controller_count is 'Controller count the rate was looked up for (copied from the segment).';
 

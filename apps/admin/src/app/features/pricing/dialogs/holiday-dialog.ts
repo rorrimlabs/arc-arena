@@ -57,7 +57,8 @@ export const MAX_HOLIDAY_NAME = 60;
       <mat-dialog-content>
         <div class="flex flex-col gap-5 pt-1">
           <p class="text-sm leading-[1.4] text-muted">
-            Happy-hour prices never apply on a holiday. Sessions already started keep their prices.
+            Pricing rules set to skip holidays don't apply that day. Sessions already started keep
+            their prices.
           </p>
           <mat-form-field>
             <mat-label>Date</mat-label>
@@ -153,7 +154,7 @@ export class HolidayDialog {
         day: holiday.day,
         snack: before
           ? `${holiday.name} saved`
-          : `${holiday.name} added · no happy hour on ${formatHolidayDay(holiday.day)}`,
+          : `${holiday.name} added · ${formatHolidayDay(holiday.day)}`,
       });
     } catch (e) {
       this.error.set(toAppError(e).message);

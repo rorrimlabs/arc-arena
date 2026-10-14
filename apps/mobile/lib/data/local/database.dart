@@ -37,7 +37,14 @@ class Activities extends Table {
   BoolColumn get usesControllers => boolean()();
   BoolColumn get usesGames => boolean()();
   TextColumn get durationModel => text()();
-  BoolColumn get happyHourEligible => boolean()();
+
+  /// Retired in v16: an activity pricing flag older builds billed by (time-of-
+  /// day prices are pricing rules now). The column stays so device files made
+  /// by those builds keep opening and inserting; nothing reads it. Filled in
+  /// Dart because the old column has no SQL default.
+  BoolColumn get legacyHappyHourEligible => boolean()
+      .named('happy_hour_eligible')
+      .clientDefault(() => false)();
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   BoolColumn get active => boolean().withDefault(const Constant(true))();
 
@@ -231,12 +238,42 @@ class Holidays extends Table {
   TextColumn get day => text()(); // IST ISO date
   TextColumn get name => text()();
 
-  /// Happy hour never applies on a holiday. [closed] additionally means the
-  /// centre does not trade that day (OWNER CONFIRMATION #26).
+  /// A public holiday (pricing rules can target or skip it). [closed]
+  /// additionally means the centre does not trade that day (OWNER
+  /// CONFIRMATION #26).
   BoolColumn get closed => boolean().withDefault(const Constant(false))();
 
   @override
   Set<Column> get primaryKey => {day};
+}
+
+/// A pricing rule (server `pricing_rules`, synced read-only): a day/time price
+/// adjustment the owner defines on the dashboard. Active rows are frozen into
+/// every new session's pricing snapshot (v16).
+@DataClassName('PricingRuleRow')
+class PricingRules extends Table {
+  TextColumn get id => text()();
+  TextColumn get name => text()();
+  IntColumn get priority => integer().withDefault(const Constant(0))();
+  BoolColumn get active => boolean().withDefault(const Constant(true))();
+
+  /// ISO weekdays (1 = Monday … 7 = Sunday).
+  TextColumn get days => text().map(const IntListConverter())();
+  IntColumn get startMin => integer()();
+  IntColumn get endMin => integer()();
+  TextColumn get holidayMode => text().withDefault(const Constant('any'))();
+
+  /// IST ISO dates, inclusive; null = open-ended.
+  TextColumn get validFrom => text().nullable()();
+  TextColumn get validUntil => text().nullable()();
+
+  /// Empty = every activity.
+  TextColumn get activityCodes => text().map(const StringListConverter())();
+  TextColumn get adjustKind => text()(); // percent | per_hour
+  IntColumn get adjustValue => integer()();
+
+  @override
+  Set<Column> get primaryKey => {id};
 }
 
 /// Single-row-per-key app configuration (opening hours today). Kept as JSON so
@@ -583,6 +620,7 @@ class Payments extends Table {
   BillingPolicies,
   Holidays,
   Settings,
+  PricingRules,
   Sessions,
   SessionSegments,
   SessionExtensions,
@@ -605,7 +643,7 @@ class AppDatabase extends _$AppDatabase {
   /// Readable without constructing (and therefore without opening) the
   /// database, so the pre-open backup in `main()` can compare it against what
   /// is on disk and decide whether a migration is about to run.
-  static const expectedSchemaVersion = 15;
+  static const expectedSchemaVersion = 16;
 
   @override
   int get schemaVersion => expectedSchemaVersion;
@@ -754,6 +792,19 @@ class AppDatabase extends _$AppDatabase {
         // column; every existing customer keeps its row and reads as "not given".
         14: (m) async {
           await m.addColumn(customers, customers.birthYear);
+        },
+        // v15 -> v16: pricing rules (time-of-day prices). ADDITIVE — one new
+        // table; no session, segment, charge or payment row is touched, and
+        // the retired activity column stays. A cloud device rewinds its pull
+        // cursor so the next sync re-reads the feed from the start: rule rows
+        // the server sent before this build were skipped as an unknown table,
+        // and without them every new session's snapshot would be refused.
+        // Re-applying the feed is idempotent (server rows are upserted).
+        15: (m) async {
+          await m.createTable(pricingRules);
+          await customStatement(
+            "UPDATE sync_meta SET value = '0' WHERE key = 'pull_cursor'",
+          );
         },
       };
 

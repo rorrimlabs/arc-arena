@@ -643,20 +643,21 @@ class $ActivitiesTable extends Activities
     type: DriftSqlType.string,
     requiredDuringInsert: true,
   );
-  static const VerificationMeta _happyHourEligibleMeta = const VerificationMeta(
-    'happyHourEligible',
-  );
+  static const VerificationMeta _legacyHappyHourEligibleMeta =
+      const VerificationMeta('legacyHappyHourEligible');
   @override
-  late final GeneratedColumn<bool> happyHourEligible = GeneratedColumn<bool>(
-    'happy_hour_eligible',
-    aliasedName,
-    false,
-    type: DriftSqlType.bool,
-    requiredDuringInsert: true,
-    defaultConstraints: GeneratedColumn.constraintIsAlways(
-      'CHECK ("happy_hour_eligible" IN (0, 1))',
-    ),
-  );
+  late final GeneratedColumn<bool> legacyHappyHourEligible =
+      GeneratedColumn<bool>(
+        'happy_hour_eligible',
+        aliasedName,
+        false,
+        type: DriftSqlType.bool,
+        requiredDuringInsert: false,
+        defaultConstraints: GeneratedColumn.constraintIsAlways(
+          'CHECK ("happy_hour_eligible" IN (0, 1))',
+        ),
+        clientDefault: () => false,
+      );
   static const VerificationMeta _sortOrderMeta = const VerificationMeta(
     'sortOrder',
   );
@@ -690,7 +691,7 @@ class $ActivitiesTable extends Activities
     usesControllers,
     usesGames,
     durationModel,
-    happyHourEligible,
+    legacyHappyHourEligible,
     sortOrder,
     active,
   ];
@@ -759,14 +760,12 @@ class $ActivitiesTable extends Activities
     }
     if (data.containsKey('happy_hour_eligible')) {
       context.handle(
-        _happyHourEligibleMeta,
-        happyHourEligible.isAcceptableOrUnknown(
+        _legacyHappyHourEligibleMeta,
+        legacyHappyHourEligible.isAcceptableOrUnknown(
           data['happy_hour_eligible']!,
-          _happyHourEligibleMeta,
+          _legacyHappyHourEligibleMeta,
         ),
       );
-    } else if (isInserting) {
-      context.missing(_happyHourEligibleMeta);
     }
     if (data.containsKey('sort_order')) {
       context.handle(
@@ -813,7 +812,7 @@ class $ActivitiesTable extends Activities
         DriftSqlType.string,
         data['${effectivePrefix}duration_model'],
       )!,
-      happyHourEligible: attachedDatabase.typeMapping.read(
+      legacyHappyHourEligible: attachedDatabase.typeMapping.read(
         DriftSqlType.bool,
         data['${effectivePrefix}happy_hour_eligible'],
       )!,
@@ -841,7 +840,12 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final bool usesControllers;
   final bool usesGames;
   final String durationModel;
-  final bool happyHourEligible;
+
+  /// Retired in v16: an activity pricing flag older builds billed by (time-of-
+  /// day prices are pricing rules now). The column stays so device files made
+  /// by those builds keep opening and inserting; nothing reads it. Filled in
+  /// Dart because the old column has no SQL default.
+  final bool legacyHappyHourEligible;
   final int sortOrder;
   final bool active;
   const ActivityRow({
@@ -851,7 +855,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     required this.usesControllers,
     required this.usesGames,
     required this.durationModel,
-    required this.happyHourEligible,
+    required this.legacyHappyHourEligible,
     required this.sortOrder,
     required this.active,
   });
@@ -864,7 +868,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     map['uses_controllers'] = Variable<bool>(usesControllers);
     map['uses_games'] = Variable<bool>(usesGames);
     map['duration_model'] = Variable<String>(durationModel);
-    map['happy_hour_eligible'] = Variable<bool>(happyHourEligible);
+    map['happy_hour_eligible'] = Variable<bool>(legacyHappyHourEligible);
     map['sort_order'] = Variable<int>(sortOrder);
     map['active'] = Variable<bool>(active);
     return map;
@@ -878,7 +882,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       usesControllers: Value(usesControllers),
       usesGames: Value(usesGames),
       durationModel: Value(durationModel),
-      happyHourEligible: Value(happyHourEligible),
+      legacyHappyHourEligible: Value(legacyHappyHourEligible),
       sortOrder: Value(sortOrder),
       active: Value(active),
     );
@@ -896,7 +900,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       usesControllers: serializer.fromJson<bool>(json['usesControllers']),
       usesGames: serializer.fromJson<bool>(json['usesGames']),
       durationModel: serializer.fromJson<String>(json['durationModel']),
-      happyHourEligible: serializer.fromJson<bool>(json['happyHourEligible']),
+      legacyHappyHourEligible: serializer.fromJson<bool>(
+        json['legacyHappyHourEligible'],
+      ),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       active: serializer.fromJson<bool>(json['active']),
     );
@@ -911,7 +917,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       'usesControllers': serializer.toJson<bool>(usesControllers),
       'usesGames': serializer.toJson<bool>(usesGames),
       'durationModel': serializer.toJson<String>(durationModel),
-      'happyHourEligible': serializer.toJson<bool>(happyHourEligible),
+      'legacyHappyHourEligible': serializer.toJson<bool>(
+        legacyHappyHourEligible,
+      ),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'active': serializer.toJson<bool>(active),
     };
@@ -924,7 +932,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     bool? usesControllers,
     bool? usesGames,
     String? durationModel,
-    bool? happyHourEligible,
+    bool? legacyHappyHourEligible,
     int? sortOrder,
     bool? active,
   }) => ActivityRow(
@@ -934,7 +942,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     usesControllers: usesControllers ?? this.usesControllers,
     usesGames: usesGames ?? this.usesGames,
     durationModel: durationModel ?? this.durationModel,
-    happyHourEligible: happyHourEligible ?? this.happyHourEligible,
+    legacyHappyHourEligible:
+        legacyHappyHourEligible ?? this.legacyHappyHourEligible,
     sortOrder: sortOrder ?? this.sortOrder,
     active: active ?? this.active,
   );
@@ -950,9 +959,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       durationModel: data.durationModel.present
           ? data.durationModel.value
           : this.durationModel,
-      happyHourEligible: data.happyHourEligible.present
-          ? data.happyHourEligible.value
-          : this.happyHourEligible,
+      legacyHappyHourEligible: data.legacyHappyHourEligible.present
+          ? data.legacyHappyHourEligible.value
+          : this.legacyHappyHourEligible,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       active: data.active.present ? data.active.value : this.active,
     );
@@ -967,7 +976,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('usesControllers: $usesControllers, ')
           ..write('usesGames: $usesGames, ')
           ..write('durationModel: $durationModel, ')
-          ..write('happyHourEligible: $happyHourEligible, ')
+          ..write('legacyHappyHourEligible: $legacyHappyHourEligible, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('active: $active')
           ..write(')'))
@@ -982,7 +991,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     usesControllers,
     usesGames,
     durationModel,
-    happyHourEligible,
+    legacyHappyHourEligible,
     sortOrder,
     active,
   );
@@ -996,7 +1005,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.usesControllers == this.usesControllers &&
           other.usesGames == this.usesGames &&
           other.durationModel == this.durationModel &&
-          other.happyHourEligible == this.happyHourEligible &&
+          other.legacyHappyHourEligible == this.legacyHappyHourEligible &&
           other.sortOrder == this.sortOrder &&
           other.active == this.active);
 }
@@ -1008,7 +1017,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<bool> usesControllers;
   final Value<bool> usesGames;
   final Value<String> durationModel;
-  final Value<bool> happyHourEligible;
+  final Value<bool> legacyHappyHourEligible;
   final Value<int> sortOrder;
   final Value<bool> active;
   final Value<int> rowid;
@@ -1019,7 +1028,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.usesControllers = const Value.absent(),
     this.usesGames = const Value.absent(),
     this.durationModel = const Value.absent(),
-    this.happyHourEligible = const Value.absent(),
+    this.legacyHappyHourEligible = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.active = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1031,7 +1040,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     required bool usesControllers,
     required bool usesGames,
     required String durationModel,
-    required bool happyHourEligible,
+    this.legacyHappyHourEligible = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.active = const Value.absent(),
     this.rowid = const Value.absent(),
@@ -1040,8 +1049,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
        name = Value(name),
        usesControllers = Value(usesControllers),
        usesGames = Value(usesGames),
-       durationModel = Value(durationModel),
-       happyHourEligible = Value(happyHourEligible);
+       durationModel = Value(durationModel);
   static Insertable<ActivityRow> custom({
     Expression<String>? id,
     Expression<String>? code,
@@ -1049,7 +1057,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<bool>? usesControllers,
     Expression<bool>? usesGames,
     Expression<String>? durationModel,
-    Expression<bool>? happyHourEligible,
+    Expression<bool>? legacyHappyHourEligible,
     Expression<int>? sortOrder,
     Expression<bool>? active,
     Expression<int>? rowid,
@@ -1061,7 +1069,8 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       if (usesControllers != null) 'uses_controllers': usesControllers,
       if (usesGames != null) 'uses_games': usesGames,
       if (durationModel != null) 'duration_model': durationModel,
-      if (happyHourEligible != null) 'happy_hour_eligible': happyHourEligible,
+      if (legacyHappyHourEligible != null)
+        'happy_hour_eligible': legacyHappyHourEligible,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (active != null) 'active': active,
       if (rowid != null) 'rowid': rowid,
@@ -1075,7 +1084,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Value<bool>? usesControllers,
     Value<bool>? usesGames,
     Value<String>? durationModel,
-    Value<bool>? happyHourEligible,
+    Value<bool>? legacyHappyHourEligible,
     Value<int>? sortOrder,
     Value<bool>? active,
     Value<int>? rowid,
@@ -1087,7 +1096,8 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
       usesControllers: usesControllers ?? this.usesControllers,
       usesGames: usesGames ?? this.usesGames,
       durationModel: durationModel ?? this.durationModel,
-      happyHourEligible: happyHourEligible ?? this.happyHourEligible,
+      legacyHappyHourEligible:
+          legacyHappyHourEligible ?? this.legacyHappyHourEligible,
       sortOrder: sortOrder ?? this.sortOrder,
       active: active ?? this.active,
       rowid: rowid ?? this.rowid,
@@ -1115,8 +1125,10 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     if (durationModel.present) {
       map['duration_model'] = Variable<String>(durationModel.value);
     }
-    if (happyHourEligible.present) {
-      map['happy_hour_eligible'] = Variable<bool>(happyHourEligible.value);
+    if (legacyHappyHourEligible.present) {
+      map['happy_hour_eligible'] = Variable<bool>(
+        legacyHappyHourEligible.value,
+      );
     }
     if (sortOrder.present) {
       map['sort_order'] = Variable<int>(sortOrder.value);
@@ -1139,7 +1151,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('usesControllers: $usesControllers, ')
           ..write('usesGames: $usesGames, ')
           ..write('durationModel: $durationModel, ')
-          ..write('happyHourEligible: $happyHourEligible, ')
+          ..write('legacyHappyHourEligible: $legacyHappyHourEligible, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('active: $active, ')
           ..write('rowid: $rowid')
@@ -6331,8 +6343,9 @@ class HolidayRow extends DataClass implements Insertable<HolidayRow> {
   final String day;
   final String name;
 
-  /// Happy hour never applies on a holiday. [closed] additionally means the
-  /// centre does not trade that day (OWNER CONFIRMATION #26).
+  /// A public holiday (pricing rules can target or skip it). [closed]
+  /// additionally means the centre does not trade that day (OWNER
+  /// CONFIRMATION #26).
   final bool closed;
   const HolidayRow({
     required this.day,
@@ -6687,6 +6700,774 @@ class SettingsCompanion extends UpdateCompanion<SettingRow> {
     return (StringBuffer('SettingsCompanion(')
           ..write('key: $key, ')
           ..write('json: $json, ')
+          ..write('rowid: $rowid')
+          ..write(')'))
+        .toString();
+  }
+}
+
+class $PricingRulesTable extends PricingRules
+    with TableInfo<$PricingRulesTable, PricingRuleRow> {
+  @override
+  final GeneratedDatabase attachedDatabase;
+  final String? _alias;
+  $PricingRulesTable(this.attachedDatabase, [this._alias]);
+  static const VerificationMeta _idMeta = const VerificationMeta('id');
+  @override
+  late final GeneratedColumn<String> id = GeneratedColumn<String>(
+    'id',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _nameMeta = const VerificationMeta('name');
+  @override
+  late final GeneratedColumn<String> name = GeneratedColumn<String>(
+    'name',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _priorityMeta = const VerificationMeta(
+    'priority',
+  );
+  @override
+  late final GeneratedColumn<int> priority = GeneratedColumn<int>(
+    'priority',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
+  static const VerificationMeta _activeMeta = const VerificationMeta('active');
+  @override
+  late final GeneratedColumn<bool> active = GeneratedColumn<bool>(
+    'active',
+    aliasedName,
+    false,
+    type: DriftSqlType.bool,
+    requiredDuringInsert: false,
+    defaultConstraints: GeneratedColumn.constraintIsAlways(
+      'CHECK ("active" IN (0, 1))',
+    ),
+    defaultValue: const Constant(true),
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<List<int>, String> days =
+      GeneratedColumn<String>(
+        'days',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: true,
+      ).withConverter<List<int>>($PricingRulesTable.$converterdays);
+  static const VerificationMeta _startMinMeta = const VerificationMeta(
+    'startMin',
+  );
+  @override
+  late final GeneratedColumn<int> startMin = GeneratedColumn<int>(
+    'start_min',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _endMinMeta = const VerificationMeta('endMin');
+  @override
+  late final GeneratedColumn<int> endMin = GeneratedColumn<int>(
+    'end_min',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _holidayModeMeta = const VerificationMeta(
+    'holidayMode',
+  );
+  @override
+  late final GeneratedColumn<String> holidayMode = GeneratedColumn<String>(
+    'holiday_mode',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+    defaultValue: const Constant('any'),
+  );
+  static const VerificationMeta _validFromMeta = const VerificationMeta(
+    'validFrom',
+  );
+  @override
+  late final GeneratedColumn<String> validFrom = GeneratedColumn<String>(
+    'valid_from',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  static const VerificationMeta _validUntilMeta = const VerificationMeta(
+    'validUntil',
+  );
+  @override
+  late final GeneratedColumn<String> validUntil = GeneratedColumn<String>(
+    'valid_until',
+    aliasedName,
+    true,
+    type: DriftSqlType.string,
+    requiredDuringInsert: false,
+  );
+  @override
+  late final GeneratedColumnWithTypeConverter<List<String>, String>
+  activityCodes = GeneratedColumn<String>(
+    'activity_codes',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  ).withConverter<List<String>>($PricingRulesTable.$converteractivityCodes);
+  static const VerificationMeta _adjustKindMeta = const VerificationMeta(
+    'adjustKind',
+  );
+  @override
+  late final GeneratedColumn<String> adjustKind = GeneratedColumn<String>(
+    'adjust_kind',
+    aliasedName,
+    false,
+    type: DriftSqlType.string,
+    requiredDuringInsert: true,
+  );
+  static const VerificationMeta _adjustValueMeta = const VerificationMeta(
+    'adjustValue',
+  );
+  @override
+  late final GeneratedColumn<int> adjustValue = GeneratedColumn<int>(
+    'adjust_value',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: true,
+  );
+  @override
+  List<GeneratedColumn> get $columns => [
+    id,
+    name,
+    priority,
+    active,
+    days,
+    startMin,
+    endMin,
+    holidayMode,
+    validFrom,
+    validUntil,
+    activityCodes,
+    adjustKind,
+    adjustValue,
+  ];
+  @override
+  String get aliasedName => _alias ?? actualTableName;
+  @override
+  String get actualTableName => $name;
+  static const String $name = 'pricing_rules';
+  @override
+  VerificationContext validateIntegrity(
+    Insertable<PricingRuleRow> instance, {
+    bool isInserting = false,
+  }) {
+    final context = VerificationContext();
+    final data = instance.toColumns(true);
+    if (data.containsKey('id')) {
+      context.handle(_idMeta, id.isAcceptableOrUnknown(data['id']!, _idMeta));
+    } else if (isInserting) {
+      context.missing(_idMeta);
+    }
+    if (data.containsKey('name')) {
+      context.handle(
+        _nameMeta,
+        name.isAcceptableOrUnknown(data['name']!, _nameMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_nameMeta);
+    }
+    if (data.containsKey('priority')) {
+      context.handle(
+        _priorityMeta,
+        priority.isAcceptableOrUnknown(data['priority']!, _priorityMeta),
+      );
+    }
+    if (data.containsKey('active')) {
+      context.handle(
+        _activeMeta,
+        active.isAcceptableOrUnknown(data['active']!, _activeMeta),
+      );
+    }
+    if (data.containsKey('start_min')) {
+      context.handle(
+        _startMinMeta,
+        startMin.isAcceptableOrUnknown(data['start_min']!, _startMinMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_startMinMeta);
+    }
+    if (data.containsKey('end_min')) {
+      context.handle(
+        _endMinMeta,
+        endMin.isAcceptableOrUnknown(data['end_min']!, _endMinMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_endMinMeta);
+    }
+    if (data.containsKey('holiday_mode')) {
+      context.handle(
+        _holidayModeMeta,
+        holidayMode.isAcceptableOrUnknown(
+          data['holiday_mode']!,
+          _holidayModeMeta,
+        ),
+      );
+    }
+    if (data.containsKey('valid_from')) {
+      context.handle(
+        _validFromMeta,
+        validFrom.isAcceptableOrUnknown(data['valid_from']!, _validFromMeta),
+      );
+    }
+    if (data.containsKey('valid_until')) {
+      context.handle(
+        _validUntilMeta,
+        validUntil.isAcceptableOrUnknown(data['valid_until']!, _validUntilMeta),
+      );
+    }
+    if (data.containsKey('adjust_kind')) {
+      context.handle(
+        _adjustKindMeta,
+        adjustKind.isAcceptableOrUnknown(data['adjust_kind']!, _adjustKindMeta),
+      );
+    } else if (isInserting) {
+      context.missing(_adjustKindMeta);
+    }
+    if (data.containsKey('adjust_value')) {
+      context.handle(
+        _adjustValueMeta,
+        adjustValue.isAcceptableOrUnknown(
+          data['adjust_value']!,
+          _adjustValueMeta,
+        ),
+      );
+    } else if (isInserting) {
+      context.missing(_adjustValueMeta);
+    }
+    return context;
+  }
+
+  @override
+  Set<GeneratedColumn> get $primaryKey => {id};
+  @override
+  PricingRuleRow map(Map<String, dynamic> data, {String? tablePrefix}) {
+    final effectivePrefix = tablePrefix != null ? '$tablePrefix.' : '';
+    return PricingRuleRow(
+      id: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}id'],
+      )!,
+      name: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}name'],
+      )!,
+      priority: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}priority'],
+      )!,
+      active: attachedDatabase.typeMapping.read(
+        DriftSqlType.bool,
+        data['${effectivePrefix}active'],
+      )!,
+      days: $PricingRulesTable.$converterdays.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}days'],
+        )!,
+      ),
+      startMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}start_min'],
+      )!,
+      endMin: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}end_min'],
+      )!,
+      holidayMode: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}holiday_mode'],
+      )!,
+      validFrom: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}valid_from'],
+      ),
+      validUntil: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}valid_until'],
+      ),
+      activityCodes: $PricingRulesTable.$converteractivityCodes.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}activity_codes'],
+        )!,
+      ),
+      adjustKind: attachedDatabase.typeMapping.read(
+        DriftSqlType.string,
+        data['${effectivePrefix}adjust_kind'],
+      )!,
+      adjustValue: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}adjust_value'],
+      )!,
+    );
+  }
+
+  @override
+  $PricingRulesTable createAlias(String alias) {
+    return $PricingRulesTable(attachedDatabase, alias);
+  }
+
+  static TypeConverter<List<int>, String> $converterdays =
+      const IntListConverter();
+  static TypeConverter<List<String>, String> $converteractivityCodes =
+      const StringListConverter();
+}
+
+class PricingRuleRow extends DataClass implements Insertable<PricingRuleRow> {
+  final String id;
+  final String name;
+  final int priority;
+  final bool active;
+
+  /// ISO weekdays (1 = Monday … 7 = Sunday).
+  final List<int> days;
+  final int startMin;
+  final int endMin;
+  final String holidayMode;
+
+  /// IST ISO dates, inclusive; null = open-ended.
+  final String? validFrom;
+  final String? validUntil;
+
+  /// Empty = every activity.
+  final List<String> activityCodes;
+  final String adjustKind;
+  final int adjustValue;
+  const PricingRuleRow({
+    required this.id,
+    required this.name,
+    required this.priority,
+    required this.active,
+    required this.days,
+    required this.startMin,
+    required this.endMin,
+    required this.holidayMode,
+    this.validFrom,
+    this.validUntil,
+    required this.activityCodes,
+    required this.adjustKind,
+    required this.adjustValue,
+  });
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    map['id'] = Variable<String>(id);
+    map['name'] = Variable<String>(name);
+    map['priority'] = Variable<int>(priority);
+    map['active'] = Variable<bool>(active);
+    {
+      map['days'] = Variable<String>(
+        $PricingRulesTable.$converterdays.toSql(days),
+      );
+    }
+    map['start_min'] = Variable<int>(startMin);
+    map['end_min'] = Variable<int>(endMin);
+    map['holiday_mode'] = Variable<String>(holidayMode);
+    if (!nullToAbsent || validFrom != null) {
+      map['valid_from'] = Variable<String>(validFrom);
+    }
+    if (!nullToAbsent || validUntil != null) {
+      map['valid_until'] = Variable<String>(validUntil);
+    }
+    {
+      map['activity_codes'] = Variable<String>(
+        $PricingRulesTable.$converteractivityCodes.toSql(activityCodes),
+      );
+    }
+    map['adjust_kind'] = Variable<String>(adjustKind);
+    map['adjust_value'] = Variable<int>(adjustValue);
+    return map;
+  }
+
+  PricingRulesCompanion toCompanion(bool nullToAbsent) {
+    return PricingRulesCompanion(
+      id: Value(id),
+      name: Value(name),
+      priority: Value(priority),
+      active: Value(active),
+      days: Value(days),
+      startMin: Value(startMin),
+      endMin: Value(endMin),
+      holidayMode: Value(holidayMode),
+      validFrom: validFrom == null && nullToAbsent
+          ? const Value.absent()
+          : Value(validFrom),
+      validUntil: validUntil == null && nullToAbsent
+          ? const Value.absent()
+          : Value(validUntil),
+      activityCodes: Value(activityCodes),
+      adjustKind: Value(adjustKind),
+      adjustValue: Value(adjustValue),
+    );
+  }
+
+  factory PricingRuleRow.fromJson(
+    Map<String, dynamic> json, {
+    ValueSerializer? serializer,
+  }) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return PricingRuleRow(
+      id: serializer.fromJson<String>(json['id']),
+      name: serializer.fromJson<String>(json['name']),
+      priority: serializer.fromJson<int>(json['priority']),
+      active: serializer.fromJson<bool>(json['active']),
+      days: serializer.fromJson<List<int>>(json['days']),
+      startMin: serializer.fromJson<int>(json['startMin']),
+      endMin: serializer.fromJson<int>(json['endMin']),
+      holidayMode: serializer.fromJson<String>(json['holidayMode']),
+      validFrom: serializer.fromJson<String?>(json['validFrom']),
+      validUntil: serializer.fromJson<String?>(json['validUntil']),
+      activityCodes: serializer.fromJson<List<String>>(json['activityCodes']),
+      adjustKind: serializer.fromJson<String>(json['adjustKind']),
+      adjustValue: serializer.fromJson<int>(json['adjustValue']),
+    );
+  }
+  @override
+  Map<String, dynamic> toJson({ValueSerializer? serializer}) {
+    serializer ??= driftRuntimeOptions.defaultSerializer;
+    return <String, dynamic>{
+      'id': serializer.toJson<String>(id),
+      'name': serializer.toJson<String>(name),
+      'priority': serializer.toJson<int>(priority),
+      'active': serializer.toJson<bool>(active),
+      'days': serializer.toJson<List<int>>(days),
+      'startMin': serializer.toJson<int>(startMin),
+      'endMin': serializer.toJson<int>(endMin),
+      'holidayMode': serializer.toJson<String>(holidayMode),
+      'validFrom': serializer.toJson<String?>(validFrom),
+      'validUntil': serializer.toJson<String?>(validUntil),
+      'activityCodes': serializer.toJson<List<String>>(activityCodes),
+      'adjustKind': serializer.toJson<String>(adjustKind),
+      'adjustValue': serializer.toJson<int>(adjustValue),
+    };
+  }
+
+  PricingRuleRow copyWith({
+    String? id,
+    String? name,
+    int? priority,
+    bool? active,
+    List<int>? days,
+    int? startMin,
+    int? endMin,
+    String? holidayMode,
+    Value<String?> validFrom = const Value.absent(),
+    Value<String?> validUntil = const Value.absent(),
+    List<String>? activityCodes,
+    String? adjustKind,
+    int? adjustValue,
+  }) => PricingRuleRow(
+    id: id ?? this.id,
+    name: name ?? this.name,
+    priority: priority ?? this.priority,
+    active: active ?? this.active,
+    days: days ?? this.days,
+    startMin: startMin ?? this.startMin,
+    endMin: endMin ?? this.endMin,
+    holidayMode: holidayMode ?? this.holidayMode,
+    validFrom: validFrom.present ? validFrom.value : this.validFrom,
+    validUntil: validUntil.present ? validUntil.value : this.validUntil,
+    activityCodes: activityCodes ?? this.activityCodes,
+    adjustKind: adjustKind ?? this.adjustKind,
+    adjustValue: adjustValue ?? this.adjustValue,
+  );
+  PricingRuleRow copyWithCompanion(PricingRulesCompanion data) {
+    return PricingRuleRow(
+      id: data.id.present ? data.id.value : this.id,
+      name: data.name.present ? data.name.value : this.name,
+      priority: data.priority.present ? data.priority.value : this.priority,
+      active: data.active.present ? data.active.value : this.active,
+      days: data.days.present ? data.days.value : this.days,
+      startMin: data.startMin.present ? data.startMin.value : this.startMin,
+      endMin: data.endMin.present ? data.endMin.value : this.endMin,
+      holidayMode: data.holidayMode.present
+          ? data.holidayMode.value
+          : this.holidayMode,
+      validFrom: data.validFrom.present ? data.validFrom.value : this.validFrom,
+      validUntil: data.validUntil.present
+          ? data.validUntil.value
+          : this.validUntil,
+      activityCodes: data.activityCodes.present
+          ? data.activityCodes.value
+          : this.activityCodes,
+      adjustKind: data.adjustKind.present
+          ? data.adjustKind.value
+          : this.adjustKind,
+      adjustValue: data.adjustValue.present
+          ? data.adjustValue.value
+          : this.adjustValue,
+    );
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PricingRuleRow(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('priority: $priority, ')
+          ..write('active: $active, ')
+          ..write('days: $days, ')
+          ..write('startMin: $startMin, ')
+          ..write('endMin: $endMin, ')
+          ..write('holidayMode: $holidayMode, ')
+          ..write('validFrom: $validFrom, ')
+          ..write('validUntil: $validUntil, ')
+          ..write('activityCodes: $activityCodes, ')
+          ..write('adjustKind: $adjustKind, ')
+          ..write('adjustValue: $adjustValue')
+          ..write(')'))
+        .toString();
+  }
+
+  @override
+  int get hashCode => Object.hash(
+    id,
+    name,
+    priority,
+    active,
+    days,
+    startMin,
+    endMin,
+    holidayMode,
+    validFrom,
+    validUntil,
+    activityCodes,
+    adjustKind,
+    adjustValue,
+  );
+  @override
+  bool operator ==(Object other) =>
+      identical(this, other) ||
+      (other is PricingRuleRow &&
+          other.id == this.id &&
+          other.name == this.name &&
+          other.priority == this.priority &&
+          other.active == this.active &&
+          other.days == this.days &&
+          other.startMin == this.startMin &&
+          other.endMin == this.endMin &&
+          other.holidayMode == this.holidayMode &&
+          other.validFrom == this.validFrom &&
+          other.validUntil == this.validUntil &&
+          other.activityCodes == this.activityCodes &&
+          other.adjustKind == this.adjustKind &&
+          other.adjustValue == this.adjustValue);
+}
+
+class PricingRulesCompanion extends UpdateCompanion<PricingRuleRow> {
+  final Value<String> id;
+  final Value<String> name;
+  final Value<int> priority;
+  final Value<bool> active;
+  final Value<List<int>> days;
+  final Value<int> startMin;
+  final Value<int> endMin;
+  final Value<String> holidayMode;
+  final Value<String?> validFrom;
+  final Value<String?> validUntil;
+  final Value<List<String>> activityCodes;
+  final Value<String> adjustKind;
+  final Value<int> adjustValue;
+  final Value<int> rowid;
+  const PricingRulesCompanion({
+    this.id = const Value.absent(),
+    this.name = const Value.absent(),
+    this.priority = const Value.absent(),
+    this.active = const Value.absent(),
+    this.days = const Value.absent(),
+    this.startMin = const Value.absent(),
+    this.endMin = const Value.absent(),
+    this.holidayMode = const Value.absent(),
+    this.validFrom = const Value.absent(),
+    this.validUntil = const Value.absent(),
+    this.activityCodes = const Value.absent(),
+    this.adjustKind = const Value.absent(),
+    this.adjustValue = const Value.absent(),
+    this.rowid = const Value.absent(),
+  });
+  PricingRulesCompanion.insert({
+    required String id,
+    required String name,
+    this.priority = const Value.absent(),
+    this.active = const Value.absent(),
+    required List<int> days,
+    required int startMin,
+    required int endMin,
+    this.holidayMode = const Value.absent(),
+    this.validFrom = const Value.absent(),
+    this.validUntil = const Value.absent(),
+    required List<String> activityCodes,
+    required String adjustKind,
+    required int adjustValue,
+    this.rowid = const Value.absent(),
+  }) : id = Value(id),
+       name = Value(name),
+       days = Value(days),
+       startMin = Value(startMin),
+       endMin = Value(endMin),
+       activityCodes = Value(activityCodes),
+       adjustKind = Value(adjustKind),
+       adjustValue = Value(adjustValue);
+  static Insertable<PricingRuleRow> custom({
+    Expression<String>? id,
+    Expression<String>? name,
+    Expression<int>? priority,
+    Expression<bool>? active,
+    Expression<String>? days,
+    Expression<int>? startMin,
+    Expression<int>? endMin,
+    Expression<String>? holidayMode,
+    Expression<String>? validFrom,
+    Expression<String>? validUntil,
+    Expression<String>? activityCodes,
+    Expression<String>? adjustKind,
+    Expression<int>? adjustValue,
+    Expression<int>? rowid,
+  }) {
+    return RawValuesInsertable({
+      if (id != null) 'id': id,
+      if (name != null) 'name': name,
+      if (priority != null) 'priority': priority,
+      if (active != null) 'active': active,
+      if (days != null) 'days': days,
+      if (startMin != null) 'start_min': startMin,
+      if (endMin != null) 'end_min': endMin,
+      if (holidayMode != null) 'holiday_mode': holidayMode,
+      if (validFrom != null) 'valid_from': validFrom,
+      if (validUntil != null) 'valid_until': validUntil,
+      if (activityCodes != null) 'activity_codes': activityCodes,
+      if (adjustKind != null) 'adjust_kind': adjustKind,
+      if (adjustValue != null) 'adjust_value': adjustValue,
+      if (rowid != null) 'rowid': rowid,
+    });
+  }
+
+  PricingRulesCompanion copyWith({
+    Value<String>? id,
+    Value<String>? name,
+    Value<int>? priority,
+    Value<bool>? active,
+    Value<List<int>>? days,
+    Value<int>? startMin,
+    Value<int>? endMin,
+    Value<String>? holidayMode,
+    Value<String?>? validFrom,
+    Value<String?>? validUntil,
+    Value<List<String>>? activityCodes,
+    Value<String>? adjustKind,
+    Value<int>? adjustValue,
+    Value<int>? rowid,
+  }) {
+    return PricingRulesCompanion(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      priority: priority ?? this.priority,
+      active: active ?? this.active,
+      days: days ?? this.days,
+      startMin: startMin ?? this.startMin,
+      endMin: endMin ?? this.endMin,
+      holidayMode: holidayMode ?? this.holidayMode,
+      validFrom: validFrom ?? this.validFrom,
+      validUntil: validUntil ?? this.validUntil,
+      activityCodes: activityCodes ?? this.activityCodes,
+      adjustKind: adjustKind ?? this.adjustKind,
+      adjustValue: adjustValue ?? this.adjustValue,
+      rowid: rowid ?? this.rowid,
+    );
+  }
+
+  @override
+  Map<String, Expression> toColumns(bool nullToAbsent) {
+    final map = <String, Expression>{};
+    if (id.present) {
+      map['id'] = Variable<String>(id.value);
+    }
+    if (name.present) {
+      map['name'] = Variable<String>(name.value);
+    }
+    if (priority.present) {
+      map['priority'] = Variable<int>(priority.value);
+    }
+    if (active.present) {
+      map['active'] = Variable<bool>(active.value);
+    }
+    if (days.present) {
+      map['days'] = Variable<String>(
+        $PricingRulesTable.$converterdays.toSql(days.value),
+      );
+    }
+    if (startMin.present) {
+      map['start_min'] = Variable<int>(startMin.value);
+    }
+    if (endMin.present) {
+      map['end_min'] = Variable<int>(endMin.value);
+    }
+    if (holidayMode.present) {
+      map['holiday_mode'] = Variable<String>(holidayMode.value);
+    }
+    if (validFrom.present) {
+      map['valid_from'] = Variable<String>(validFrom.value);
+    }
+    if (validUntil.present) {
+      map['valid_until'] = Variable<String>(validUntil.value);
+    }
+    if (activityCodes.present) {
+      map['activity_codes'] = Variable<String>(
+        $PricingRulesTable.$converteractivityCodes.toSql(activityCodes.value),
+      );
+    }
+    if (adjustKind.present) {
+      map['adjust_kind'] = Variable<String>(adjustKind.value);
+    }
+    if (adjustValue.present) {
+      map['adjust_value'] = Variable<int>(adjustValue.value);
+    }
+    if (rowid.present) {
+      map['rowid'] = Variable<int>(rowid.value);
+    }
+    return map;
+  }
+
+  @override
+  String toString() {
+    return (StringBuffer('PricingRulesCompanion(')
+          ..write('id: $id, ')
+          ..write('name: $name, ')
+          ..write('priority: $priority, ')
+          ..write('active: $active, ')
+          ..write('days: $days, ')
+          ..write('startMin: $startMin, ')
+          ..write('endMin: $endMin, ')
+          ..write('holidayMode: $holidayMode, ')
+          ..write('validFrom: $validFrom, ')
+          ..write('validUntil: $validUntil, ')
+          ..write('activityCodes: $activityCodes, ')
+          ..write('adjustKind: $adjustKind, ')
+          ..write('adjustValue: $adjustValue, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -16672,6 +17453,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
   );
   late final $HolidaysTable holidays = $HolidaysTable(this);
   late final $SettingsTable settings = $SettingsTable(this);
+  late final $PricingRulesTable pricingRules = $PricingRulesTable(this);
   late final $SessionsTable sessions = $SessionsTable(this);
   late final $SessionSegmentsTable sessionSegments = $SessionSegmentsTable(
     this,
@@ -16714,6 +17496,7 @@ abstract class _$AppDatabase extends GeneratedDatabase {
     billingPolicies,
     holidays,
     settings,
+    pricingRules,
     sessions,
     sessionSegments,
     sessionExtensions,
@@ -17027,7 +17810,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   required bool usesControllers,
   required bool usesGames,
   required String durationModel,
-  required bool happyHourEligible,
+  Value<bool> legacyHappyHourEligible,
   Value<int> sortOrder,
   Value<bool> active,
   Value<int> rowid,
@@ -17039,7 +17822,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<bool> usesControllers,
   Value<bool> usesGames,
   Value<String> durationModel,
-  Value<bool> happyHourEligible,
+  Value<bool> legacyHappyHourEligible,
   Value<int> sortOrder,
   Value<bool> active,
   Value<int> rowid,
@@ -17084,8 +17867,8 @@ class $$ActivitiesTableFilterComposer
     builder: (column) => ColumnFilters(column),
   );
 
-  ColumnFilters<bool> get happyHourEligible => $composableBuilder(
-    column: $table.happyHourEligible,
+  ColumnFilters<bool> get legacyHappyHourEligible => $composableBuilder(
+    column: $table.legacyHappyHourEligible,
     builder: (column) => ColumnFilters(column),
   );
 
@@ -17139,8 +17922,8 @@ class $$ActivitiesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<bool> get happyHourEligible => $composableBuilder(
-    column: $table.happyHourEligible,
+  ColumnOrderings<bool> get legacyHappyHourEligible => $composableBuilder(
+    column: $table.legacyHappyHourEligible,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -17186,8 +17969,8 @@ class $$ActivitiesTableAnnotationComposer
     builder: (column) => column,
   );
 
-  GeneratedColumn<bool> get happyHourEligible => $composableBuilder(
-    column: $table.happyHourEligible,
+  GeneratedColumn<bool> get legacyHappyHourEligible => $composableBuilder(
+    column: $table.legacyHappyHourEligible,
     builder: (column) => column,
   );
 
@@ -17235,7 +18018,7 @@ class $$ActivitiesTableTableManager
                 Value<bool> usesControllers = const Value.absent(),
                 Value<bool> usesGames = const Value.absent(),
                 Value<String> durationModel = const Value.absent(),
-                Value<bool> happyHourEligible = const Value.absent(),
+                Value<bool> legacyHappyHourEligible = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<bool> active = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -17246,7 +18029,7 @@ class $$ActivitiesTableTableManager
                 usesControllers: usesControllers,
                 usesGames: usesGames,
                 durationModel: durationModel,
-                happyHourEligible: happyHourEligible,
+                legacyHappyHourEligible: legacyHappyHourEligible,
                 sortOrder: sortOrder,
                 active: active,
                 rowid: rowid,
@@ -17259,7 +18042,7 @@ class $$ActivitiesTableTableManager
                 required bool usesControllers,
                 required bool usesGames,
                 required String durationModel,
-                required bool happyHourEligible,
+                Value<bool> legacyHappyHourEligible = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<bool> active = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
@@ -17270,7 +18053,7 @@ class $$ActivitiesTableTableManager
                 usesControllers: usesControllers,
                 usesGames: usesGames,
                 durationModel: durationModel,
-                happyHourEligible: happyHourEligible,
+                legacyHappyHourEligible: legacyHappyHourEligible,
                 sortOrder: sortOrder,
                 active: active,
                 rowid: rowid,
@@ -20376,6 +21159,380 @@ typedef $$SettingsTableProcessedTableManager =
       $$SettingsTableUpdateCompanionBuilder,
       (SettingRow, BaseReferences<_$AppDatabase, $SettingsTable, SettingRow>),
       SettingRow,
+      PrefetchHooks Function()
+    >;
+typedef $$PricingRulesTableCreateCompanionBuilder =
+    PricingRulesCompanion Function({
+      required String id,
+      required String name,
+      Value<int> priority,
+      Value<bool> active,
+      required List<int> days,
+      required int startMin,
+      required int endMin,
+      Value<String> holidayMode,
+      Value<String?> validFrom,
+      Value<String?> validUntil,
+      required List<String> activityCodes,
+      required String adjustKind,
+      required int adjustValue,
+      Value<int> rowid,
+    });
+typedef $$PricingRulesTableUpdateCompanionBuilder =
+    PricingRulesCompanion Function({
+      Value<String> id,
+      Value<String> name,
+      Value<int> priority,
+      Value<bool> active,
+      Value<List<int>> days,
+      Value<int> startMin,
+      Value<int> endMin,
+      Value<String> holidayMode,
+      Value<String?> validFrom,
+      Value<String?> validUntil,
+      Value<List<String>> activityCodes,
+      Value<String> adjustKind,
+      Value<int> adjustValue,
+      Value<int> rowid,
+    });
+
+class $$PricingRulesTableFilterComposer
+    extends Composer<_$AppDatabase, $PricingRulesTable> {
+  $$PricingRulesTableFilterComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnFilters<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<bool> get active => $composableBuilder(
+    column: $table.active,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<List<int>, List<int>, String> get days =>
+      $composableBuilder(
+        column: $table.days,
+        builder: (column) => ColumnWithTypeConverterFilters(column),
+      );
+
+  ColumnFilters<int> get startMin => $composableBuilder(
+    column: $table.startMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get endMin => $composableBuilder(
+    column: $table.endMin,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get holidayMode => $composableBuilder(
+    column: $table.holidayMode,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get validFrom => $composableBuilder(
+    column: $table.validFrom,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<String> get validUntil => $composableBuilder(
+    column: $table.validUntil,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnWithTypeConverterFilters<List<String>, List<String>, String>
+  get activityCodes => $composableBuilder(
+    column: $table.activityCodes,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
+  );
+
+  ColumnFilters<String> get adjustKind => $composableBuilder(
+    column: $table.adjustKind,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get adjustValue => $composableBuilder(
+    column: $table.adjustValue,
+    builder: (column) => ColumnFilters(column),
+  );
+}
+
+class $$PricingRulesTableOrderingComposer
+    extends Composer<_$AppDatabase, $PricingRulesTable> {
+  $$PricingRulesTableOrderingComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  ColumnOrderings<String> get id => $composableBuilder(
+    column: $table.id,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get name => $composableBuilder(
+    column: $table.name,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get priority => $composableBuilder(
+    column: $table.priority,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<bool> get active => $composableBuilder(
+    column: $table.active,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get days => $composableBuilder(
+    column: $table.days,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get startMin => $composableBuilder(
+    column: $table.startMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get endMin => $composableBuilder(
+    column: $table.endMin,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get holidayMode => $composableBuilder(
+    column: $table.holidayMode,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get validFrom => $composableBuilder(
+    column: $table.validFrom,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get validUntil => $composableBuilder(
+    column: $table.validUntil,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get activityCodes => $composableBuilder(
+    column: $table.activityCodes,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<String> get adjustKind => $composableBuilder(
+    column: $table.adjustKind,
+    builder: (column) => ColumnOrderings(column),
+  );
+
+  ColumnOrderings<int> get adjustValue => $composableBuilder(
+    column: $table.adjustValue,
+    builder: (column) => ColumnOrderings(column),
+  );
+}
+
+class $$PricingRulesTableAnnotationComposer
+    extends Composer<_$AppDatabase, $PricingRulesTable> {
+  $$PricingRulesTableAnnotationComposer({
+    required super.$db,
+    required super.$table,
+    super.joinBuilder,
+    super.$addJoinBuilderToRootComposer,
+    super.$removeJoinBuilderFromRootComposer,
+  });
+  GeneratedColumn<String> get id =>
+      $composableBuilder(column: $table.id, builder: (column) => column);
+
+  GeneratedColumn<String> get name =>
+      $composableBuilder(column: $table.name, builder: (column) => column);
+
+  GeneratedColumn<int> get priority =>
+      $composableBuilder(column: $table.priority, builder: (column) => column);
+
+  GeneratedColumn<bool> get active =>
+      $composableBuilder(column: $table.active, builder: (column) => column);
+
+  GeneratedColumnWithTypeConverter<List<int>, String> get days =>
+      $composableBuilder(column: $table.days, builder: (column) => column);
+
+  GeneratedColumn<int> get startMin =>
+      $composableBuilder(column: $table.startMin, builder: (column) => column);
+
+  GeneratedColumn<int> get endMin =>
+      $composableBuilder(column: $table.endMin, builder: (column) => column);
+
+  GeneratedColumn<String> get holidayMode => $composableBuilder(
+    column: $table.holidayMode,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<String> get validFrom =>
+      $composableBuilder(column: $table.validFrom, builder: (column) => column);
+
+  GeneratedColumn<String> get validUntil => $composableBuilder(
+    column: $table.validUntil,
+    builder: (column) => column,
+  );
+
+  GeneratedColumnWithTypeConverter<List<String>, String> get activityCodes =>
+      $composableBuilder(
+        column: $table.activityCodes,
+        builder: (column) => column,
+      );
+
+  GeneratedColumn<String> get adjustKind => $composableBuilder(
+    column: $table.adjustKind,
+    builder: (column) => column,
+  );
+
+  GeneratedColumn<int> get adjustValue => $composableBuilder(
+    column: $table.adjustValue,
+    builder: (column) => column,
+  );
+}
+
+class $$PricingRulesTableTableManager
+    extends
+        RootTableManager<
+          _$AppDatabase,
+          $PricingRulesTable,
+          PricingRuleRow,
+          $$PricingRulesTableFilterComposer,
+          $$PricingRulesTableOrderingComposer,
+          $$PricingRulesTableAnnotationComposer,
+          $$PricingRulesTableCreateCompanionBuilder,
+          $$PricingRulesTableUpdateCompanionBuilder,
+          (
+            PricingRuleRow,
+            BaseReferences<_$AppDatabase, $PricingRulesTable, PricingRuleRow>,
+          ),
+          PricingRuleRow,
+          PrefetchHooks Function()
+        > {
+  $$PricingRulesTableTableManager(_$AppDatabase db, $PricingRulesTable table)
+    : super(
+        TableManagerState(
+          db: db,
+          table: table,
+          createFilteringComposer: () =>
+              $$PricingRulesTableFilterComposer($db: db, $table: table),
+          createOrderingComposer: () =>
+              $$PricingRulesTableOrderingComposer($db: db, $table: table),
+          createComputedFieldComposer: () =>
+              $$PricingRulesTableAnnotationComposer($db: db, $table: table),
+          updateCompanionCallback:
+              ({
+                Value<String> id = const Value.absent(),
+                Value<String> name = const Value.absent(),
+                Value<int> priority = const Value.absent(),
+                Value<bool> active = const Value.absent(),
+                Value<List<int>> days = const Value.absent(),
+                Value<int> startMin = const Value.absent(),
+                Value<int> endMin = const Value.absent(),
+                Value<String> holidayMode = const Value.absent(),
+                Value<String?> validFrom = const Value.absent(),
+                Value<String?> validUntil = const Value.absent(),
+                Value<List<String>> activityCodes = const Value.absent(),
+                Value<String> adjustKind = const Value.absent(),
+                Value<int> adjustValue = const Value.absent(),
+                Value<int> rowid = const Value.absent(),
+              }) => PricingRulesCompanion(
+                id: id,
+                name: name,
+                priority: priority,
+                active: active,
+                days: days,
+                startMin: startMin,
+                endMin: endMin,
+                holidayMode: holidayMode,
+                validFrom: validFrom,
+                validUntil: validUntil,
+                activityCodes: activityCodes,
+                adjustKind: adjustKind,
+                adjustValue: adjustValue,
+                rowid: rowid,
+              ),
+          createCompanionCallback:
+              ({
+                required String id,
+                required String name,
+                Value<int> priority = const Value.absent(),
+                Value<bool> active = const Value.absent(),
+                required List<int> days,
+                required int startMin,
+                required int endMin,
+                Value<String> holidayMode = const Value.absent(),
+                Value<String?> validFrom = const Value.absent(),
+                Value<String?> validUntil = const Value.absent(),
+                required List<String> activityCodes,
+                required String adjustKind,
+                required int adjustValue,
+                Value<int> rowid = const Value.absent(),
+              }) => PricingRulesCompanion.insert(
+                id: id,
+                name: name,
+                priority: priority,
+                active: active,
+                days: days,
+                startMin: startMin,
+                endMin: endMin,
+                holidayMode: holidayMode,
+                validFrom: validFrom,
+                validUntil: validUntil,
+                activityCodes: activityCodes,
+                adjustKind: adjustKind,
+                adjustValue: adjustValue,
+                rowid: rowid,
+              ),
+          withReferenceMapper: (p0) => p0
+              .map(
+                (e) => (
+                  e.readTable<$PricingRulesTable, PricingRuleRow>(table),
+                  BaseReferences<
+                    _$AppDatabase,
+                    $PricingRulesTable,
+                    PricingRuleRow
+                  >(db, table, e),
+                ),
+              )
+              .toList(),
+          prefetchHooksCallback: null,
+        ),
+      );
+}
+
+typedef $$PricingRulesTableProcessedTableManager =
+    ProcessedTableManager<
+      _$AppDatabase,
+      $PricingRulesTable,
+      PricingRuleRow,
+      $$PricingRulesTableFilterComposer,
+      $$PricingRulesTableOrderingComposer,
+      $$PricingRulesTableAnnotationComposer,
+      $$PricingRulesTableCreateCompanionBuilder,
+      $$PricingRulesTableUpdateCompanionBuilder,
+      (
+        PricingRuleRow,
+        BaseReferences<_$AppDatabase, $PricingRulesTable, PricingRuleRow>,
+      ),
+      PricingRuleRow,
       PrefetchHooks Function()
     >;
 typedef $$SessionsTableCreateCompanionBuilder = SessionsCompanion Function({
@@ -25317,6 +26474,8 @@ class $AppDatabaseManager {
       $$HolidaysTableTableManager(_db, _db.holidays);
   $$SettingsTableTableManager get settings =>
       $$SettingsTableTableManager(_db, _db.settings);
+  $$PricingRulesTableTableManager get pricingRules =>
+      $$PricingRulesTableTableManager(_db, _db.pricingRules);
   $$SessionsTableTableManager get sessions =>
       $$SessionsTableTableManager(_db, _db.sessions);
   $$SessionSegmentsTableTableManager get sessionSegments =>

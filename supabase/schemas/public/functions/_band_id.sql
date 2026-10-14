@@ -1,7 +1,7 @@
 -- _band_id(p_arena, p_code) — resolve a rate band code to its id, creating it if missing.
 --
 -- Inserts rate_bands(code, name = initcap(code)) when the arena has no band with that code.
--- Used by op_rate_upsert.
+-- Used by op_rate_upsert (always with 'standard').
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._band_id (
   p_arena uuid,

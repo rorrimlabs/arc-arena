@@ -6,9 +6,9 @@
 -- with it.
 --
 -- Inserts 4 activities (PS5, VR, POOL, LOUNGE), 6 stations and their activity
--- links, standard/happy rate bands with one 'Current' rate card and its rates
--- (integer paise), a 'Default' billing policy, 9 game categories, 16 games
--- (controls for EA FC only), 2 controllers per PS5 station and per-station game
+-- links, the standard rate band with one 'Current' rate card and its rates
+-- (integer paise; no pricing rules: a test that needs happy hours adds the rule),
+-- a 'Default' billing policy, 9 game categories, 16 games (controls for EA FC only), 2 controllers per PS5 station and per-station game
 -- compatibility; game modes and station overrides follow the device seed.
 -- Run once per arena: a second run hits unique keys (e.g. activities code).
 -- Server-only: not executable by anon/authenticated.
@@ -22,18 +22,18 @@ create or replace function public._seed_arena_catalog (
   AS $function$
 declare
   v_ps5 uuid; v_vr uuid; v_pool uuid; v_lounge uuid;
-  v_std uuid; v_happy uuid; v_card uuid;
+  v_std uuid; v_card uuid;
   c_football uuid; c_fighting uuid; c_wrestling uuid; c_racing uuid;
   c_action uuid; c_shooter uuid; c_sports uuid; c_vr uuid; v_eafc uuid;
 begin
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'PS5','PlayStation 5', true, true, 'hourly', true, 1) returning id into v_ps5;
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'VR','VR (PSVR2)', false, true, 'unit', false, 2) returning id into v_vr;
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'POOL','Pool', false, false, 'hourly', true, 3) returning id into v_pool;
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'LOUNGE','Private Lounge', false, false, 'flat_hourly', false, 4) returning id into v_lounge;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'PS5','PlayStation 5', true, true, 'hourly', 1) returning id into v_ps5;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'VR','VR (PSVR2)', false, true, 'unit', 2) returning id into v_vr;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'POOL','Pool', false, false, 'hourly', 3) returning id into v_pool;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'LOUNGE','Private Lounge', false, false, 'flat_hourly', 4) returning id into v_lounge;
 
   insert into resources(arena_id,name,kind,sort_order) values
     (v_arena,'HEX','station',1),(v_arena,'VOID','station',2),(v_arena,'GHOST','station',3),
@@ -47,15 +47,14 @@ begin
        or (r.name = 'Private Lounge' and a.code = 'LOUNGE'));
 
   insert into rate_bands(arena_id,code,name) values (v_arena,'standard','Standard') returning id into v_std;
-  insert into rate_bands(arena_id,code,name) values (v_arena,'happy','Happy Hour') returning id into v_happy;
   insert into rate_cards(arena_id,name) values (v_arena,'Current') returning id into v_card;
   insert into rates(arena_id,rate_card_id,activity_id,band_id,controller_count,unit_minutes,price_paise) values
-    (v_arena,v_card,v_ps5,v_std,  1,60,15000),(v_arena,v_card,v_ps5,v_happy,1,60,12000),
-    (v_arena,v_card,v_ps5,v_std,  2,60,28000),(v_arena,v_card,v_ps5,v_happy,2,60,22000),
-    (v_arena,v_card,v_ps5,v_std,  3,60,39000),(v_arena,v_card,v_ps5,v_happy,3,60,31000),
-    (v_arena,v_card,v_ps5,v_std,  4,60,48000),(v_arena,v_card,v_ps5,v_happy,4,60,38000),
+    (v_arena,v_card,v_ps5,v_std,  1,60,15000),
+    (v_arena,v_card,v_ps5,v_std,  2,60,28000),
+    (v_arena,v_card,v_ps5,v_std,  3,60,39000),
+    (v_arena,v_card,v_ps5,v_std,  4,60,48000),
     (v_arena,v_card,v_vr,v_std,  null,30,20000),
-    (v_arena,v_card,v_pool,v_std, null,60,27500),(v_arena,v_card,v_pool,v_happy,null,60,22000),
+    (v_arena,v_card,v_pool,v_std, null,60,27500),
     (v_arena,v_card,v_lounge,v_std,null,60,200000);
   insert into billing_policies(arena_id,name) values (v_arena,'Default');
 

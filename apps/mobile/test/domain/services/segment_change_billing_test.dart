@@ -43,6 +43,7 @@ void main() {
         snapshot: currentSnapshot(policy: policy),
         segments: segments,
         openEndAt: t0.add(const Duration(hours: 1)),
+        sessionStart: t0,
       )
       .total
       .value;

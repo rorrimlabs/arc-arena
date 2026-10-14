@@ -14,7 +14,10 @@
 --                  action (void | waive | payment_correct), by, reason, before,
 --                  after};
 --   voided       — {at, by, reason} from the first void in the audit log, or
---                  null.
+--                  null;
+--   rule         — the pricing rule the bill was priced with (judged at its
+--                  start on its frozen snapshot): {name, adjust_kind,
+--                  adjust_value}, or null.
 -- The payments ledger (payments[]) comes with the _sales summary.
 -- `by` is the staff name of the login that did it. 'not_found' when p_id is not
 -- a closed bill of p_arena. SECURITY DEFINER. Caller must be owner level in
@@ -59,7 +62,13 @@ begin
           order by e.created_at)
           from session_extensions e
           left join staff_profiles sp on sp.arena_id = e.arena_id and sp.user_id = e.created_by
-         where e.session_id = p_id), '[]'::jsonb));
+         where e.session_id = p_id), '[]'::jsonb),
+      'rule', (
+        select _pr_rule(s.pricing_snapshot, g.activity_code, s.started_at)
+          from sessions s
+          join lateral (select activity_code from session_segments
+                         where session_id = s.id order by idx limit 1) g on true
+         where s.id = p_id));
   else
     v_bill := v_bill || jsonb_build_object(
       'lines', coalesce((
@@ -81,7 +90,13 @@ begin
           order by e.created_at)
           from group_extensions e
           left join staff_profiles sp on sp.arena_id = e.arena_id and sp.user_id = e.created_by
-         where e.group_id = p_id), '[]'::jsonb));
+         where e.group_id = p_id), '[]'::jsonb),
+      'rule', (
+        select _pr_rule(gs.pricing_snapshot, g.activity_code, gs.started_at)
+          from group_sessions gs
+          join lateral (select activity_code from group_assignments
+                         where group_id = gs.id order by player_number, idx limit 1) g on true
+         where gs.id = p_id));
   end if;
 
   return v_bill || jsonb_build_object(

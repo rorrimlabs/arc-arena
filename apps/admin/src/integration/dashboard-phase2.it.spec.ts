@@ -95,7 +95,9 @@ describe.skipIf(!IT_RUN)('integration · dashboard phase 2 (owner sees the floor
     await auth.signIn(need('AO_IT_OUTSIDER_EMAIL'), password);
     await expect(sales.list(arenaId, from, to)).rejects.toMatchObject({ code: 'forbidden' });
     expect(await floor.plays(arenaId, from)).toEqual([]);
-    expect(await floor.customers(arenaId)).toEqual([]);
+    await expect(
+      floor.members(arenaId, { since: from, since30: from, search: '', limit: 10, offset: 0 }),
+    ).rejects.toMatchObject({ code: 'forbidden' });
     await expect(floor.deleteGame(arenaId, gameId)).rejects.toMatchObject({ code: 'forbidden' });
     await auth.signOut();
 

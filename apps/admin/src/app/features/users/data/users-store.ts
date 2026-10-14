@@ -28,6 +28,7 @@ export class UsersStore {
   /** userId of a user (or inviteId of an invitation) with a change in flight. */
   readonly saving = signal<string | null>(null);
   private loadedArena: string | null = null;
+  private outOfDate = false;
   /** Each load's number; only the newest one's answer lands (a switch of arena mid-load). */
   private latest = 0;
 
@@ -49,11 +50,12 @@ export class UsersStore {
   /** Loads the current arena's users and invitations (again on an arena switch, or forced). */
   async load(force = false): Promise<void> {
     const arenaId = this.arena.current().id;
-    if (!arenaId || (!force && this.loadedArena === arenaId)) return;
+    if (!arenaId || (!force && !this.outOfDate && this.loadedArena === arenaId)) return;
     if (this.loadedArena !== arenaId) {
       this.users.set([]);
       this.invites.set([]);
     }
+    this.outOfDate = false;
     const call = ++this.latest;
     this.loading.set(true);
     this.loadError.set('');
@@ -67,6 +69,14 @@ export class UsersStore {
     } finally {
       if (call === this.latest) this.loading.set(false);
     }
+  }
+
+  /**
+   * Marks the data out of date without reading it (a live update while no screen shows it): the
+   * next screen that loads it reads it again, instead of a download nobody looks at.
+   */
+  stale(): void {
+    this.outOfDate = true;
   }
 
   /** Reads both lists again if a screen has loaded them (live updates). */

@@ -1,7 +1,7 @@
 -- _pr_ist_date(t) — the Asia/Kolkata calendar date of an instant.
 --
 -- Adds a fixed +05:30 (IST has no DST) to the UTC wall time and takes the date.
--- Used by _pr_quote to find the IST days an interval touches for happy-hour splitting.
+-- Used by _pr_rule to judge a pricing rule's weekday, dates and holidays.
 -- Mirrors IstDate.fromUtc (apps/mobile/lib/core/time/ist.dart).
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._pr_ist_date (

@@ -37,6 +37,7 @@ const catalogTables = {
   'activities', 'resources', 'resource_activities', 'controllers',
   'game_categories', 'games', 'game_resources', 'game_controls', 'rates',
   'billing_policies', 'holidays', 'settings', 'staff_profiles',
+  'pricing_rules',
 };
 
 class SyncApplier {
@@ -85,7 +86,9 @@ class SyncApplier {
   @visibleForTesting
   static String? rowKey(String table, Map<String, dynamic> r) =>
       switch (table) {
-        'rates' || 'game_controls' || 'games' || 'activities' => '$table:${r['id']}',
+        'rates' || 'game_controls' || 'games' || 'activities' ||
+        'pricing_rules' =>
+          '$table:${r['id']}',
         'holidays' => 'holidays:${r['day']}',
         'game_resources' => 'game_resources:${r['game_id']}:${r['resource_id']}',
         'resource_activities' =>
@@ -216,6 +219,7 @@ class SyncApplier {
           ..where((t) => t.id.isNotIn(ids('game_controls'))))
         .go();
     await _db.delete(_db.rates).go();
+    await _db.delete(_db.pricingRules).go();
     await _db.delete(_db.holidays).go();
     await (_db.delete(_db.settings)
           ..where((t) => t.key.isIn(sharedSettingKeys)))
@@ -258,16 +262,34 @@ class SyncApplier {
                   )),
             );
       case 'activities':
-        await _db.into(_db.activities).insertOnConflictUpdate(ActivityRow(
+        // No nullable columns, so a plain companion carries every server
+        // value; the device's retired activity column keeps its own value.
+        await _db.into(_db.activities).insertOnConflictUpdate(
+            ActivitiesCompanion.insert(
               id: r['id'] as String,
               code: r['code'] as String,
               name: r['name'] as String,
               usesControllers: r['uses_controllers'] as bool,
               usesGames: r['uses_games'] as bool,
               durationModel: r['duration_model'] as String,
-              happyHourEligible: r['happy_hour_eligible'] as bool,
-              sortOrder: r['sort_order'] as int,
+              sortOrder: Value(r['sort_order'] as int),
+              active: Value(r['active'] as bool),
+            ));
+      case 'pricing_rules':
+        await _db.into(_db.pricingRules).insertOnConflictUpdate(PricingRuleRow(
+              id: r['id'] as String,
+              name: r['name'] as String,
+              priority: (r['priority'] as num).toInt(),
               active: r['active'] as bool,
+              days: [for (final d in r['days'] as List) (d as num).toInt()],
+              startMin: (r['start_min'] as num).toInt(),
+              endMin: (r['end_min'] as num).toInt(),
+              holidayMode: r['holiday_mode'] as String,
+              validFrom: r['valid_from'] as String?,
+              validUntil: r['valid_until'] as String?,
+              activityCodes: _strings(r['activity_codes']),
+              adjustKind: r['adjust_kind'] as String,
+              adjustValue: (r['adjust_value'] as num).toInt(),
             ).toCompanion(false));
       case 'resources':
         await _db.into(_db.resources).insertOnConflictUpdate(ResourceRow(
@@ -631,6 +653,10 @@ class SyncApplier {
       case 'holidays':
         await (_db.delete(_db.holidays)
               ..where((t) => t.day.equals(r['day'] as String)))
+            .go();
+      case 'pricing_rules':
+        // Sessions already started keep the rule in their frozen snapshot.
+        await (_db.delete(_db.pricingRules)..where((t) => t.id.equals(id()!)))
             .go();
       case 'game_controls':
         await (_db.delete(_db.gameControls)..where((t) => t.id.equals(id()!)))

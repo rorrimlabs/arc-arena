@@ -46,7 +46,8 @@ describe('Games', () => {
       'Kiran Rao 2 sessions 1h 35m',
       'Rahul Verma 1 session 1h',
     ]);
-    expect(fans[0].getAttribute('href')).toBe('/members?id=c-kiran');
+    // Members are searched on the server: the link opens the list on that member.
+    expect(fans[0].getAttribute('href')).toBe('/members?q=Kiran%20Rao&id=c-kiran');
     expect(t.text(detail()!.querySelector('h2 + div'))).toContain('3+');
     expect(t.text(detail())).toContain('PS5 · Digital');
   });

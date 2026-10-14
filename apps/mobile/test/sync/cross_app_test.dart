@@ -329,6 +329,7 @@ void main() {
           snapshot: s.snapshot,
           segments: await staff.sessions.segmentsFor(id),
           openEndAt: at,
+          sessionStart: s.startedAt,
         );
         expect(bill.total.value, greaterThan(0), reason: 'half an hour of play is billed');
         final ended = await staff.sessions.end(

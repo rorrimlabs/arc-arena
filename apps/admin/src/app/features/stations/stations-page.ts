@@ -27,9 +27,9 @@ import { STATE_TONE, stationIcon, stationSubtitle } from './data/station-view';
 import { StationDialog, StationDialogData, StationDialogResult } from './dialogs/station-dialog';
 
 /**
- * Stations (design: `if (p === 'floor')`): every station with what is on it now, filtered by
- * type. Type filter and selection are in the URL (`?type=PS5&id=…`); on a wide screen the first
- * station is shown when none is chosen, as in the design. Removed stations are not listed.
+ * Stations: every station with what is on it now and its accessories, filtered by type. Type
+ * filter and selection are in the URL (`?type=PS5&id=…`); on a wide screen the first station is
+ * shown when none is chosen. Removed stations are listed apart, restorable.
  */
 @Component({
   selector: 'app-stations-page',
@@ -162,15 +162,11 @@ import { StationDialog, StationDialogData, StationDialogResult } from './dialogs
 })
 export class StationsPage {
   protected readonly floor = inject(FloorStore);
-  /** What this screen reads (and reports errors for). */
-  protected readonly reads: readonly FloorRead[] = [
-    'stations',
-    'games',
-    'customers',
-    'plays',
-    'visits',
-    'charges',
-  ];
+  /**
+   * What this screen reads (and reports errors for): the stations, what is open on them now and
+   * their figures aggregated on the server. A station's recent bills are read when it is opened.
+   */
+  protected readonly reads: readonly FloorRead[] = ['stations', 'games', 'live', 'stationFigures'];
   protected readonly pricing = inject(PricingStore);
   protected readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
@@ -186,7 +182,7 @@ export class StationsPage {
   protected readonly now = injectNow();
   protected readonly loading = computed(() => this.floor.loading() || this.pricing.loading());
 
-  protected readonly live = computed(() => liveStations(this.floor.stations(), this.floor.plays()));
+  protected readonly live = computed(() => liveStations(this.floor.stations(), this.floor.live()));
   /** Removed (disabled) stations: off the floor, kept for past bills, restorable here. */
   protected readonly removed = computed(() =>
     this.floor.stations().filter((s) => s.status === 'disabled'),
@@ -255,7 +251,9 @@ export class StationsPage {
   }
 
   protected subtitle(l: LiveStation): string {
-    return stationSubtitle(l, this.floor.gameById(), this.pricing.types(), this.now());
+    const line = stationSubtitle(l, this.floor.gameById(), this.pricing.types(), this.now());
+    const n = this.floor.stationFigures().get(l.station.id)?.accessories ?? 0;
+    return n ? `${line} · ${n} accessor${n === 1 ? 'y' : 'ies'}` : line;
   }
 
   protected icon(l: LiveStation): string {

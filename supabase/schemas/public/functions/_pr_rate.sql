@@ -1,8 +1,8 @@
 -- _pr_rate(s, p_act, p_band, p_cc) — exact rate lookup in a pricing snapshot.
 --
 -- First element of s->'rates' (snapshot order) whose activity_code, band and controller_count all
--- match (a null controller_count matches only null); null when none. No happy -> standard fallback
--- here; _pr_quote does that. Mirrors PricingSnapshot.rateFor (domain/pricing/pricing_snapshot.dart).
+-- match (a null controller_count matches only null); null when none. _pr_quote asks for the
+-- 'standard' band. Mirrors PricingSnapshot.rateFor (domain/pricing/pricing_snapshot.dart).
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._pr_rate (
   s      jsonb,

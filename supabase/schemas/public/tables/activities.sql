@@ -4,8 +4,9 @@
 -- code: segments, assignments, rates and the pricing snapshot reference activities
 -- by code, not uuid. The owner creates and edits them on the dashboard
 -- (op_activity_upsert, sync op 'activity.upsert'); the code is fixed once created.
--- Its billing flags (duration_model, happy_hour_eligible) are part of the
--- pricing snapshot, so they must match the device's for a session to start.
+-- Its billing flag (duration_model) is part of the pricing snapshot, so it
+-- must match the device's for a session to start. Time-of-day prices (e.g. happy
+-- hours) are pricing_rules, not activity flags.
 -- resource_activities says which resources offer which activity.
 create table "public"."activities" (
   "id"                  uuid                     not null default gen_random_uuid(),
@@ -15,7 +16,6 @@ create table "public"."activities" (
   "uses_controllers"    boolean                  not null default false,
   "uses_games"          boolean                  not null default false,
   "duration_model"      text                     not null default 'hourly'::text,
-  "happy_hour_eligible" boolean                  not null default true,
   "sort_order"          integer                  not null default 0,
   "active"              boolean                  not null default true,
   "created_at"          timestamp with time zone not null default now(),
@@ -42,8 +42,6 @@ comment on column public.activities.uses_controllers is 'True when sessions of t
 comment on column public.activities.uses_games is 'True when a game is picked for sessions of this activity (app flag; not checked server-side).';
 
 comment on column public.activities.duration_model is 'How time is billed: hourly (by time, per billing_policies.billing_unit), unit (whole units of rates.unit_minutes, per billing_policies.vr_unit_rounding) or flat_hourly (priced like hourly by the server pricer).';
-
-comment on column public.activities.happy_hour_eligible is 'When false the happy-hour band never applies; the whole session is priced at the standard band.';
 
 comment on column public.activities.active is 'App-side flag for retiring an activity without deleting it. Not consulted server-side: the pricing snapshot includes inactive activities.';
 

@@ -4,14 +4,13 @@
 
 **Dev = local Supabase only.** Both apps develop and get validated against the local stack (`supabase start`): admin `npm run dev`, floor app `--dart-define-from-file=dart_define.local.json` (`dart_define.local-android.json` on an Android emulator). Going live on the hosted project is manual (`docs/DEPLOY_SUPABASE.md`): never push, deploy or point a dev run at it.
 
-**Scope (SLC):** the Flutter app is **staff only** (floor: sessions, payments, groups, bookings, controllers, members per permission). **All owner features live on the admin web dashboard** (`apps/admin/`): sales, reports, voids, stations, games, pricing, users, settings. Never build or extend owner features in mobile; its owner screens (Today, Money, Reports, Settings) will be hidden later.
+**Scope (SLC):** the Flutter app is **staff only** (floor: sessions, payments, groups, bookings, controllers, members per permission). **All owner features live on the admin web dashboard** (`apps/admin/`): sales, reports, voids, stations, games, pricing, users, settings. Never build or extend owner features in mobile; its owner screens (Today, Money, Reports, Settings) will be hidden later. UI direction comes from the screens already built (reuse their layout and shared components); there is no design export to follow.
 
 | Path | What |
 |---|---|
 | `apps/mobile/` | Flutter staff app. Run every `flutter`/`dart` command from here. |
 | `apps/admin/` | Angular 22 admin (signals, Tailwind 4, Vitest). Follow `apps/admin/CLAUDE.md`. From `apps/admin/`: `npm run dev` (local stack, :4200), `npm run build`, `npm test`; no `npm start`. Prefer the `angular-cli` MCP server over shelling out to `ng`. |
 | `supabase/` | Declarative schema (`schemas/`), generated migrations, pgTAP tests, seed, e-mail templates. No Edge Functions: invitation e-mails are sent by Supabase Auth (the dashboard calls `invite_member` then `signInWithOtp`). Tables/functions/security map: `supabase/README.md`. |
-| `design/` | `admin.html` = admin design export (`/design-build <screen>`, see `.claude/commands/design-build.md`); `404 Arena App (offline).html` = staff app design. Huge files: never read whole. |
 | `tool/` | `verify_all.sh` (all checks), `sync_it.sh` (cross-app integration incl. the invitation e-mail, local stack), `pricing_parity.sh` (Dart vs SQL pricing). |
 | `.agents/skills/` → `.claude/skills/` | `supabase`, `supabase-postgres-best-practices` — use for any Supabase/Postgres work. |
 

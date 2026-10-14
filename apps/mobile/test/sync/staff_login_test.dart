@@ -302,6 +302,7 @@ void main() {
       snapshot: s.snapshot,
       segments: await phone.sessions.segmentsFor(id),
       openEndAt: endAt,
+      sessionStart: s.startedAt,
     );
     final ended = await phone.sessions.end(EndSessionCommand(
       sessionId: id,

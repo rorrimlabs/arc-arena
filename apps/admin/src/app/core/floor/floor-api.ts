@@ -4,6 +4,7 @@ import { dbError } from '../arena/arena-api';
 import { Supabase } from '../supabase/supabase';
 import { SyncOp, pushOps } from '../sync/push-ops';
 import {
+  Activity,
   AgeRating,
   BillKind,
   BillStatus,
@@ -12,10 +13,14 @@ import {
   Customer,
   Game,
   GameCompat,
+  GameFan,
+  GameFigures,
   GameInput,
   GameUsage,
+  MemberPage,
   Play,
   Station,
+  StationFigures,
   StationInput,
   StationStatus,
   Visit,
@@ -34,14 +39,41 @@ export abstract class FloorApi {
   abstract games(arenaId: string): Promise<Game[]>;
   /** Where each game can be played (game_resources rows; a missing pair is not installed). */
   abstract gameResources(arenaId: string): Promise<GameCompat[]>;
-  /** Registered members (walk-in guests left out). */
-  abstract customers(arenaId: string): Promise<Customer[]>;
   /** Plays that started at or after `since`, plus every one still open. */
   abstract plays(arenaId: string, since: Date): Promise<Play[]>;
-  /** Billed lines of bills that were not voided, by segment start in [from, to). */
-  abstract charges(arenaId: string, from: Date, to: Date): Promise<Charge[]>;
-  /** Bills that started at or after `since`, plus every one still running. */
-  abstract visits(arenaId: string, since: Date): Promise<Visit[]>;
+
+  /**
+   * Per-station figures, aggregated on the server: billed in [today, to) and [since, to), bills
+   * started since `today`, minutes played since `since`, accessories (arena_station_stats).
+   */
+  abstract stationFigures(
+    arenaId: string,
+    today: Date,
+    since: Date,
+    to: Date,
+  ): Promise<ReadonlyMap<string, StationFigures>>;
+  /** Per-game minutes, bills and live plays since `since` (arena_game_stats). */
+  abstract gameFigures(arenaId: string, since: Date): Promise<ReadonlyMap<string, GameFigures>>;
+  /** The members who played a game most since `since` (arena_game_fans). */
+  abstract gameFans(arenaId: string, gameId: string, since: Date, limit: number): Promise<GameFan[]>;
+  /** A station's (or member's) newest bills since `since`, and a member's minutes per game. */
+  abstract activity(
+    arenaId: string,
+    of: { readonly stationId?: string; readonly customerId?: string },
+    since: Date,
+    limit: number,
+  ): Promise<Activity>;
+  /** One searched page of registered members with their figures (arena_members). */
+  abstract members(
+    arenaId: string,
+    query: {
+      readonly since: Date;
+      readonly since30: Date;
+      readonly search: string;
+      readonly limit: number;
+      readonly offset: number;
+    },
+  ): Promise<MemberPage>;
 
   abstract saveStation(arenaId: string, station: StationInput): Promise<void>;
   abstract setStationStatus(arenaId: string, id: string, status: StationStatus): Promise<void>;
@@ -229,22 +261,6 @@ class SupabaseFloorApi extends FloorApi {
     });
   }
 
-  async customers(arenaId: string): Promise<Customer[]> {
-    const rows = await this.all(
-      'customers',
-      'id, name, phone, last_visit_at, created_at, birth_year',
-      arenaId,
-      (q) => q.eq('is_guest', false).order('name'),
-    );
-    return rows.map((r) => ({
-      id: String(r['id']),
-      name: String(r['name']),
-      phone: str(r['phone']),
-      lastVisitAt: str(r['last_visit_at']),
-      createdAt: String(r['created_at']),
-      birthYear: r['birth_year'] == null ? null : Number(r['birth_year']),
-    }));
-  }
 
   async plays(arenaId: string, since: Date): Promise<Play[]> {
     const window = `ended_at.is.null,started_at.gte.${since.toISOString()}`;
@@ -283,53 +299,131 @@ class SupabaseFloorApi extends FloorApi {
     ];
   }
 
-  async charges(arenaId: string, from: Date, to: Date): Promise<Charge[]> {
-    const cols = 'resource_id, activity_code, segment_start, played_minutes, amount_paise';
-    const range = (q: Query) =>
-      q.gte('segment_start', from.toISOString()).lt('segment_start', to.toISOString());
-    const [single, group] = await Promise.all([
-      this.all('session_charges', `${cols}, session_id, sessions!inner(status)`, arenaId, (q) =>
-        range(q).neq('sessions.status', 'voided'),
-      ),
-      this.all('group_charges', `${cols}, group_id, group_sessions!inner(status)`, arenaId, (q) =>
-        range(q).neq('group_sessions.status', 'voided'),
-      ),
-    ]);
-    const charge = (r: Row, kind: BillKind, billId: string): Charge => ({
-      kind,
-      billId,
-      resourceId: str(r['resource_id']),
-      activityCode: String(r['activity_code']),
-      segmentStart: String(r['segment_start']),
-      playedMinutes: Number(r['played_minutes'] ?? 0),
-      amountPaise: Number(r['amount_paise'] ?? 0),
+
+
+  async stationFigures(
+    arenaId: string,
+    today: Date,
+    since: Date,
+    to: Date,
+  ): Promise<ReadonlyMap<string, StationFigures>> {
+    const d = await this.rpc<Record<string, Row>>('arena_station_stats', {
+      p_arena: arenaId,
+      p_today: today.toISOString(),
+      p_since: since.toISOString(),
+      p_to: to.toISOString(),
     });
-    return [
-      ...single.map((r) => charge(r, 'single', String(r['session_id']))),
-      ...group.map((r) => charge(r, 'group', String(r['group_id']))),
-    ];
+    return new Map(
+      Object.entries(d ?? {}).map(([id, s]) => [
+        id,
+        {
+          billedToday: Number(s['billed_today'] ?? 0),
+          sessionsToday: Number(s['sessions_today'] ?? 0),
+          minutes30: Number(s['minutes_30'] ?? 0),
+          billed30: Number(s['billed_30'] ?? 0),
+          accessories: Number(s['accessories'] ?? 0),
+        },
+      ]),
+    );
   }
 
-  async visits(arenaId: string, since: Date): Promise<Visit[]> {
-    const window = `status.eq.active,started_at.gte.${since.toISOString()}`;
-    const cols = 'id, status, started_at, actual_ended_at, billed_amount_paise';
-    const [sessions, groups] = await Promise.all([
-      this.all('sessions', `${cols}, customer_id`, arenaId, (q) => q.or(window)),
-      this.all('group_sessions', `${cols}, primary_customer_id`, arenaId, (q) => q.or(window)),
-    ]);
-    const visit = (r: Row, kind: BillKind, customerId: unknown): Visit => ({
-      kind,
-      id: String(r['id']),
-      customerId: String(customerId),
-      status: (r['status'] as BillStatus) ?? 'completed',
-      startedAt: String(r['started_at']),
-      endedAt: str(r['actual_ended_at']),
-      billedPaise: r['billed_amount_paise'] == null ? null : Number(r['billed_amount_paise']),
+  async gameFigures(arenaId: string, since: Date): Promise<ReadonlyMap<string, GameFigures>> {
+    const d = await this.rpc<Record<string, Row>>('arena_game_stats', {
+      p_arena: arenaId,
+      p_since: since.toISOString(),
     });
-    return [
-      ...sessions.map((r) => visit(r, 'single', r['customer_id'])),
-      ...groups.map((r) => visit(r, 'group', r['primary_customer_id'])),
-    ];
+    return new Map(
+      Object.entries(d ?? {}).map(([id, s]) => [
+        id,
+        {
+          minutes30: Number(s['minutes_30'] ?? 0),
+          sessions30: Number(s['sessions_30'] ?? 0),
+          playingNow: Number(s['playing_now'] ?? 0),
+        },
+      ]),
+    );
+  }
+
+  async gameFans(arenaId: string, gameId: string, since: Date, limit: number): Promise<GameFan[]> {
+    const d = await this.rpc<Row[]>('arena_game_fans', {
+      p_arena: arenaId,
+      p_game: gameId,
+      p_since: since.toISOString(),
+      p_limit: limit,
+    });
+    return (d ?? []).map((f) => ({
+      customerId: String(f['customer_id']),
+      name: String(f['name']),
+      sessions: Number(f['sessions'] ?? 0),
+      minutes: Number(f['minutes'] ?? 0),
+    }));
+  }
+
+  async activity(
+    arenaId: string,
+    of: { readonly stationId?: string; readonly customerId?: string },
+    since: Date,
+    limit: number,
+  ): Promise<Activity> {
+    const d = await this.rpc<{ bills?: Row[]; games?: Row[] }>('arena_activity', {
+      p_arena: arenaId,
+      p_resource: of.stationId ?? null,
+      p_customer: of.customerId ?? null,
+      p_since: since.toISOString(),
+      p_limit: limit,
+    });
+    return {
+      bills: (d?.bills ?? []).map((b) => ({
+        billId: String(b['bill_id']),
+        kind: b['kind'] === 'group' ? 'group' : 'single',
+        startedAt: String(b['started_at']),
+        status: (b['status'] as BillStatus) ?? 'completed',
+        billedPaise: b['billed_paise'] == null ? null : Number(b['billed_paise']),
+        customer: str(b['customer']),
+        station: str(b['station']),
+        game: str(b['game']),
+      })),
+      games: (d?.games ?? []).map((g) => ({
+        gameId: String(g['game_id']),
+        name: String(g['name']),
+        minutes: Number(g['minutes'] ?? 0),
+      })),
+    };
+  }
+
+  async members(
+    arenaId: string,
+    q: { since: Date; since30: Date; search: string; limit: number; offset: number },
+  ): Promise<MemberPage> {
+    const d = await this.rpc<{ total?: number; rows?: Row[] }>('arena_members', {
+      p_arena: arenaId,
+      p_since: q.since.toISOString(),
+      p_since_30: q.since30.toISOString(),
+      p_search: q.search.trim() || null,
+      p_limit: q.limit,
+      p_offset: q.offset,
+    });
+    return {
+      total: Number(d?.total ?? 0),
+      rows: (d?.rows ?? []).map((m) => ({
+        id: String(m['id']),
+        name: String(m['name']),
+        phone: str(m['phone']),
+        birthYear: m['birth_year'] == null ? null : Number(m['birth_year']),
+        createdAt: String(m['created_at']),
+        visits: Number(m['visits'] ?? 0),
+        minutes: Number(m['minutes'] ?? 0),
+        spent30Paise: Number(m['spent_30_paise'] ?? 0),
+        lastVisit: str(m['last_visit']),
+      })),
+    };
+  }
+
+  private async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T | null> {
+    const client = await this.supabase.client();
+    const { data, error } = await client.rpc(fn, args);
+    if (error) throw dbError(error);
+    return data as T | null;
   }
 
   async saveStation(arenaId: string, station: StationInput): Promise<void> {

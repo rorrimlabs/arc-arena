@@ -29,7 +29,9 @@ create or replace function public._sync_sources()
     ('group_sessions','group_sessions'), ('group_assignments','group_assignments'),
     ('group_extensions','group_extensions'), ('group_charges','group_charges'),
     ('group_payments','group_payments'), ('controller_allocations','controller_allocations'),
-    ('controller_moves','controller_moves'), ('settings','settings')
+    ('controller_moves','controller_moves'), ('settings','settings'),
+    ('accessory_kinds','accessory_kinds'), ('pricing_rules','pricing_rules'),
+    ('discounts','discounts'), ('bill_discounts','bill_discounts')
 $function$;
 
 comment on function public._sync_sources() is 'Internal (sync_pull): list of (table name, source relation) pairs that make up the sync change feed.';

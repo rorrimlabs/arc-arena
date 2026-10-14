@@ -3,10 +3,11 @@ library;
 
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/time/utc_interval.dart';
+import 'package:arena_ops/domain/pricing/pricing_rule.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:meta/meta.dart';
 
-/// One priced stretch of time within a session (e.g. the happy-hour portion).
+/// One priced stretch of time within a session: one charge row.
 @immutable
 class PricingSegment {
   const PricingSegment({
@@ -37,6 +38,8 @@ class PricingSegment {
   final int units;
 
   final int unitMinutes;
+
+  /// The rate's price for one unit, after the quote's pricing rule (if any).
   final Paise unitPrice;
 
   /// This segment's amount, rounded to paise for display.
@@ -58,9 +61,14 @@ class PricingQuote {
     required this.billedMinutes,
     required this.subtotal,
     required this.amount,
+    this.rule,
   });
 
   final List<PricingSegment> segments;
+
+  /// The pricing rule that adjusted every unit price of this quote, or null
+  /// (the server's `_pr_quote` result `rule`).
+  final PricingRule? rule;
 
   /// Total wall-clock seconds from start to end.
   final int playedSeconds;

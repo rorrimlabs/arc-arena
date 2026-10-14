@@ -22,9 +22,10 @@ create or replace function public._pr_sweep (
 declare
   ws timestamptz[]; we timestamptz[]; wc int[]; wa text[];
   v_pts timestamptz[]; i int; j int; s timestamptz; e timestamptz;
-  v_cc int; v_act text; v_n int; q jsonb;
-  v_sub bigint := 0; v_keys text[] := '{}';
+  v_cc int; v_act text; v_n int; q jsonb; v_started timestamptz;
+  v_sub bigint := 0; v_keys text[] := '{}'; v_by jsonb := '{}'::jsonb;
 begin
+  select started_at into v_started from group_sessions where id = p_group;
   -- Windows in the device's list order (player, then index); empty ones dropped.
   select coalesce(array_agg(started_at order by player_number, idx), '{}'),
          coalesce(array_agg(coalesce(ended_at, p_open_end) order by player_number, idx), '{}'),
@@ -49,12 +50,13 @@ begin
       end if;
     end loop;
     continue when v_n = 0;
-    q := _pr_quote(v_snap, v_act, nullif(v_cc, 0), s, e);
+    q := _pr_quote(v_snap, v_act, nullif(v_cc, 0), s, e, v_started);   -- rule judged at the group start
     continue when q is null;     -- misconfigured rate: excluded, as on the device
     v_sub := v_sub + (q->>'subtotal')::bigint;
+    v_by := jsonb_set(v_by, array[v_act], to_jsonb(coalesce((v_by->>v_act)::bigint, 0) + (q->>'subtotal')::bigint));
     v_keys := v_keys || _pr_keys(q, v_act, p_res, nullif(v_cc, 0));
   end loop;
-  return jsonb_build_object('subtotal', v_sub, 'keys', to_jsonb(v_keys));
+  return jsonb_build_object('subtotal', v_sub, 'keys', to_jsonb(v_keys), 'by_activity', v_by);
 end;
 $function$;
 

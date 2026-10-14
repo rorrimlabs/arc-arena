@@ -59,7 +59,7 @@ would also hide a porting bug. The tolerance is therefore **0 paise**.
 
 | Op | Check |
 |---|---|
-| `session.start`, `group.create` | `pricing_snapshot` must equal the arena's price list (rates, activities, policy, opening/happy hours, holidays, closures). That is the live list, or one an owner replaced in the last 72 h, which covers a device that went offline holding the old list. Card name and ordering are ignored. A group's `billing_mode` must be the snapshot policy's. Otherwise the op is refused with `pricing_snapshot_mismatch`. Without this check, a forged ₹0 price list would get past re-pricing. |
+| `session.start`, `group.create` | `pricing_snapshot` must equal the arena's price list (rates, activities, policy, opening hours, holidays, closures, active pricing rules). That is the live list, or one an owner replaced in the last 72 h, which covers a device that went offline holding the old list. Card name and ordering are ignored. A group's `billing_mode` must be the snapshot policy's. Otherwise the op is refused with `pricing_snapshot_mismatch`. Without this check, a forged ₹0 price list would get past re-pricing. |
 | `session.end`, `group.end` | The server prices the segments/assignments it holds, using the stored snapshot and the end time. `billed_amount_paise` must equal the server total. The charge rows must match the server's rows as a multiset on activity, station, controllers, band, start, end, played/billed minutes, unit, unit price and amount; ids and order are ignored. The end may not come before the start of the open segment or assignment. |
 | `session.extend`, `group.extend` | `added_amount_paise` must equal what the device's planner computes. For a single session that is the money-rounded quote over the open segment's config, from the session start to the new end, minus the same quote to the old end. For a group it is the unrounded group subtotal at the new end minus the subtotal at the old end. |
 | waived ends | Priced and checked exactly like any other end. Waiving changes only `payment_status` and still needs `discount`. |
@@ -70,10 +70,9 @@ back through the op's savepoint.
 
 **Edge cases the port reproduces** (the Dart engine is the reference):
 
-* Happy hour is split at the IST window boundaries of every day the interval
-  touches. Holidays and closed days have no happy hour. Adjacent pieces of the
-  same band are merged. A missing happy rate falls back to standard, and an
-  activity that is not happy-eligible is never split.
+* There is one price band (standard): every interval is priced as one line.
+  Happy hours and other time-of-day prices are pricing rules (below), judged
+  once at the session's (group's) start; nothing is split at a window edge.
 * Grace: a session or segment of `≤ grace` minutes is free. Minimum charge
   extends the *billed* interval, so a charge row may end after the session.
   Played minutes still count only actual time.
@@ -126,9 +125,40 @@ Otherwise devices start receiving `price_mismatch` for correct bills (the
 session stays open on the device and shows under Sync → Needs attention). The
 same applies in reverse to any change in `_pr_*`.
 
+### Time rules and discounts
+
+Time rules are priced by the server and the floor app alike (2026-10-15:
+happy hours became an ordinary rule, `lib/domain/pricing/rule_engine.dart` ↔
+`_pr_rule` / `_pr_rule_price`). Discounts are built on the server and the
+dashboard; the floor app does not send them yet.
+
+* **Time rules.** `_pricing_snapshot` / `_pricing_canon` carry `rules` only
+  while the arena has an active rule, so an arena without rules is priced and
+  validated exactly as before. A rule is judged at the session's (group's)
+  start in IST — weekday, whole minute of day (seconds dropped) in
+  `[start_min, end_min)`, holiday
+  mode, dates, type — and the first by priority changes every unit price of
+  the session for its whole length (ties: name, then id, in code-point order,
+  `collate "C"`; `_pr_rule`, `_pr_rule_price`; percent is
+  round-half-up, rupees per hour are pro rata to the rate's unit, half toward
+  +∞, never below 0). **Once an arena has an active rule, a floor app built
+  before rule support is refused at `session.start` / `group.create`
+  (`pricing_snapshot_mismatch`)**: release the server and the floor app
+  together. The floor app pulls `pricing_rules` into Drift (schema v16, which
+  also rewinds the pull cursor once so rules sent before the upgrade arrive).
+* **Discounts.** `session.end` / `group.end` take an optional `discount`
+  (preset, coupon by code, or manual) validated and recorded by
+  `_discount_apply`; billed = cash-rounded (subtotal − discount). An end
+  without a discount behaves as before, so older floor apps keep working.
+* The new tables (`accessory_kinds`, `pricing_rules`, `discounts`,
+  `bill_discounts`) and `controllers.kind_id` are in the change feed; floor
+  apps that do not know them ignore them.
+* `tool/pricing_parity.sh` covers rules (both kinds and signs, window edges,
+  holiday modes, dates, tie-breaks); discounts are pinned by pgTAP 25 only.
+
 `tool/pricing_parity.sh` prices a fixed boundary corpus (every billing unit ×
 rounding × cash-rounding step and direction at block edges; grace and minimum
-charge edges; happy-hour start/end ±1 s; holidays; IST midnight; VR unit
+charge edges; rule window edges ±1 min / −1 s, holiday modes and tie-breaks; holidays; IST midnight; VR unit
 rounding; lounge; multi-segment and group bills, waived and not; extensions)
 plus seeded random cases with the app's code, then re-prices them on the local
 database at the function level and through the real `sync_push` end/extend ops
@@ -178,13 +208,17 @@ side must be reported).
   * **No business data travels in Realtime.** Every event only triggers a pull
     (floor app, `lib/data/sync/realtime_sync.dart`, debounced) or a store
     refetch (dashboard) through the normal authorized queries.
-  * Published tables (`supabase/schemas/_cluster/publications.sql`, 29):
-    activities, billing_policies, bookings, controller_allocations,
-    controller_moves, controllers, customers, game_categories, game_controls,
-    game_resources, games, group_assignments, group_charges, group_extensions,
-    group_payments, group_sessions, holidays, payments, rate_bands, rate_cards,
+  * Published tables (`supabase/schemas/_cluster/publications.sql`, 33):
+    accessory_kinds, activities, bill_discounts, billing_policies, bookings,
+    controller_allocations, controller_moves, controllers, customers,
+    discounts, game_categories, game_controls, game_resources, games,
+    group_assignments, group_charges, group_extensions, group_payments,
+    group_sessions, holidays, payments, pricing_rules, rate_bands, rate_cards,
     rates, resource_activities, resources, session_charges,
     session_extensions, session_segments, sessions, settings, staff_profiles.
+  * The dashboard reloads only what the open screen shows; anything else is
+    marked out of date and read again when a screen next needs it
+    (`apps/admin/src/app/core/sync/realtime-sync.ts`, 800 ms debounce).
 * **Timing.** A device pushes ~0.3 s after each local change, then pulls; a
   nudge triggers a pass on every other device, so changes arrive in about a
   second. The floor app still passes every 10 s while it is in front (the

@@ -9,9 +9,10 @@ import '../../support/pricing_fixtures.dart';
 void main() {
   const pricing = PricingService();
 
+  // The demo afternoon rule is on: −20% PS5 / Pool, Tue–Fri 14:00–17:00.
   PricingQuote quote(String activity, int? controllers, DateTime s, DateTime e) {
     final r = pricing.quote(
-      snapshot: currentSnapshot(),
+      snapshot: currentSnapshot(rules: [afternoonRule()]),
       activityCode: activity,
       controllerCount: controllers,
       start: s,
@@ -30,7 +31,7 @@ void main() {
     });
   });
 
-  group('PS5 standard rates (one clean hour, outside happy hour)', () {
+  group('PS5 standard rates (one clean hour, outside the rule window)', () {
     final s = ist(2026, 10, 2, 18, 0);
     final e = ist(2026, 10, 2, 19, 0);
     test('1 controller = ₹150', () => expect(quote('PS5', 1, s, e).amount, const Paise(15000)));
@@ -39,16 +40,23 @@ void main() {
     test('4 controllers = ₹480', () => expect(quote('PS5', 4, s, e).amount, const Paise(48000)));
   });
 
-  group('PS5 happy rates (one clean hour inside happy window, Friday)', () {
+  group('PS5 under the −20% rule (one clean hour inside the window, Friday)', () {
     final s = ist(2026, 10, 2, 14, 0);
     final e = ist(2026, 10, 2, 15, 0);
     test('1 controller = ₹120', () => expect(quote('PS5', 1, s, e).amount, const Paise(12000)));
-    test('2 controllers = ₹220', () => expect(quote('PS5', 2, s, e).amount, const Paise(22000)));
-    test('3 controllers = ₹310', () => expect(quote('PS5', 3, s, e).amount, const Paise(31000)));
-    test('4 controllers = ₹380', () => expect(quote('PS5', 4, s, e).amount, const Paise(38000)));
+    test('2 controllers = ₹224', () => expect(quote('PS5', 2, s, e).amount, const Paise(22400)));
+    test('3 controllers = ₹312', () => expect(quote('PS5', 3, s, e).amount, const Paise(31200)));
+    test('4 controllers = ₹384', () => expect(quote('PS5', 4, s, e).amount, const Paise(38400)));
+    test('the quote names the rule and carries the adjusted unit price', () {
+      final q = quote('PS5', 1, s, e);
+      expect(q.rule?.name, 'Afternoon deal');
+      expect(q.rule?.summary, 'Afternoon deal −20%');
+      expect(q.segments.single.unitPrice, const Paise(12000));
+      expect(q.segments.single.band, Band.standard);
+    });
   });
 
-  group('VR — ₹200 / 30 min unit, never happy-eligible', () {
+  group('VR — ₹200 / 30 min unit, not in the rule', () {
     test('exactly 30 min = ₹200', () {
       final q = quote('VR', null, ist(2026, 10, 2, 18, 0), ist(2026, 10, 2, 18, 30));
       expect(q.amount, const Paise(20000));
@@ -59,10 +67,10 @@ void main() {
       expect(q.amount, const Paise(40000));
       expect(q.segments.single.units, 2);
     });
-    test('inside happy window VR is still ₹200 (not eligible)', () {
+    test('inside the rule window VR is still ₹200 (not listed)', () {
       final q = quote('VR', null, ist(2026, 10, 2, 14, 0), ist(2026, 10, 2, 14, 30));
       expect(q.amount, const Paise(20000));
-      expect(q.segments.single.band, Band.standard);
+      expect(q.rule, isNull);
     });
   });
 
@@ -71,21 +79,21 @@ void main() {
       expect(quote('POOL', null, ist(2026, 10, 2, 18, 0), ist(2026, 10, 2, 19, 0)).amount,
           const Paise(27500));
     });
-    test('happy 1 hour = ₹220', () {
+    test('1 hour under the −20% rule = ₹220', () {
       expect(quote('POOL', null, ist(2026, 10, 2, 14, 0), ist(2026, 10, 2, 15, 0)).amount,
           const Paise(22000));
     });
   });
 
-  group('Lounge — ₹2000 / hour, not happy-eligible', () {
+  group('Lounge — ₹2000 / hour, not in the rule', () {
     test('standard 1 hour = ₹2000', () {
       expect(quote('LOUNGE', null, ist(2026, 10, 2, 18, 0), ist(2026, 10, 2, 19, 0)).amount,
           const Paise(200000));
     });
-    test('inside happy window still ₹2000', () {
+    test('inside the rule window still ₹2000', () {
       final q = quote('LOUNGE', null, ist(2026, 10, 2, 14, 0), ist(2026, 10, 2, 15, 0));
       expect(q.amount, const Paise(200000));
-      expect(q.segments.single.band, Band.standard);
+      expect(q.rule, isNull);
     });
   });
 

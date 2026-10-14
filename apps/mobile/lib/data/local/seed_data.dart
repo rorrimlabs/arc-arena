@@ -82,7 +82,6 @@ class LocalSeed {
             usesControllers: true,
             usesGames: true,
             durationModel: 'hourly',
-            happyHourEligible: true,
             sortOrder: const Value(1),
           ),
           ActivitiesCompanion.insert(
@@ -92,7 +91,6 @@ class LocalSeed {
             usesControllers: false,
             usesGames: true,
             durationModel: 'unit',
-            happyHourEligible: false,
             sortOrder: const Value(2),
           ),
           ActivitiesCompanion.insert(
@@ -102,7 +100,6 @@ class LocalSeed {
             usesControllers: false,
             usesGames: false,
             durationModel: 'hourly',
-            happyHourEligible: true,
             sortOrder: const Value(3),
           ),
           ActivitiesCompanion.insert(
@@ -112,7 +109,6 @@ class LocalSeed {
             usesControllers: false,
             usesGames: false,
             durationModel: 'flat_hourly',
-            happyHourEligible: false,
             sortOrder: const Value(4),
           ),
         ]);
@@ -205,6 +201,7 @@ class LocalSeed {
 
         // Rates (paise) --------------------------------------------------------
         b.insertAll(db.rates, _rates());
+        b.insert(db.pricingRules, _demoRule());
 
         // Billing policy -------------------------------------------------------
         b.insert(
@@ -256,13 +253,9 @@ class LocalSeed {
     );
     return [
       ps5(1, 'standard', 15000),
-      ps5(1, 'happy', 12000),
       ps5(2, 'standard', 28000),
-      ps5(2, 'happy', 22000),
       ps5(3, 'standard', 39000),
-      ps5(3, 'happy', 31000),
       ps5(4, 'standard', 48000),
-      ps5(4, 'happy', 38000),
       RatesCompanion.insert(
         id: 'vr_std',
         activityCode: 'VR',
@@ -278,13 +271,6 @@ class LocalSeed {
         pricePaise: 27500,
       ),
       RatesCompanion.insert(
-        id: 'pool_happy',
-        activityCode: 'POOL',
-        band: 'happy',
-        unitMinutes: 60,
-        pricePaise: 22000,
-      ),
-      RatesCompanion.insert(
         id: 'lounge_std',
         activityCode: 'LOUNGE',
         band: 'standard',
@@ -293,6 +279,22 @@ class LocalSeed {
       ),
     ];
   }
+
+  /// The demo time-of-day price: Tue–Fri 14:00–17:00 IST, not on a public
+  /// holiday, 20% off PS5 and Pool (₹150 → ₹120 for one controller, ₹275 →
+  /// ₹220 for Pool). On a real arena the owner defines rules on the dashboard.
+  static PricingRulesCompanion _demoRule() => PricingRulesCompanion.insert(
+        id: 'rule_demo_1',
+        name: 'Happy hours',
+        priority: const Value(1),
+        days: const [2, 3, 4, 5],
+        startMin: 14 * 60,
+        endMin: 17 * 60,
+        holidayMode: const Value('skip'),
+        activityCodes: const ['PS5', 'POOL'],
+        adjustKind: 'percent',
+        adjustValue: -20,
+      );
 
   // Encoded through the domain object so the defaults stay in one place.
   static String _policyJson() => jsonEncode(BillingPolicy.defaults.toJson());

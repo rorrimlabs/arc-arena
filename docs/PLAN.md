@@ -123,7 +123,7 @@ resource** (also RIFT PS5⊕VR).
 
 ### Phase 4 — owner configuration ✅
 - [x] Stations: add / edit / disable / maintenance, refused while a station is in use
-- [x] Opening hours per weekday + happy-hour window, persisted (was hardcoded)
+- [x] Opening hours per weekday + happy-hour window, persisted (was hardcoded). *2026-10-15: the happy-hour window, band and per-type flag are gone; happy hours are a pricing rule.*
 - [x] Holidays, with a per-holiday "closed all day" switch
 - [x] Rate card editor (price + unit per activity/band/controller count)
 - [x] Billing rules editor (every OWNER CONFIRMATION knob)

@@ -18,7 +18,7 @@ typedef GameOnResource = ({Game game, GameAvailability status, String? notes});
 typedef ResourceForGame = ({Resource resource, GameAvailability status});
 
 /// A configured public holiday. [closed] means the centre does not trade that
-/// day; otherwise it trades but happy hour does not apply.
+/// day; otherwise it trades (pricing rules can include or skip the date).
 typedef Holiday = ({IstDate day, String name, bool closed});
 
 /// Read/write the catalog: activities, resources, rates, games, controls,

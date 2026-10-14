@@ -28,7 +28,7 @@ void main() {
     return r.valueOrNull!;
   }
 
-  // A standard (non-happy) window on Friday evening.
+  // Friday evening (no rules in this file's snapshot).
   final s18 = ist(2026, 10, 2, 18, 0);
 
   group('grace period (OWNER #3)', () {
@@ -122,20 +122,20 @@ void main() {
   });
 
   group('rounding scope (OWNER #7)', () {
-    // Pool, per-minute, across the 17:00 boundary: 17 min happy + 13 min standard.
-    // Fractional paise differ by scope. Cash rounding disabled to expose it.
+    // A quote is one priced piece now (time-of-day prices are rules, not
+    // band splits), so both scopes round the same exact amount once:
+    // Pool per-minute, 30 min 7 s = 27500 × 1807 / 3600 = 13803.47 → ₹138.03.
     final s = ist(2026, 10, 2, 16, 43);
-    final e = ist(2026, 10, 2, 17, 13);
-    test('session scope rounds once: ₹121.92', () {
-      final policy = BillingPolicy.defaults
-          .copyWith(roundingScope: RoundingScope.session, moneyRoundingPaise: 1);
-      expect(q(policy, 'POOL', null, s, e).subtotal, const Paise(12192));
-    });
-    test('segment scope rounds each: ₹121.91', () {
-      final policy = BillingPolicy.defaults
-          .copyWith(roundingScope: RoundingScope.segment, moneyRoundingPaise: 1);
-      expect(q(policy, 'POOL', null, s, e).subtotal, const Paise(12191));
-    });
+    final e = ist(2026, 10, 2, 17, 13).add(const Duration(seconds: 7));
+    for (final scope in RoundingScope.values) {
+      test('${scope.name} scope: ₹138.03 in one line', () {
+        final policy = BillingPolicy.defaults
+            .copyWith(roundingScope: scope, moneyRoundingPaise: 1);
+        final r = q(policy, 'POOL', null, s, e);
+        expect(r.subtotal, const Paise(13803));
+        expect(r.segments, hasLength(1));
+      });
+    }
   });
 
   group('interval edge cases', () {

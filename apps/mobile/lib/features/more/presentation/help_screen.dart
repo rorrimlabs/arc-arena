@@ -46,10 +46,11 @@ class HelpScreen extends StatelessWidget {
           'until it is collected.',
     ),
     (
-      q: 'Happy hour',
-      a: 'It applies automatically — Tuesday to Friday, 2 to 5 PM, never at '
-          'the weekend or on a public holiday. A session crossing 5 PM is '
-          'split and each half is charged at its own rate. Nothing to select.',
+      q: 'Time-based prices',
+      a: 'Discounts or surcharges for certain days and times are set by the '
+          'owner and apply automatically. The one in force when a session '
+          'starts is shown on the estimate and covers the whole session, even '
+          'past the end of its window. Nothing to select.',
     ),
     (
       q: 'A game will not run on a station',

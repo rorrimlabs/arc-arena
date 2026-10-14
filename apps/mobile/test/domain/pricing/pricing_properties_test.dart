@@ -8,7 +8,8 @@ import '../../support/pricing_fixtures.dart';
 
 void main() {
   const pricing = PricingService();
-  final snapshot = currentSnapshot();
+  // With the demo rule on, so starts inside and outside its window both run.
+  final snapshot = currentSnapshot(rules: [afternoonRule()]);
 
   PricingQuote quote(String activity, int? controllers, DateTime s, DateTime e) {
     final r = pricing.quote(
@@ -22,7 +23,7 @@ void main() {
     return r.valueOrNull!;
   }
 
-  // Random starts across a Friday, which has a happy window to exercise splits.
+  // Random starts across a Friday afternoon and evening.
   final combos = <(String, int?)>[('PS5', 1), ('PS5', 4), ('POOL', null), ('VR', null)];
 
   test('amount and subtotal are never negative', () {

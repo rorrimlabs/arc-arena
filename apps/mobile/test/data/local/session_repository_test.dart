@@ -152,6 +152,7 @@ void main() {
         snapshot: snapshot,
         segments: await sessions.segmentsFor(id),
         openEndAt: at,
+        sessionStart: (await sessions.getById(id))!.startedAt,
       );
       await sessions.end(EndSessionCommand(
         sessionId: id,

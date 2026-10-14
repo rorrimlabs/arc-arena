@@ -50,7 +50,7 @@ comment on column public.group_charges.player_number is 'That player''s number w
 
 comment on column public.group_charges.charge_index is '0-based ordinal of this line within the group''s bill.';
 
-comment on column public.group_charges.band_code is 'Price band: standard or happy (happy hour).';
+comment on column public.group_charges.band_code is 'Price band: standard (happy only on charges billed before happy hour became a pricing rule).';
 
 comment on column public.group_charges.resource_id is 'Station billed; null for the pooled-controller line.';
 

@@ -214,3 +214,67 @@ export function initials(name: string): string {
     .join('')
     .toUpperCase();
 }
+
+/** One station's figures, aggregated on the server (arena_station_stats). */
+export interface StationFigures {
+  readonly billedToday: number;
+  readonly sessionsToday: number;
+  readonly minutes30: number;
+  readonly billed30: number;
+  /** Accessories that belong to it and are not retired. */
+  readonly accessories: number;
+}
+
+/** One game's figures over the last 30 days, aggregated on the server (arena_game_stats). */
+export interface GameFigures {
+  readonly minutes30: number;
+  readonly sessions30: number;
+  readonly playingNow: number;
+}
+
+/** A member who played a game most (arena_game_fans). */
+export interface GameFan {
+  readonly customerId: string;
+  readonly name: string;
+  readonly sessions: number;
+  readonly minutes: number;
+}
+
+/** A bill in a station's or member's recent play (arena_activity). */
+export interface ActivityBill {
+  readonly billId: string;
+  readonly kind: BillKind;
+  readonly startedAt: string;
+  readonly status: BillStatus;
+  readonly billedPaise: number | null;
+  /** The member's name; null for a walk-in. */
+  readonly customer: string | null;
+  readonly station: string | null;
+  readonly game: string | null;
+}
+
+/** A station's or member's recent bills, and a member's minutes per game (arena_activity). */
+export interface Activity {
+  readonly bills: readonly ActivityBill[];
+  readonly games: readonly { readonly gameId: string; readonly name: string; readonly minutes: number }[];
+}
+
+/** A registered member with their figures, one row of a page (arena_members). */
+export interface MemberRow {
+  readonly id: string;
+  readonly name: string;
+  readonly phone: string | null;
+  readonly birthYear: number | null;
+  readonly createdAt: string;
+  /** Bills (not voided) in the history window. */
+  readonly visits: number;
+  readonly minutes: number;
+  /** Billed over the last 30 days. */
+  readonly spent30Paise: number;
+  readonly lastVisit: string | null;
+}
+
+export interface MemberPage {
+  readonly total: number;
+  readonly rows: readonly MemberRow[];
+}

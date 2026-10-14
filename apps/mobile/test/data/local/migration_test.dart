@@ -5,6 +5,7 @@
 /// rows are still there and still correct.
 library;
 
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:arena_ops/data/local/database.dart';
@@ -17,6 +18,7 @@ import 'package:arena_ops/data/local/seed_data.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/repositories/user_repository.dart';
+import 'package:arena_ops/domain/services/segment_billing.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
@@ -91,8 +93,9 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
-    // customers.birth_year arrived in v15.
+    // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
+    raw.execute('DROP TABLE IF EXISTS pricing_rules');
     raw.execute('PRAGMA user_version = 10');
     raw.close();
     return sessionId;
@@ -273,8 +276,9 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
-    // customers.birth_year arrived in v15.
+    // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
+    raw.execute('DROP TABLE IF EXISTS pricing_rules');
     raw.execute('PRAGMA user_version = 11');
     raw.close();
     return sessionId;
@@ -380,8 +384,9 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
-    // customers.birth_year arrived in v15.
+    // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
+    raw.execute('DROP TABLE IF EXISTS pricing_rules');
     raw.execute('PRAGMA user_version = 12');
     raw.close();
     return started.valueOrNull!.id;
@@ -472,8 +477,9 @@ void main() {
     raw.execute('DROP TABLE IF EXISTS sync_outbox');
     raw.execute('DROP TABLE IF EXISTS sync_meta');
     raw.execute('DROP TABLE IF EXISTS sync_versions');
-    // customers.birth_year arrived in v15.
+    // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
+    raw.execute('DROP TABLE IF EXISTS pricing_rules');
     raw.execute('PRAGMA user_version = 13');
     raw.close();
     return started.valueOrNull!.id;
@@ -565,6 +571,7 @@ void main() {
     await db.close();
     final raw = sqlite3.open(file.path);
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
+    raw.execute('DROP TABLE IF EXISTS pricing_rules');
     raw.execute('PRAGMA user_version = 14');
     raw.close();
     return (sessionId: started.valueOrNull!.id, customerId: who.id);
@@ -619,6 +626,177 @@ void main() {
       expect(db.rebuiltFromVersion, 0);
       expect(
           await LocalCustomerRepository(db).getById(ids.customerId), isNotNull);
+    });
+  });
+
+  /// A genuine v15 database: the current shape without `pricing_rules`, with a
+  /// cloud pull cursor, a rate row of a retired band, a live session whose
+  /// frozen snapshot was written by an older build (extra keys, a retired-band
+  /// rate), and a completed session with its charge row and payment.
+  Future<({String live, String done})> buildV15Database() async {
+    final db = AppDatabase(NativeDatabase(file));
+    await LocalSeed.apply(db);
+    final catalog = LocalCatalogRepository(db);
+    final sessions = LocalSessionRepository(db);
+    final who = await LocalCustomerRepository(db).create(name: 'Isha');
+    final snapshot = await catalog.currentSnapshot();
+    // A completed hour on HEX, billed and paid.
+    final doneStart = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: start,
+      scheduledEndAt: start.add(const Duration(hours: 1)),
+      snapshot: snapshot,
+      resourceId: 'hex',
+      resourceName: 'HEX',
+      activityCode: 'PS5',
+      controllerCount: 1,
+    ));
+    final doneId = doneStart.valueOrNull!.id;
+    final doneBill = const SegmentBilling().bill(
+      snapshot: snapshot,
+      segments: await sessions.segmentsFor(doneId),
+      openEndAt: start.add(const Duration(hours: 1)),
+      sessionStart: start,
+    );
+    final ended = await sessions.end(EndSessionCommand(
+      sessionId: doneId,
+      actualEndedAt: start.add(const Duration(hours: 1)),
+      billedAmountPaise: doneBill.total.value,
+      charges: doneBill.charges,
+    ));
+    expect(ended.isOk, isTrue, reason: ended.failureOrNull?.display);
+    await sessions.recordPayment(RecordPaymentCommand(
+      sessionId: doneId,
+      amountPaise: 15000,
+      method: PaymentMethod.cash,
+    ));
+    // A live session on VOID.
+    final live = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: start.add(const Duration(hours: 2)),
+      scheduledEndAt: start.add(const Duration(hours: 3)),
+      snapshot: snapshot,
+      resourceId: 'void',
+      resourceName: 'VOID',
+      activityCode: 'PS5',
+      controllerCount: 2,
+    ));
+    final liveId = live.valueOrNull!.id;
+    await sessions.recordPayment(RecordPaymentCommand(
+      sessionId: liveId,
+      amountPaise: 28000,
+      method: PaymentMethod.upi,
+    ));
+    await db.close();
+
+    // Builds before v16 froze no rules.
+    final legacy = snapshot.toJson()..remove('rules');
+    for (final a in legacy['activities'] as List) {
+      (a as Map<String, dynamic>)['retired_flag'] = true;
+    }
+    (legacy['hours'] as Map<String, dynamic>)['retired_window'] = <String, dynamic>{};
+    (legacy['rates'] as List).add({
+      'activity_code': 'PS5', 'band': 'retired_band', 'controller_count': 2,
+      'unit_minutes': 60, 'price_paise': 1,
+    });
+    final raw = sqlite3.open(file.path);
+    raw.execute('UPDATE sessions SET pricing_snapshot = ? WHERE id = ?',
+        [jsonEncode(legacy), liveId]);
+    raw.execute("INSERT INTO rates (id, activity_code, band, controller_count, "
+        "unit_minutes, price_paise) VALUES ('ps5_2_old', 'PS5', 'retired_band', 2, 60, 1)");
+    raw.execute("INSERT INTO sync_meta (key, value) VALUES ('pull_cursor', '98765')");
+    raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    raw.execute('PRAGMA user_version = 15');
+    raw.close();
+    return (live: liveId, done: doneId);
+  }
+
+  group('v15 -> v16 (pricing rules)', () {
+    test('sessions, charges and payments survive; old snapshots still bill; the '
+        'rules table appears and the pull cursor rewinds', () async {
+      final ids = await buildV15Database();
+      final before = sqlite3.open(file.path);
+      expect(before.userVersion, 15);
+      expect(
+          before
+              .select("SELECT name FROM sqlite_master WHERE name='pricing_rules'")
+              .isEmpty,
+          isTrue);
+      before.close();
+
+      final db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0, reason: 'sequential, not a rebuild');
+      final sessions = LocalSessionRepository(db);
+
+      final done = (await sessions.getById(ids.done))!;
+      expect(done.billedAmountPaise, 15000);
+      expect((await sessions.chargesFor(ids.done)).single.amountPaise, 15000);
+      expect((await sessions.paymentsFor(ids.done)).single.amountPaise, 15000);
+
+      final live = (await sessions.getById(ids.live))!;
+      expect(live.isActive, isTrue);
+      expect((await sessions.paymentsFor(ids.live)).single.amountPaise, 28000);
+      final segs = await sessions.segmentsFor(ids.live);
+      expect(segs.single.resourceId, 'void');
+      // The older snapshot parses; its retired-band rate is never priced.
+      expect(live.snapshot.rules, isEmpty);
+      final bill = const SegmentBilling().bill(
+        snapshot: live.snapshot,
+        segments: segs,
+        openEndAt: live.startedAt.add(const Duration(hours: 1)),
+        sessionStart: live.startedAt,
+      );
+      expect(bill.total.value, 28000);
+
+      // The retired rate row stays in the table but not in new snapshots.
+      final snap = await LocalCatalogRepository(db).currentSnapshot();
+      expect(snap.rates.every((r) => r.band == Band.standard), isTrue);
+      expect(snap.rules, isEmpty);
+      expect(snap.toJson().containsKey('rules'), isFalse);
+      expect((await db.select(db.rates).get()).map((r) => r.id), contains('ps5_2_old'));
+
+      // A synced rule lands in the new table and in the next snapshot.
+      await db.into(db.pricingRules).insert(PricingRulesCompanion.insert(
+            id: 'r1',
+            name: 'Weekday afternoons',
+            days: const [2, 3, 4, 5],
+            startMin: 840,
+            endMin: 1020,
+            activityCodes: const ['PS5'],
+            adjustKind: 'percent',
+            adjustValue: -20,
+          ));
+      expect((await LocalCatalogRepository(db).currentSnapshot()).rules.single.id, 'r1');
+
+      // Activities still insert into the old table shape (retired column).
+      await db.into(db.activities).insert(ActivitiesCompanion.insert(
+            id: 'darts',
+            code: 'DARTS',
+            name: 'Darts',
+            usesControllers: false,
+            usesGames: false,
+            durationModel: 'hourly',
+          ));
+
+      final cursor = await (db.select(db.syncMeta)
+            ..where((t) => t.key.equals('pull_cursor')))
+          .getSingle();
+      expect(cursor.value, '0', reason: 'the next pull re-reads the rules');
+      final check = sqlite3.open(file.path);
+      expect(check.userVersion, AppDatabase.expectedSchemaVersion);
+      check.close();
+    });
+
+    test('migrating twice is a no-op', () async {
+      final ids = await buildV15Database();
+      var db = AppDatabase(NativeDatabase(file));
+      expect(await LocalSessionRepository(db).getById(ids.live), isNotNull);
+      await db.close();
+      db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0);
+      expect(await LocalSessionRepository(db).getById(ids.done), isNotNull);
     });
   });
 }

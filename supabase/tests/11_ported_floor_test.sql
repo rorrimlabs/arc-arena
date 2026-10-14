@@ -4,7 +4,7 @@
 -- payment replay/duplicate, partial→paid, overpayment, staff void refused,
 -- stale writes, pricing.
 --
--- Thu 2026-10-01; happy hour 14:00–17:00 IST = 08:30–11:30Z.
+-- Thu 2026-10-01; the 'Happy hours' rule (PS5, 20% lower) covers starts 14:00–17:00 IST = 08:30–11:30Z.
 begin;
 create extension if not exists pgtap;
 select * from no_plan();
@@ -15,6 +15,10 @@ select * from no_plan();
 -- sees. Created inside this transaction and rolled back with it.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000111'::uuid, 'pgtap 11');
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000111'::uuid);
+insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
+    adjust_kind, adjust_value)
+  values ('e0000000-0000-4000-8000-000000000111'::uuid, 'Happy hours', '{2,3,4,5}', 840, 1020,
+    'skip', '{PS5}', 'percent', -20);
 -- Two extra pads at VOID so a shared system can reach the 4-controller cap.
 insert into controllers(arena_id, label, home_resource_id, current_resource_id, status)
   select r.arena_id, 'VOID-' || n, r.id, r.id, 'usable'
@@ -122,13 +126,13 @@ select is((select count(*)::int from payments where session_id = 'a1100000-0000-
   2, 'the refused payments wrote nothing');
 
 -- ------------------------------------------- 5. end writes its charges once
--- HEX, 1 pad, 09:00–10:00Z is all happy hour: ₹120. ₹50 net paid → partial.
+-- HEX, 1 pad, 09:00–10:00Z starts in happy hours: ₹150 − 20% = ₹120. ₹50 net paid → partial.
 select is(pg_temp.push('session.end', jsonb_build_object('session_id','a1100000-0000-0000-0000-000000000001',
     'ended_at','2026-10-01T10:00:00Z', 'billed_amount_paise', 12000, 'mark_waived', false,
     'expected_segment_ids', jsonb_build_array('b1100000-0000-0000-0000-000000000001'),
     'expected_scheduled_end_at','2026-10-01T10:00:00Z',
     'charges', jsonb_build_array(jsonb_build_object('id','c1100000-0000-0000-0000-000000000001',
-      'segment_id','b1100000-0000-0000-0000-000000000001','segment_index',0,'band_code','happy',
+      'segment_id','b1100000-0000-0000-0000-000000000001','segment_index',0,'band_code','standard',
       'activity_code','PS5','resource_id', pg_temp.r('HEX'),'controller_count',1,
       'segment_start','2026-10-01T09:00:00Z','segment_end','2026-10-01T10:00:00Z',
       'played_minutes',60,'billed_minutes',60,'unit_minutes',60,'unit_price_paise',12000,
@@ -139,7 +143,7 @@ select is(pg_temp.push('session.end', jsonb_build_object('session_id','a1100000-
     'expected_segment_ids', jsonb_build_array('b1100000-0000-0000-0000-000000000001'),
     'expected_scheduled_end_at','2026-10-01T10:00:00Z',
     'charges', jsonb_build_array(jsonb_build_object('id','c1100000-0000-0000-0000-000000000002',
-      'segment_id','b1100000-0000-0000-0000-000000000001','segment_index',1,'band_code','happy',
+      'segment_id','b1100000-0000-0000-0000-000000000001','segment_index',1,'band_code','standard',
       'activity_code','PS5','resource_id', pg_temp.r('HEX'),'controller_count',1,
       'segment_start','2026-10-01T09:00:00Z','segment_end','2026-10-01T10:00:00Z',
       'played_minutes',60,'billed_minutes',60,'unit_minutes',60,'unit_price_paise',12000,
@@ -226,19 +230,19 @@ select is(pg_temp.push('group.add', jsonb_build_object('group_id','91100000-0000
     ->>'error', 'resource_busy', 'an activity without controllers cannot share its station');
 
 -- ------------------------------------------- 10. group end closes every player
--- Per system, all happy hour: VOID at 4 pads ₹380 + GHOST at 2 pads ₹220 = ₹600.
+-- Per system, started in happy hours (20% lower): VOID at 4 pads ₹384 + GHOST at 2 pads ₹224 = ₹608.
 create function pg_temp.gch(p_res text, p_cc int, p_price int) returns jsonb as $$
-  select jsonb_build_object('id', gen_random_uuid(), 'charge_index', 0, 'band_code', 'happy',
+  select jsonb_build_object('id', gen_random_uuid(), 'charge_index', 0, 'band_code', 'standard',
     'activity_code','PS5','resource_id', pg_temp.r(p_res),'controller_count', p_cc,
     'segment_start','2026-10-01T09:00:00Z','segment_end','2026-10-01T10:00:00Z',
     'played_minutes',60,'billed_minutes',60,'unit_minutes',60,'unit_price_paise', p_price,
     'amount_paise', p_price) $$ language sql;
 select is(pg_temp.push('group.end', jsonb_build_object('group_id','91100000-0000-0000-0000-000000000001',
-    'ended_at','2026-10-01T10:00:00Z','billed_amount_paise', 60000,
+    'ended_at','2026-10-01T10:00:00Z','billed_amount_paise', 60800,
     'expected_assignment_ids', jsonb_build_array('92100000-0000-0000-0000-000000000001',
       '92100000-0000-0000-0000-000000000002','92100000-0000-0000-0000-000000000003'),
     'expected_scheduled_end_at','2026-10-01T10:00:00Z',
-    'charges', jsonb_build_array(pg_temp.gch('VOID', 4, 38000), pg_temp.gch('GHOST', 2, 22000))))
+    'charges', jsonb_build_array(pg_temp.gch('VOID', 4, 38400), pg_temp.gch('GHOST', 2, 22400))))
     ->>'status', 'applied', 'the group ends');
 select is((select status from group_sessions where id = '91100000-0000-0000-0000-000000000001'),
   'completed', 'it is completed');
@@ -249,11 +253,11 @@ select is((select count(*)::int from group_assignments
 -- ------------------------------------------- 11. group payments
 select is(pg_temp.push('payment.record', jsonb_build_object('scope','group',
     'parent_id','91100000-0000-0000-0000-000000000001','payment_id','e1100000-0000-0000-0000-000000000001',
-    'amount_paise', 60000, 'method','cash'), 'f1100000-0000-0000-0000-000000000021')
+    'amount_paise', 60800, 'method','cash'), 'f1100000-0000-0000-0000-000000000021')
     ->'result'->>'payment_status', 'paid', 'paying the group bill in full → paid');
 select is(pg_temp.push('payment.record', jsonb_build_object('scope','group',
     'parent_id','91100000-0000-0000-0000-000000000001','payment_id','e1100000-0000-0000-0000-000000000001',
-    'amount_paise', 60000, 'method','cash'), 'f1100000-0000-0000-0000-000000000021')
+    'amount_paise', 60800, 'method','cash'), 'f1100000-0000-0000-0000-000000000021')
     ->>'replayed', 'true', 'a retried group payment is replayed');
 select is((select count(*)::int from group_payments where group_id = '91100000-0000-0000-0000-000000000001'),
   1, 'exactly one group payment row');

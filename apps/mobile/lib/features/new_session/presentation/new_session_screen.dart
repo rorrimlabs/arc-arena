@@ -11,7 +11,6 @@ import 'package:arena_ops/domain/entities/customer.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/pricing/pricing_quote.dart';
 import 'package:arena_ops/domain/services/session_planner.dart';
-import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_choice_field.dart';
 import 'package:arena_ops/features/new_session/presentation/customer_picker_sheet.dart';
@@ -432,8 +431,7 @@ class _PlanLine extends StatelessWidget {
     final minutes = q.billedMinutes;
     String rateLine(PricingSegment s) {
       final per = s.unitMinutes == 60 ? 'h' : '${s.unitMinutes} min';
-      final band = s.band == Band.happy ? 'Happy hour' : 'Standard';
-      return '$band ${s.unitPrice.display}/$per × '
+      return '${s.unitPrice.display}/$per × '
           '${formatMinutesLabel(Duration(minutes: s.billedMinutes))} = '
           '${s.amount.display}';
     }
@@ -461,6 +459,13 @@ class _PlanLine extends StatelessWidget {
                 key: const ValueKey('estimate-summary'),
                 style: theme.textTheme.bodySmall,
               ),
+              // The pricing rule the engine applied (judged at the start),
+              // e.g. "Weekday afternoons −20%"; the rate line shows the adjusted price.
+              if (q.rule != null)
+                Text(q.rule!.summary,
+                    key: const ValueKey('estimate-rule'),
+                    style: theme.textTheme.bodySmall
+                        ?.copyWith(color: arena.primary)),
               for (final s in q.segments)
                 Text(rateLine(s),
                     style: theme.textTheme.bodySmall

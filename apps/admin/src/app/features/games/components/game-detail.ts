@@ -1,4 +1,4 @@
-import { Component, computed, inject, input, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output, resource, signal } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
@@ -9,7 +9,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
-import { Game } from '../../../core/floor/floor.models';
+import { Game, GameFigures } from '../../../core/floor/floor.models';
 import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
@@ -24,12 +24,10 @@ import {
   DeletePlan,
   deletePlan,
   mediaLabel,
-  GameStats,
   MEDIA,
   gameIcon,
   platformLabel,
   playerModeLabel,
-  topFans,
 } from '../data/game-view';
 import { GameStations } from './game-stations';
 
@@ -145,16 +143,24 @@ import { GameStations } from './game-stations';
       <app-game-stations [game]="g" />
 
       <app-detail-section heading="Plays it most" subtitle="Members, last 30 days">
-        @for (f of fans(); track f.customer.id) {
-          <app-line-row
-            [title]="f.customer.name"
-            [subtitle]="f.sessions + (f.sessions === 1 ? ' session' : ' sessions')"
-            [value]="minutes(f.minutes)"
-            link="/members"
-            [queryParams]="{ id: f.customer.id }"
-          />
-        } @empty {
-          <p class="text-[13px] leading-[1.45] text-muted">No member sessions yet.</p>
+        @if (fanRead.error()) {
+          <p role="alert" class="text-[13px] leading-[1.45] text-danger">
+            Top players couldn't load.
+          </p>
+        } @else if (!fanRead.hasValue()) {
+          <p class="text-[13px] leading-[1.45] text-muted">Loading…</p>
+        } @else {
+          @for (f of fans(); track f.customerId) {
+            <app-line-row
+              [title]="f.name"
+              [subtitle]="f.sessions + (f.sessions === 1 ? ' session' : ' sessions')"
+              [value]="minutes(f.minutes)"
+              link="/members"
+              [queryParams]="{ q: f.name, id: f.customerId }"
+            />
+          } @empty {
+            <p class="text-[13px] leading-[1.45] text-muted">No member sessions yet.</p>
+          }
         }
       </app-detail-section>
     </app-detail-pane>
@@ -168,7 +174,7 @@ export class GameDetail {
   private readonly snack = inject(MatSnackBar);
 
   readonly game = input.required<Game>();
-  readonly stats = input<GameStats | undefined>();
+  readonly stats = input<GameFigures | undefined>();
   readonly now = input.required<Date>();
   readonly closed = output<void>();
   /** Edit asked for (the page opens the dialog with its platform list). */
@@ -186,9 +192,12 @@ export class GameDetail {
   );
   protected readonly players = computed(() => playerModeLabel(this.game()));
   protected readonly hours = computed(() => `${Math.round((this.stats()?.minutes30 ?? 0) / 60)}h`);
-  protected readonly fans = computed(() =>
-    topFans(this.game().id, this.floor.plays(), this.floor.customerById(), this.now()),
-  );
+  /** The members who play it most, read when the game is opened. */
+  protected readonly fanRead = resource({
+    params: () => ({ id: this.game().id }),
+    loader: ({ params }) => this.floor.gameFans(params.id),
+  });
+  protected readonly fans = computed(() => (this.fanRead.hasValue() ? this.fanRead.value() : []));
   protected readonly busy = signal(false);
   protected readonly error = signal('');
 

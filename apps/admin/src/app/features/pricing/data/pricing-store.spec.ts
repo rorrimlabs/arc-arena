@@ -21,7 +21,6 @@ describe('PricingStore', () => {
 
   const change: RateChange = {
     activityCode: 'PS5',
-    band: 'standard',
     controllerCount: 1,
     unitMinutes: 60,
     pricePaise: 25_000,

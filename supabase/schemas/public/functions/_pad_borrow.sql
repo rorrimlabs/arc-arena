@@ -1,6 +1,7 @@
 -- _pad_borrow(p_arena, p_moves, p_resource, p_session_ref, p_at) — move pads to a station for a session.
 --
--- Per move: a pad already at p_resource is skipped and counted; otherwise it must exist, be usable,
+-- Per move: the accessory must be a pad (_is_pad, else not_a_controller); a pad already at
+-- p_resource is skipped and counted; otherwise it must exist, be usable,
 -- unallocated, and its station free of untracked play (controller_missing / controller_unusable /
 -- controller_taken). Moves it and logs controller_moves as 'returnHome' when p_resource is its home,
 -- else 'loan' (loan_return_to = home, loan_session_ref = p_session_ref). Returns the skip count.
@@ -22,14 +23,15 @@ declare
   v_now  timestamptz := statement_timestamp();
   v_m    jsonb;
   v_cid  uuid;
-  v_status text; v_loc uuid; v_home uuid; v_return boolean;
+  v_status text; v_loc uuid; v_home uuid; v_kind uuid; v_return boolean;
   v_skipped int := 0;
 begin
   for v_m in select value from jsonb_array_elements(coalesce(p_moves, '[]'::jsonb)) loop
     v_cid := (v_m->>'controller_id')::uuid;
-    select status, current_resource_id, home_resource_id into v_status, v_loc, v_home
+    select status, current_resource_id, home_resource_id, kind_id into v_status, v_loc, v_home, v_kind
       from controllers where id = v_cid and arena_id = p_arena;
     if not found then raise exception 'controller_missing'; end if;
+    if not _is_pad(v_kind) then raise exception 'not_a_controller'; end if;
     if v_loc = p_resource then v_skipped := v_skipped + 1; continue; end if;
     if v_status <> 'usable' then raise exception 'controller_unusable' using hint = v_status; end if;
     if exists (select 1 from controller_allocations where controller_id = v_cid and ended_at is null) then

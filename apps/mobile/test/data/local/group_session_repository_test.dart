@@ -27,7 +27,7 @@ void main() {
   late Customer rahul;
 
   const billing = GroupBilling();
-  // Friday 18:00 IST — standard band (happy hour is 14:00–17:00 weekdays).
+  // Friday 18:00 IST — outside the demo rule's 14:00–17:00 window.
   final start = ist(2026, 10, 2, 18, 0);
 
   setUp(() async {

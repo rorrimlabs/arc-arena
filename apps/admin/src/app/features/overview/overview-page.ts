@@ -10,7 +10,6 @@ import { initials } from '../../core/floor/floor.models';
 import { PageHeader } from '../../core/layout/page-header';
 import { injectNow } from '../../core/time/ticker';
 import { formatRupees } from '../../shared/money/rupees.pipe';
-import { istDayStart } from '../../shared/time/ist';
 import { PricingStore } from '../pricing/data/pricing-store';
 import { LivePane } from './components/live-pane';
 import { OverviewStore } from './data/overview-store';
@@ -18,20 +17,19 @@ import {
   PERIODS,
   Period,
   asPeriod,
-  billedByType,
-  byStaff,
   chartScale,
   delta,
   paymentRows,
   takingsBars,
   topGames,
-  totals,
+  withAverage,
 } from './data/overview.models';
 
 /**
- * Overview (design: `isOverview`): the period's takings against the one before, a takings chart,
- * payment split, takings by station type, top games and staff, with the Live aside. All figures
- * come from closed bills (arena_sales) and billed lines; the period is in the URL (`?period=7d`).
+ * Overview: the period's takings against the one before, a takings chart, payment split and
+ * discounts given, takings by station type, top games and staff, with the Live aside. Every
+ * figure is aggregated on the server in one read (arena_overview); the period is in the URL
+ * (`?period=7d`).
  */
 @Component({
   selector: 'app-overview-page',
@@ -185,10 +183,8 @@ import {
               <div
                 class="flex justify-between border-t border-border pt-3 text-[13px] leading-none text-muted"
               >
-                <span>Discounts given</span>
-                <span class="font-medium text-subtle" title="Discounts aren't recorded on bills yet"
-                  >Not connected yet</span
-                >
+                <span>Discounts given · {{ discounts().count }} bills</span>
+                <span class="font-medium tabular-nums">{{ rupees(discounts().paise) }}</span>
               </div>
             </div>
           </mat-card>
@@ -285,8 +281,13 @@ export class OverviewPage {
   protected readonly now = injectNow();
   protected readonly period = computed(() => asPeriod(this.periodParam()));
 
-  private readonly current = computed(() => totals(this.store.bills()));
-  private readonly before = computed(() => totals(this.store.previous()));
+  private readonly none = withAverage({ takingsPaise: 0, bills: 0, minutes: 0 });
+  private readonly current = computed(() => this.store.data()?.totals ?? this.none);
+  private readonly before = computed(() => this.store.data()?.previous ?? this.none);
+  protected readonly discounts = computed(() => ({
+    paise: this.store.data()?.totals.discountPaise ?? 0,
+    count: this.store.data()?.totals.discounts ?? 0,
+  }));
   protected readonly takings = computed(() => this.current().takingsPaise);
   protected readonly compare = computed(() => this.store.range()?.compare ?? '');
   protected readonly subtitle = computed(
@@ -327,7 +328,7 @@ export class OverviewPage {
     return takingsBars(
       this.period(),
       range,
-      this.store.bills(),
+      this.store.data()?.buckets ?? [],
       this.pricing.hours()?.open ?? null,
       this.now(),
     );
@@ -344,14 +345,14 @@ export class OverviewPage {
         .join(', ')}`,
   );
 
-  protected readonly payments = computed(() => paymentRows(this.store.bills()));
+  protected readonly payments = computed(() => paymentRows(this.store.data()?.methods ?? {}));
   protected readonly upiShare = computed(() => {
     const t = this.takings();
     const upi = this.payments().find((p) => p.method === 'upi')?.paise ?? 0;
     return t > 0 ? Math.round((upi / t) * 100) : 0;
   });
   protected readonly types = computed(() => {
-    const by = billedByType(this.store.charges());
+    const by = this.store.data()?.byType ?? new Map<string, number>();
     const rows = this.pricing
       .types()
       .filter((t) => t.active || by.has(t.code))
@@ -359,13 +360,10 @@ export class OverviewPage {
     const max = Math.max(1, ...rows.map((r) => r.paise));
     return rows.map((r) => ({ ...r, share: (r.paise / max) * 100 }));
   });
-  protected readonly games = computed(() => topGames(this.store.bills()));
-  protected readonly staff = computed(() => byStaff(this.store.bills()));
-  /** Today's bills for the Live aside, whatever the period. */
-  protected readonly today = computed(() => {
-    const start = istDayStart(this.now()).getTime();
-    return this.store.bills().filter((b) => Date.parse(b.at) >= start);
-  });
+  protected readonly games = computed(() => topGames(this.store.data()?.topGames ?? []));
+  protected readonly staff = computed(() => this.store.data()?.byStaff ?? []);
+  /** Today's latest bills for the Live aside, whatever the period. */
+  protected readonly today = computed(() => this.store.data()?.latest ?? []);
 
   constructor() {
     effect(() => {
@@ -373,7 +371,7 @@ export class OverviewPage {
     });
     effect(() => {
       if (!this.arena.current().id) return;
-      void this.floor.load(['stations', 'games', 'plays']);
+      void this.floor.load(['stations', 'games', 'live']);
       void this.pricing.load();
     });
   }

@@ -5,12 +5,13 @@ import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
-/// Opening hours and the happy-hour window, per weekday (brief §8).
+/// Opening hours per weekday (brief §8).
 ///
-/// These drive pricing bands, booking availability and the utilisation
+/// These drive booking availability, the close time and the utilisation
 /// denominator in reports, so they are stored, not compiled in. The seeded
-/// default is **open Tue–Sun 2–11 PM (Monday closed)** with **happy hour
-/// Tue–Fri 2–5 PM** — change it here if the arena's trading days differ.
+/// default is **open Tue–Sun 2–11 PM (Monday closed)** — change it here if the
+/// arena's trading days differ. Time-of-day prices are pricing rules, set on
+/// the dashboard.
 class HoursScreen extends ConsumerStatefulWidget {
   const HoursScreen({super.key});
 
@@ -67,8 +68,7 @@ class _HoursScreenState extends ConsumerState<HoursScreen> {
               padding: const EdgeInsets.all(AppSpacing.lg),
               children: [
                 Text(
-                  'A day with no opening window is closed. Happy hour only '
-                  'applies inside opening hours, and never on a public holiday.',
+                  'A day with no opening window is closed.',
                   style: ArenaType.caption.copyWith(color: arena.textMuted),
                 ),
                 const SizedBox(height: AppSpacing.lg),
@@ -76,11 +76,9 @@ class _HoursScreenState extends ConsumerState<HoursScreen> {
                   _DayRow(
                     label: _weekdayNames[day]!,
                     open: hours.openByWeekday[day],
-                    happy: hours.happyByWeekday[day],
-                    onChanged: (open, happy) => setState(() {
+                    onChanged: (open) => setState(() {
                       _hours = BusinessHours(
                         openByWeekday: {...hours.openByWeekday, day: open},
-                        happyByWeekday: {...hours.happyByWeekday, day: happy},
                       );
                       _dirty = true;
                     }),
@@ -124,14 +122,12 @@ class _DayRow extends StatelessWidget {
   const _DayRow({
     required this.label,
     required this.open,
-    required this.happy,
     required this.onChanged,
   });
 
   final String label;
   final DayWindow? open;
-  final DayWindow? happy;
-  final void Function(DayWindow? open, DayWindow? happy) onChanged;
+  final void Function(DayWindow? open) onChanged;
 
   @override
   Widget build(BuildContext context) {
@@ -163,41 +159,16 @@ class _DayRow extends StatelessWidget {
                 value: isOpen,
                 onChanged: (on) => onChanged(
                   on ? const DayWindow.hm(14, 0, 23, 0) : null,
-                  on ? happy : null,
                 ),
               ),
             ],
           ),
-          if (isOpen) ...[
+          if (isOpen)
             _TimeRow(
               caption: 'Opening',
               window: open!,
-              onChanged: (w) => onChanged(w, happy),
+              onChanged: onChanged,
             ),
-            const SizedBox(height: AppSpacing.xs),
-            Row(
-              children: [
-                Expanded(
-                  child: Text('Happy hour',
-                      style:
-                          ArenaType.caption.copyWith(color: arena.textMuted)),
-                ),
-                Switch(
-                  value: happy != null,
-                  onChanged: (on) => onChanged(
-                    open,
-                    on ? const DayWindow.hm(14, 0, 17, 0) : null,
-                  ),
-                ),
-              ],
-            ),
-            if (happy != null)
-              _TimeRow(
-                caption: 'Happy',
-                window: happy!,
-                onChanged: (w) => onChanged(open, w),
-              ),
-          ],
         ],
       ),
     );

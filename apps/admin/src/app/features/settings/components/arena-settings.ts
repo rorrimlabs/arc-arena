@@ -29,7 +29,7 @@ const DEFAULT_CLOSE = 23 * 60;
 
 /**
  * Design: settings `arena`. Opening hours per weekday are the arena's `business_hours` (shared
- * with every floor device and part of the price list); saving keeps the happy-hour windows.
+ * with every floor device and part of the price list).
  * Name, area and phone are the arena row (arena.update). One unsaved-changes bar covers both;
  * Save sends only what changed.
  */
@@ -229,7 +229,7 @@ export class ArenaSettings {
         }
         open[d.key] = { start, end };
       }
-      next = { open, happy: hours.happy };
+      next = { open };
     }
     const info = this.info();
     const details: ArenaDetails | null = this.infoDirty()

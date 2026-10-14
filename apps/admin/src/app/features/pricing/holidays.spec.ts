@@ -35,13 +35,13 @@ describe('Pricing · Holidays', () => {
       {
         heading: 'Coming up',
         rows: [
-          ['Diwali', 'Sun, 8 Nov 2026', 'Open · no happy hour'],
+          ['Diwali', 'Sun, 8 Nov 2026', 'Open'],
           ['Christmas', 'Fri, 25 Dec 2026', 'Closed'],
         ],
       },
       {
         heading: 'Past',
-        rows: [['Independence Day', 'Sat, 15 Aug 2026', 'Open · no happy hour']],
+        rows: [['Independence Day', 'Sat, 15 Aug 2026', 'Open']],
       },
     ]);
   });
@@ -60,7 +60,7 @@ describe('Pricing · Holidays', () => {
     await t.settle();
     await t.settle();
     expect(t.dialog()).toBeNull();
-    expect(t.snack()).toBe('Dussehra added · no happy hour on Tue, 20 Oct 2026');
+    expect(t.snack()).toBe('Dussehra added · Tue, 20 Oct 2026');
     expect(t.pricing.ops).toEqual([
       { kind: 'holiday.upsert', payload: { day: '2026-10-20', name: 'Dussehra', closed: true } },
     ]);
@@ -130,7 +130,7 @@ describe('Pricing · Holidays', () => {
     rowButton('Christmas', 'Delete').click();
     await t.settle();
     expect(t.text(t.dialog())).toContain(
-      'Fri, 25 Dec 2026 becomes a normal day: happy-hour prices apply again and the arena counts as open.',
+      'Fri, 25 Dec 2026 becomes a normal day for pricing rules and the arena counts as open.',
     );
     t.button('Delete', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
     await t.settle();

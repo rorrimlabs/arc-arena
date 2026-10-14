@@ -37,11 +37,10 @@ create function pg_temp.push(p_kind text, p jsonb) returns jsonb as $$
     jsonb_build_array(jsonb_build_object('op_id', gen_random_uuid(), 'kind', p_kind, 'payload', p)),
     'pgtap') -> 'results' -> 0 $$ language sql;
 create function pg_temp.ps5(p_name text, p_code text default 'ps5', p_pads boolean default true,
-    p_happy boolean default true, p_id text default 'a1500000-0000-0000-0000-000000000001')
+    p_model text default 'hourly', p_id text default 'a1500000-0000-0000-0000-000000000001')
   returns jsonb as $$
   select jsonb_build_object('id', p_id, 'code', p_code, 'name', p_name,
-    'uses_controllers', p_pads, 'uses_games', true, 'duration_model', 'hourly',
-    'happy_hour_eligible', p_happy) $$ language sql;
+    'uses_controllers', p_pads, 'uses_games', true, 'duration_model', p_model) $$ language sql;
 
 -- ------------------------------------------------ 1. who may add a type
 select pg_temp.as_user('15000000-0000-0000-0000-000000000002');
@@ -77,11 +76,27 @@ select is(pg_temp.push('activity.upsert', pg_temp.ps5('PlayStation 5', 'PS4'))->
   'an existing type keeps its code');
 select is(pg_temp.push('activity.upsert', pg_temp.ps5('PS5 consoles'))->>'status', 'applied',
   'renaming is fine');
+select is(pg_temp.push('activity.upsert', pg_temp.ps5('PS5 consoles') || '{"happy_hour_eligible":false}')
+    ->>'status', 'applied', 'a happy_hour_eligible flag from an older client is ignored');
 
 -- ------------------------------------------------ 4. price, station, pad, game
 select is(pg_temp.push('rate.upsert', jsonb_build_object('activity_code', 'PS5', 'band', 'standard',
     'controller_count', 1, 'unit_minutes', 60, 'price_paise', 10000))->>'status', 'applied',
   'the owner prices one pad at ₹100 an hour');
+select is(pg_temp.push('rate.upsert', jsonb_build_object('activity_code', 'PS5', 'band', 'happy',
+    'controller_count', 1, 'unit_minutes', 60, 'price_paise', 8000))->>'error', 'invalid',
+  'a happy-hour rate is refused: happy hours are a pricing rule');
+select is((select count(*)::int from rate_bands where arena_id = 'e0000000-0000-4000-8000-000000000150'
+            and code <> 'standard'), 0, 'and no other band was created');
+-- An arena priced before happy hours became a rule still holds happy rates: they stay out of
+-- the price list, so a floor app (which drops them too) can still start sessions.
+insert into rates(arena_id, rate_card_id, activity_id, band_id, controller_count, unit_minutes, price_paise)
+  select 'e0000000-0000-4000-8000-000000000150', _active_card('e0000000-0000-4000-8000-000000000150'),
+    id, _band_id('e0000000-0000-4000-8000-000000000150', 'happy'), 1, 60, 8000
+    from activities where arena_id = 'e0000000-0000-4000-8000-000000000150' and code = 'PS5';
+select is((select jsonb_agg(distinct r->>'band') from jsonb_array_elements(
+             _pricing_snapshot('e0000000-0000-4000-8000-000000000150')->'rates') r),
+  '["standard"]'::jsonb, 'a leftover happy rate is not in the price list');
 select is(pg_temp.push('resource.upsert', jsonb_build_object('id', 'b1500000-0000-0000-0000-000000000001',
     'name', 'HEX', 'kind', 'station', 'activity_codes', jsonb_build_array('PS5')))->>'status', 'applied',
   'adds station HEX offering PS5');
@@ -117,8 +132,8 @@ select is(pg_temp.push('activity.upsert', pg_temp.ps5('PS5 consoles', p_pads => 
   'activity_busy', 'pad tracking cannot be switched while a PS5 session runs');
 create temp table history_before as select count(*) as n from pricing_catalog_history
   where arena_id = 'e0000000-0000-4000-8000-000000000150';
-select is(pg_temp.push('activity.upsert', pg_temp.ps5('PS5 consoles', p_happy => false))->>'status',
-  'applied', 'the happy-hour flag can change');
+select is(pg_temp.push('activity.upsert', pg_temp.ps5('PS5 consoles', p_model => 'flat_hourly'))->>'status',
+  'applied', 'the billing model can change');
 select is((select count(*)::int from pricing_catalog_history
             where arena_id = 'e0000000-0000-4000-8000-000000000150') - (select n::int from history_before), 1,
   'and that retires the previous price list, so the running session still validates');
@@ -134,8 +149,9 @@ select is((select jsonb_agg(e->>'code' || ':' || (e->>'stations') || ':' || (e->
 select is(arena_pricing('e0000000-0000-4000-8000-000000000150')->'rates',
   jsonb_build_array(jsonb_build_object('activity_code', 'PS5', 'band', 'standard',
     'controller_count', 1, 'unit_minutes', 60, 'price_paise', 10000)), 'and the active rates');
-select ok(arena_pricing('e0000000-0000-4000-8000-000000000150')->'hours' ? 'happy',
-  'and the hours the price list uses (default until saved)');
+select is((select array_agg(k order by k) from jsonb_object_keys(
+             arena_pricing('e0000000-0000-4000-8000-000000000150')->'hours') k), array['open'],
+  'and the opening hours the price list uses (default until saved; no happy hours)');
 select pg_temp.as_user('15000000-0000-0000-0000-000000000002');
 select throws_ok($$ select arena_pricing('e0000000-0000-4000-8000-000000000150') $$,
   '42501', 'forbidden', 'staff cannot read pricing');

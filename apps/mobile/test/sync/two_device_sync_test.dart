@@ -94,7 +94,8 @@ void main() {
   Future<EndSessionCommand> pricedEnd(SimDevice d, String id, DateTime at) async {
     final s = (await d.sessions.getById(id))!;
     final bill = const SegmentBilling().bill(
-        snapshot: s.snapshot, segments: await d.sessions.segmentsFor(id), openEndAt: at);
+        snapshot: s.snapshot, segments: await d.sessions.segmentsFor(id), openEndAt: at,
+        sessionStart: s.startedAt);
     return EndSessionCommand(sessionId: id, actualEndedAt: at,
         charges: bill.charges, billedAmountPaise: bill.total.value);
   }

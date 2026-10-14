@@ -6,6 +6,10 @@
 /// ONCE to the session total, so switching mid-session never changes the money
 /// rounding behaviour versus a single continuous session.
 ///
+/// Pricing rules are judged once, at the SESSION's start, for every segment
+/// (`_pr_session_bill`): a session that began in a discounted window keeps the
+/// discount after a switch or past the window's end.
+///
 /// SERVER PARITY: the server re-prices every bill with a plpgsql port of this
 /// code (migration 0013, `_pr_*`) and refuses any difference. Changing how
 /// money is computed here needs a matching new migration and a green
@@ -16,6 +20,7 @@ import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/money/rounding.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/pricing/pricing_quote.dart';
+import 'package:arena_ops/domain/pricing/pricing_rule.dart';
 import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
 import 'package:arena_ops/domain/pricing/pricing_service.dart';
 import 'package:meta/meta.dart';
@@ -60,11 +65,18 @@ class SegmentBill {
   /// Sum of segment subtotals before cash rounding.
   final Paise subtotal;
 
-  /// Immutable charge rows (one per happy-hour sub-segment of each segment).
+  /// Immutable charge rows (one per priced segment).
   final List<SessionCharge> charges;
 
   /// Per-segment quotes, for the session-history / end breakdown.
   final List<SegmentLine> lines;
+
+  /// The pricing rules that adjusted this bill's prices, in segment order
+  /// without repeats (a rule can be specific to one activity).
+  List<PricingRule> get rules => <PricingRule>{
+        for (final l in lines)
+          if (l.quote.rule != null) l.quote.rule!,
+      }.toList();
 
   Duration get played =>
       lines.fold(Duration.zero, (d, l) => d + Duration(seconds: l.quote.playedSeconds));
@@ -76,10 +88,12 @@ class SegmentBilling {
 
   /// Prices [segments]. The open segment (endedAt == null) is priced up to
   /// [openEndAt] (usually `now` for a live amount, or the actual end at close).
+  /// [sessionStart] is the session's `startedAt`: the pricing-rule instant.
   SegmentBill bill({
     required PricingSnapshot snapshot,
     required List<SessionSegment> segments,
     required DateTime openEndAt,
+    required DateTime sessionStart,
   }) {
     final lines = <SegmentLine>[];
     final charges = <SessionCharge>[];
@@ -95,6 +109,7 @@ class SegmentBilling {
         controllerCount: seg.controllerCount,
         start: seg.startedAt,
         end: end,
+        ruleAt: sessionStart,
       );
       final q = quoted.valueOrNull;
       if (q == null) {

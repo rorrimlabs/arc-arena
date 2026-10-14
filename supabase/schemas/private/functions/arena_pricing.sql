@@ -7,14 +7,15 @@
 -- One jsonb object:
 --   types[] — every activity (station type), retired ones included, ordered by
 --             sort_order then name: {id, code, name, uses_controllers,
---             uses_games, duration_model, happy_hour_eligible, sort_order,
+--             uses_games, duration_model, sort_order,
 --             active, stations} where stations counts the arena's stations
 --             offering it that are not disabled;
---   rates[] — the active rate card as devices price it (sync_v_rates):
+--   rates[] — the active rate card's standard rates as devices price them
+--             (sync_v_rates; rows of the retired happy band are left out):
 --             {activity_code, band, controller_count, unit_minutes, price_paise};
---   hours   — the business_hours the price list uses: the saved setting, else
---             the default ({open, happy} by ISO weekday 1–7, minutes from IST
---             midnight, null = closed / no happy hour).
+--   hours   — the opening hours the price list uses: the saved setting, else
+--             the default ({open} by ISO weekday 1–7, minutes from IST
+--             midnight, null = closed). Happy hours are pricing rules.
 -- Writes go through sync_push (activity.upsert, rate.upsert, rate.delete,
 -- settings.save). SECURITY DEFINER. Caller must be owner level in p_arena
 -- (app_is_owner), else 'forbidden'.
@@ -37,7 +38,7 @@ begin
       select jsonb_agg(jsonb_build_object(
           'id', a.id, 'code', a.code, 'name', a.name,
           'uses_controllers', a.uses_controllers, 'uses_games', a.uses_games,
-          'duration_model', a.duration_model, 'happy_hour_eligible', a.happy_hour_eligible,
+          'duration_model', a.duration_model,
           'sort_order', a.sort_order, 'active', a.active,
           'stations', (select count(*) from resource_activities ra
                          join resources r on r.id = ra.resource_id
@@ -49,12 +50,12 @@ begin
           'controller_count', v.controller_count, 'unit_minutes', v.unit_minutes,
           'price_paise', v.price_paise)
         order by v.activity_code, v.band, v.controller_count nulls first)
-        from sync_v_rates v where v.arena_id = p_arena), '[]'::jsonb),
-    'hours', _pricing_snapshot(p_arena)->'hours');
+        from sync_v_rates v where v.arena_id = p_arena and v.band = 'standard'), '[]'::jsonb),
+    'hours', jsonb_build_object('open', _pricing_snapshot(p_arena)->'hours'->'open'));
 end;
 $function$;
 
-comment on function private.arena_pricing(uuid) is 'Client API (owner level): the arena''s station types with station counts, active rates and business/happy hours, for the admin dashboard''s Pricing screen.';
+comment on function private.arena_pricing(uuid) is 'Client API (owner level): the arena''s station types with station counts, active standard rates and opening hours, for the admin dashboard''s Pricing screen.';
 
 grant execute on function "private"."arena_pricing"(uuid) to "authenticated", "postgres", "service_role";
 

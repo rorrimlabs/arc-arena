@@ -1,10 +1,22 @@
 import { AppError } from '../../../core/auth/auth-api';
 import { BillingPolicy, DEFAULT_POLICY } from './billing-policy';
-import { PRICING_MESSAGES, PricingApi, holidayOps, policyOps } from './pricing-api';
+import {
+  PRICING_MESSAGES,
+  PricingApi,
+  discountOps,
+  holidayOps,
+  policyOps,
+  ruleOps,
+} from './pricing-api';
 import {
   BusinessHours,
+  DEFAULT_DISCOUNT_OPTIONS,
+  Discount,
+  DiscountOptions,
+  DiscountUsage,
   Holiday,
   PricingData,
+  PricingRule,
   Rate,
   RateChange,
   StationType,
@@ -12,13 +24,11 @@ import {
 } from './pricing.models';
 
 const OPEN = { start: 840, end: 1380 };
-const HAPPY = { start: 840, end: 1020 };
 
-/** The server's default hours (open Tue–Sun 2–11 pm, happy Tue–Fri 2–5 pm). */
+/** The server's default hours (open Tue–Sun 2–11 pm). */
 export function defaultHours(): BusinessHours {
   return {
     open: { '1': null, '2': OPEN, '3': OPEN, '4': OPEN, '5': OPEN, '6': OPEN, '7': OPEN },
-    happy: { '1': null, '2': HAPPY, '3': HAPPY, '4': HAPPY, '5': HAPPY, '6': null, '7': null },
   };
 }
 
@@ -30,7 +40,6 @@ function type(id: string, code: string, name: string, o: Partial<StationType> = 
     usesControllers: false,
     usesGames: false,
     durationModel: 'hourly',
-    happyEligible: true,
     sortOrder: 0,
     active: true,
     stations: 0,
@@ -46,6 +55,12 @@ export class SamplePricingApi extends PricingApi {
   /** Ordered by day; one past (Independence Day) and two to come, for a sample "now" in Oct 2026. */
   holidays: Holiday[];
   policy: BillingPolicy = DEFAULT_POLICY;
+  rules: PricingRule[] = [];
+  discounts: Discount[] = [];
+  discountOptions: DiscountOptions = DEFAULT_DISCOUNT_OPTIONS;
+  /** Bills per discount id (the usage report), newest first. */
+  usage = new Map<string, DiscountUsage['rows'][number][]>();
+
   /** Every holiday / policy write, in order, as `kind` + payload (what sync_push would get). */
   readonly ops: { kind: string; payload: unknown }[] = [];
   /** Set to make the next call fail with this code. */
@@ -64,28 +79,17 @@ export class SamplePricingApi extends PricingApi {
           type('t-vr', 'VR', 'VR', {
             usesGames: true,
             durationModel: 'unit',
-            happyEligible: false,
             stations: 1,
             sortOrder: 1,
           }),
           type('t-pool', 'POOL', 'Pool', { stations: 0, sortOrder: 2, active: false }),
         ];
-    const ps5 = (cc: number, standard: number, happy: number): Rate[] => [
-      {
-        activityCode: 'PS5',
-        band: 'standard',
-        controllerCount: cc,
-        unitMinutes: 60,
-        pricePaise: standard,
-      },
-      {
-        activityCode: 'PS5',
-        band: 'happy',
-        controllerCount: cc,
-        unitMinutes: 60,
-        pricePaise: happy,
-      },
-    ];
+    const ps5 = (cc: number, pricePaise: number): Rate => ({
+      activityCode: 'PS5',
+      controllerCount: cc,
+      unitMinutes: 60,
+      pricePaise,
+    });
     this.holidays = empty
       ? []
       : [
@@ -93,14 +97,91 @@ export class SamplePricingApi extends PricingApi {
           { day: '2026-11-08', name: 'Diwali', closed: false },
           { day: '2026-12-25', name: 'Christmas', closed: true },
         ];
+    if (!empty) {
+      this.rules = [
+        {
+          id: 'r-happy',
+          name: 'Happy hours',
+          priority: 1,
+          active: true,
+          days: [2, 3, 4, 5],
+          startMin: 840,
+          endMin: 1020,
+          holidayMode: 'skip',
+          validFrom: null,
+          validUntil: null,
+          activityCodes: ['PS5'],
+          adjustKind: 'percent',
+          adjustValue: -20,
+        },
+        {
+          id: 'r-weekend',
+          name: 'Weekend evening',
+          priority: 2,
+          active: true,
+          days: [6, 7],
+          startMin: 1080,
+          endMin: 1380,
+          holidayMode: 'any',
+          validFrom: null,
+          validUntil: null,
+          activityCodes: [],
+          adjustKind: 'percent',
+          adjustValue: 20,
+        },
+      ];
+      this.discounts = [
+        {
+          id: 'd-student',
+          kind: 'preset',
+          name: 'Student',
+          code: null,
+          valueKind: 'percent',
+          value: 10,
+          maxDiscountPaise: null,
+          minBillPaise: null,
+          activityCodes: [],
+          validFrom: null,
+          validUntil: null,
+          maxUses: null,
+          active: true,
+        },
+        {
+          id: 'd-diwali',
+          kind: 'coupon',
+          name: 'Diwali',
+          code: 'DIWALI20',
+          valueKind: 'percent',
+          value: 20,
+          maxDiscountPaise: 10000,
+          minBillPaise: null,
+          activityCodes: ['PS5'],
+          validFrom: null,
+          validUntil: '2026-11-15T18:29:59.000Z',
+          maxUses: 50,
+          active: true,
+        },
+      ];
+      this.usage.set('d-diwali', [
+        {
+          billId: '3f9a2c10-0000-4000-8000-000000000001',
+          kind: 'single',
+          at: '2026-10-13T13:10:00.000Z',
+          customer: 'Kiran Rao',
+          billedPaise: 12000,
+          amountPaise: 3000,
+          status: 'completed',
+          by: 'Priya Nair',
+        },
+      ]);
+    }
     this.rates = empty
       ? []
       : [
-          ...ps5(1, 15000, 12000),
-          ...ps5(2, 22000, 18000),
+          ps5(1, 15000),
+          ps5(2, 22000),
           {
             activityCode: 'VR',
-            band: 'standard',
             controllerCount: null,
             unitMinutes: 30,
             pricePaise: 20000,
@@ -116,6 +197,86 @@ export class SamplePricingApi extends PricingApi {
       hours: this.hours,
       holidays: [...this.holidays],
       policy: this.policy,
+      rules: [...this.rules].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)),
+      discounts: [...this.discounts],
+      discountOptions: this.discountOptions,
+    };
+  }
+
+  async saveRule(_arenaId: string, rule: PricingRule): Promise<void> {
+    this.fail();
+    this.ops.push(...ruleOps(rule));
+    const exists = this.rules.some((r) => r.id === rule.id);
+    this.rules = exists
+      ? this.rules.map((r) => (r.id === rule.id ? { ...rule } : r))
+      : [...this.rules, { ...rule }];
+  }
+
+  async deleteRule(_arenaId: string, id: string): Promise<void> {
+    this.fail();
+    this.ops.push({ kind: 'rule.delete', payload: { id } });
+    this.rules = this.rules.filter((r) => r.id !== id);
+  }
+
+  async reorderRules(_arenaId: string, ids: readonly string[]): Promise<void> {
+    this.fail();
+    this.ops.push({ kind: 'rule.reorder', payload: { ids } });
+    if (ids.length !== this.rules.length || !this.rules.every((r) => ids.includes(r.id))) {
+      throw this.error('stale');
+    }
+    this.rules = this.rules.map((r) => ({ ...r, priority: ids.indexOf(r.id) + 1 }));
+  }
+
+  async saveDiscount(_arenaId: string, d: Discount): Promise<void> {
+    this.fail();
+    this.ops.push(...discountOps(d));
+    if (d.code && this.discounts.some((x) => x.id !== d.id && x.code === d.code)) {
+      throw this.error('duplicate');
+    }
+    const exists = this.discounts.some((x) => x.id === d.id);
+    this.discounts = exists
+      ? this.discounts.map((x) => (x.id === d.id ? { ...d } : x))
+      : [...this.discounts, { ...d }];
+  }
+
+  async setDiscountActive(_arenaId: string, id: string, active: boolean): Promise<void> {
+    this.fail();
+    this.ops.push({ kind: 'discount.set_active', payload: { id, active } });
+    this.discounts = this.discounts.map((x) => (x.id === id ? { ...x, active } : x));
+  }
+
+  async deleteDiscount(_arenaId: string, id: string): Promise<void> {
+    this.fail();
+    this.ops.push({ kind: 'discount.delete', payload: { id } });
+    if (this.usage.get(id)?.length) throw this.error('discount_used');
+    this.discounts = this.discounts.filter((x) => x.id !== id);
+  }
+
+  async saveDiscountOptions(_arenaId: string, options: DiscountOptions): Promise<void> {
+    this.fail();
+    this.ops.push({ kind: 'settings.save', payload: { key: 'discount_options', options } });
+    this.discountOptions = { ...options };
+  }
+
+  /** Reads of the usage report, by discount id (lazy-loading checks). */
+  readonly usageReads: string[] = [];
+
+  async discountUsage(
+    _arenaId: string,
+    id: string,
+    limit: number,
+    cursor: string | null,
+  ): Promise<DiscountUsage> {
+    this.fail();
+    this.usageReads.push(id);
+    const all = this.usage.get(id) ?? [];
+    const from = cursor ? Number(cursor) : 0;
+    const rows = all.slice(from, from + limit);
+    return {
+      uses: all.length,
+      activeUses: all.filter((u) => u.status !== 'voided').length,
+      rows,
+      next: from + limit < all.length ? String(from + limit) : null,
     };
   }
 
@@ -153,9 +314,7 @@ export class SamplePricingApi extends PricingApi {
     this.fail();
     for (const c of changes) {
       const same = (r: Rate) =>
-        r.activityCode === c.activityCode &&
-        r.band === c.band &&
-        r.controllerCount === c.controllerCount;
+        r.activityCode === c.activityCode && r.controllerCount === c.controllerCount;
       this.rates = this.rates.filter((r) => !same(r));
       if (c.pricePaise != null) {
         this.rates.push({ ...c, pricePaise: c.pricePaise });
@@ -165,7 +324,7 @@ export class SamplePricingApi extends PricingApi {
 
   async saveHours(_arenaId: string, hours: BusinessHours): Promise<void> {
     this.fail();
-    this.hours = hours;
+    this.hours = { open: hours.open };
   }
 
   /** Like the server: an upsert by day, then the old day's delete when the holiday moved. */

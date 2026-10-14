@@ -6,6 +6,8 @@
 --   expected_scheduled_end_at; charges[] {id, assignment_id?, player_number?, charge_index,
 --   band_code, activity_code, resource_id?, controller_count?, segment_start, segment_end,
 --   played_minutes, billed_minutes, unit_minutes, unit_price_paise, amount_paise}.
+--   discount? ({id?, discount_id? | code? | manual: {value_kind, value}, reason?, amount_paise}:
+--   validated and recorded by _discount_apply; billed = cash-rounded subtotal − discount).
 -- Checks / errors: forbidden; not_found (hint group); not_active; stale (assignment ids or
 --   scheduled end differ from what the device saw; compared with is distinct from, so a missing
 --   expected value counts as stale); invalid_time (ended_at before a player's open assignment
@@ -32,7 +34,7 @@ declare
   v_waive boolean := coalesce((p->>'mark_waived')::boolean, false);
   v_billed bigint := (p->>'billed_amount_paise')::bigint;
   v_end timestamptz; v_ids uuid[]; v_paid bigint; v_pay text; v_c jsonb;
-  v_bill jsonb; v_keys text[];
+  v_bill jsonb; v_keys text[]; v_disc bigint := 0; v_total bigint; pol jsonb;
 begin
   perform _need(p_arena, 'bill');
   if v_waive then perform _need(p_arena, 'discount'); end if;
@@ -81,8 +83,18 @@ begin
     raise exception 'invalid_time' using hint = 'the end is before a player''s current system started';
   end if;
   v_bill := _pr_group_bill(v_group, v_ended);
-  if (v_bill->>'total')::bigint is distinct from v_billed then
-    perform _price_mismatch('bill', (v_bill->>'total')::bigint, v_billed);
+  v_total := (v_bill->>'total')::bigint;
+  -- A discount (preset, coupon or manual) comes off the subtotal before cash rounding.
+  if jsonb_typeof(p->'discount') = 'object' then
+    if v_waive then raise exception 'invalid_discount' using hint = 'a waived bill takes no discount'; end if;
+    v_disc := _discount_apply(p_arena, p->'discount', v_bill, v_ended,
+      null, v_group);
+    select _pr_policy(pricing_snapshot) into pol from group_sessions where id = v_group;
+    v_total := _pr_money((v_bill->>'subtotal')::bigint - v_disc, (pol->>'money_rounding_paise')::int,
+      pol->>'money_rounding_dir');
+  end if;
+  if v_total is distinct from v_billed then
+    perform _price_mismatch('bill', v_total, v_billed);
   end if;
   select coalesce(array_agg(k order by k), '{}') into v_keys from (
     select _pr_charge_key(activity_code, resource_id, controller_count, band_code, segment_start,

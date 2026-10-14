@@ -1,9 +1,9 @@
-/// Operating hours and happy-hour windows, resolved to concrete UTC intervals.
+/// Operating hours, resolved to concrete UTC intervals.
 ///
 /// Values default to the center's current schedule (spec §4) but are held as
 /// configuration so the owner can change them later without touching code
-/// (no magic numbers in logic). Happy hour never applies on weekends or on a
-/// public holiday (spec §4).
+/// (no magic numbers in logic). Time-of-day prices are pricing rules
+/// (`domain/pricing/pricing_rule.dart`), not part of the calendar.
 library;
 
 import 'package:arena_ops/core/time/ist.dart';
@@ -31,24 +31,22 @@ class DayWindow {
 }
 
 /// Weekday-indexed schedule. Keys are Dart weekdays: Mon=1 … Sun=7.
-/// A missing/`null` entry means "closed" (open) or "no happy hour" (happy).
+/// A missing/`null` entry means "closed".
 @immutable
 class BusinessHours {
-  const BusinessHours({required this.openByWeekday, required this.happyByWeekday});
+  const BusinessHours({required this.openByWeekday});
 
   final Map<int, DayWindow?> openByWeekday;
-  final Map<int, DayWindow?> happyByWeekday;
 
-  /// The centre's configured schedule:
-  /// **open Tue–Sun 14:00–23:00 (Monday closed)**; **happy Tue–Fri
-  /// 14:00–17:00** (2:00 PM – 5:00 PM), never at the weekend.
+  /// The centre's configured schedule: **open Tue–Sun 14:00–23:00 (Monday
+  /// closed)**. Must equal the server's `_pricing_snapshot` default for an
+  /// arena that never saved hours, or a new session's snapshot is refused.
   ///
   /// This is the seeded default only — the owner edits it in
   /// Settings → Opening hours and the value is persisted, so nothing in the
   /// pricing or availability path reads these constants at runtime.
   factory BusinessHours.current() {
     const open = DayWindow.hm(14, 0, 23, 0);
-    const happy = DayWindow.hm(14, 0, 17, 0);
     return const BusinessHours(
       openByWeekday: {
         DateTime.monday: null, // closed
@@ -59,35 +57,19 @@ class BusinessHours {
         DateTime.saturday: open,
         DateTime.sunday: open,
       },
-      happyByWeekday: {
-        DateTime.monday: null,
-        DateTime.tuesday: happy,
-        DateTime.wednesday: happy,
-        DateTime.thursday: happy,
-        DateTime.friday: happy,
-        DateTime.saturday: null,
-        DateTime.sunday: null,
-      },
     );
   }
 
-  BusinessHours copyWith({
-    Map<int, DayWindow?>? openByWeekday,
-    Map<int, DayWindow?>? happyByWeekday,
-  }) =>
-      BusinessHours(
-        openByWeekday: openByWeekday ?? this.openByWeekday,
-        happyByWeekday: happyByWeekday ?? this.happyByWeekday,
-      );
+  BusinessHours copyWith({Map<int, DayWindow?>? openByWeekday}) =>
+      BusinessHours(openByWeekday: openByWeekday ?? this.openByWeekday);
 
-  Map<String, dynamic> toJson() => {
-        'open': _mapToJson(openByWeekday),
-        'happy': _mapToJson(happyByWeekday),
-      };
+  /// Same shape as the server's snapshot `hours`: `{open: {"1".."7": …}}`.
+  Map<String, dynamic> toJson() => {'open': _mapToJson(openByWeekday)};
 
+  /// Hours saved or frozen by older builds carry a second, retired window
+  /// map next to `open`; it is ignored.
   factory BusinessHours.fromJson(Map<String, dynamic> j) => BusinessHours(
         openByWeekday: _mapFromJson(j['open'] as Map<String, dynamic>),
-        happyByWeekday: _mapFromJson(j['happy'] as Map<String, dynamic>),
       );
 
   static Map<String, dynamic> _mapToJson(Map<int, DayWindow?> m) =>
@@ -109,9 +91,9 @@ class BusinessCalendar {
 
   final BusinessHours hours;
 
-  /// Public holidays. Happy hour never applies on these days, but the centre
-  /// still trades unless the day is also in [closedDays] (OWNER CONFIRMATION
-  /// #26 — the rate rules only ever said happy hour is excluded).
+  /// Public holidays. The centre still trades unless the day is also in
+  /// [closedDays] (OWNER CONFIRMATION #26); pricing rules can target or skip
+  /// them (`holiday_mode`).
   final Set<IstDate> holidays;
 
   /// Days the centre does not open at all, whatever the weekday schedule says.
@@ -127,15 +109,6 @@ class BusinessCalendar {
   UtcInterval? operatingWindow(IstDate date) {
     if (closedDays.contains(date)) return null;
     final w = hours.openByWeekday[date.weekday];
-    if (w == null) return null;
-    return _windowToUtc(date, w);
-  }
-
-  /// The happy-hour window for an IST [date], or null when happy hour does not
-  /// apply (closed day, non-happy weekday, or a public holiday — spec §4).
-  UtcInterval? happyWindow(IstDate date) {
-    if (isHoliday(date) || closedDays.contains(date)) return null;
-    final w = hours.happyByWeekday[date.weekday];
     if (w == null) return null;
     return _windowToUtc(date, w);
   }

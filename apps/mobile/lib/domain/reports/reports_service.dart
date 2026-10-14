@@ -376,12 +376,18 @@ class ReportsService {
             count: byMethodCount[m] ?? 0,
           ),
       ],
+      // Standard always (a stable shape day to day), then any retired band
+      // code that charges written by older builds still carry, labelled by
+      // its stored code.
       byBand: [
-        for (final b in Band.values)
+        for (final code in {
+          Band.standard.code,
+          ...byBandPaise.keys.toList()..sort(),
+        })
           MoneyRow(
-            label: b == Band.happy ? 'Happy hour' : 'Standard',
-            paise: byBandPaise[b.code] ?? 0,
-            count: byBandCount[b.code] ?? 0,
+            label: code == Band.standard.code ? 'Standard' : _bandLabel(code),
+            paise: byBandPaise[code] ?? 0,
+            count: byBandCount[code] ?? 0,
           ),
       ],
       byDay: byDay,
@@ -462,6 +468,10 @@ class ReportsService {
 
   bool _overlaps(DateTime s, DateTime e, DateTime start, DateTime end) =>
       s.isBefore(end) && e.isAfter(start);
+
+  String _bandLabel(String code) => code.isEmpty
+      ? code
+      : '${code[0].toUpperCase()}${code.substring(1).replaceAll('_', ' ')}';
 
   String _methodLabel(PaymentMethod m) => switch (m) {
         PaymentMethod.cash => 'Cash',

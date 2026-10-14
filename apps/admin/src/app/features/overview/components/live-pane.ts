@@ -144,7 +144,7 @@ export class LivePane {
   readonly now = input.required<Date>();
 
   protected readonly legend: readonly DotState[] = ['playing', 'paused', 'free', 'oos'];
-  protected readonly live = computed(() => liveStations(this.floor.stations(), this.floor.plays()));
+  protected readonly live = computed(() => liveStations(this.floor.stations(), this.floor.live()));
   protected readonly inUse = computed(
     () => this.live().filter((l) => l.state === 'playing').length,
   );

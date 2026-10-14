@@ -4,13 +4,23 @@
 /// build dependencies. Each maps to the text values used in the Postgres schema.
 library;
 
-/// Pricing band for a stretch of time.
+/// Pricing band of a rate and of a charge row. The pricer always looks rates
+/// up at [standard]; time-of-day prices are pricing rules (`PricingRule`), not
+/// bands. Rates or charges stored with any other (retired) band code are kept
+/// as data but never priced.
 enum Band {
-  standard,
-  happy;
+  standard;
 
   String get code => name;
   static Band fromCode(String c) => Band.values.firstWhere((b) => b.code == c);
+
+  /// The band for [c], or null for a retired band code.
+  static Band? tryFromCode(String c) {
+    for (final b in Band.values) {
+      if (b.code == c) return b;
+    }
+    return null;
+  }
 }
 
 /// How an activity's time becomes money.
@@ -355,4 +365,38 @@ enum GameAvailability {
         'temporarily_unavailable' => GameAvailability.temporarilyUnavailable,
         _ => throw ArgumentError('Unknown game availability: $c'),
       };
+}
+
+/// How a pricing rule treats the snapshot's public holidays (server
+/// `pricing_rules.holiday_mode`).
+enum RuleHolidayMode {
+  /// Holidays do not matter.
+  any,
+
+  /// Applies only on a listed holiday.
+  only,
+
+  /// Never applies on a listed holiday.
+  skip;
+
+  String get code => name;
+  static RuleHolidayMode fromCode(String c) =>
+      RuleHolidayMode.values.firstWhere((m) => m.code == c);
+}
+
+/// How a pricing rule changes a unit price (server `pricing_rules.adjust_kind`).
+enum RuleAdjustKind {
+  /// unit price × (100 + value) / 100, rounded half up.
+  percent,
+
+  /// unit price + value paise per hour, pro rata to the rate's unit.
+  perHour;
+
+  String get code => switch (this) {
+        RuleAdjustKind.percent => 'percent',
+        RuleAdjustKind.perHour => 'per_hour',
+      };
+
+  static RuleAdjustKind fromCode(String c) =>
+      RuleAdjustKind.values.firstWhere((k) => k.code == c);
 }

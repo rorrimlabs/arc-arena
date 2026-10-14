@@ -5,8 +5,8 @@
 -- SECURITY INVOKER wrapper public.create_my_arena.
 --
 -- The app's route to ownership: a person signs up (e-mail + password), confirms
--- the e-mail with the 6-digit code, then calls this. Creates the arena with the
--- default catalog and makes auth.uid() its owner (_create_arena_with_owner).
+-- the e-mail with the 6-digit code, then calls this. Creates an empty arena (no
+-- types, stations or prices) and makes auth.uid() its owner (_create_arena_with_owner).
 -- One arena per login: refuses with 'arena_limit' once the caller owns any
 -- arena (active or not); an operator can still add more with bootstrap_owner.
 -- Calls from one login are serialised (advisory lock) so two devices racing
@@ -55,7 +55,7 @@ begin
 end;
 $function$;
 
-comment on function private.create_my_arena(text, text) is 'Client API (self-serve sign-up): a confirmed login creates one arena with the default catalog and becomes its owner. Refuses unconfirmed logins, blank or over-long names, and a login that already owns an arena (arena_limit).';
+comment on function private.create_my_arena(text, text) is 'Client API (self-serve sign-up): a confirmed login creates one empty arena and becomes its owner. Refuses unconfirmed logins, blank or over-long names, and a login that already owns an arena (arena_limit).';
 
 grant execute on function "private"."create_my_arena"(text, text) to "authenticated", "postgres", "service_role";
 

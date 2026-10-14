@@ -3,7 +3,7 @@
 /// IST is a fixed UTC+05:30 offset with **no daylight saving**, so all IST math
 /// uses a constant offset — no timezone database needed (documented assumption,
 /// see docs/PLAN.md). The app stores instants in UTC and only converts to IST
-/// wall-clock time to decide business rules: operating hours, happy hour, and
+/// wall-clock time to decide business rules: operating hours, pricing rules, and
 /// the business day a session belongs to (spec §27–28).
 library;
 

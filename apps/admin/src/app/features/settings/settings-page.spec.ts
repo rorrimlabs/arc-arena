@@ -9,7 +9,9 @@ describe('Settings', () => {
     t = await startPage('/settings');
     expect(t.rows().map(t.rowText)).toEqual([
       ['Arena', 'Name, area, hours'],
-      ['Billing', 'GST, invoices, payment, discounts'],
+      ['Station types', 'Game Station, VR, Pool Table…'],
+      ['Accessory types', 'Controller, VR headset, wheel…'],
+      ['Billing', 'Payment methods, discount limits'],
       ['Billing rules', 'Rounding, grace, minimum charge'],
       ['Sessions', 'Time options and warnings'],
     ]);
@@ -51,7 +53,7 @@ describe('Settings', () => {
     );
   });
 
-  it('saves opening hours and keeps happy hour', async () => {
+  it('saves opening hours only (business_hours carries no happy-hour windows)', async () => {
     t = await startPage('/settings?id=arena');
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     const monday = arena.querySelector('mat-slide-toggle button') as HTMLButtonElement;
@@ -60,12 +62,11 @@ describe('Settings', () => {
     await t.settle();
     t.type('Closes at', '00:00', arena);
     await t.settle();
-    const happy = t.pricing.hours.happy;
     t.button('Save', t.doc().querySelector('app-unsaved-bar')!)!.click();
     await t.settle();
     expect(t.pricing.hours.open['1']).toEqual({ start: 600, end: 1440 });
     expect(t.pricing.hours.open['2']).toEqual({ start: 840, end: 1380 });
-    expect(t.pricing.hours.happy).toEqual(happy);
+    expect(Object.keys(t.pricing.hours)).toEqual(['open']);
     expect(t.snack()).toBe('Settings saved · the floor app updates on next refresh');
   });
 
@@ -114,8 +115,8 @@ describe('Settings', () => {
     expect(t.floorOptions.writes).toEqual([
       { payment_methods: ['upi'], start_presets: [30, 60, 90, 120], warn_minutes: 5 },
     ]);
-    // GST, invoices and discounts still await the owner's rules.
-    expect(billing.querySelectorAll('app-not-connected').length).toBe(2);
+    // GST and invoices still await the owner's rules.
+    expect(billing.querySelectorAll('app-not-connected').length).toBe(1);
   });
 
   it('sessions: time options and the warning save the floor options', async () => {
@@ -261,5 +262,138 @@ describe('Settings', () => {
       expect(bar()).toBeNull();
       expect(t.pricing.ops).toEqual([]);
     });
+  });
+
+  describe('station types', () => {
+    const types = () => t.doc().querySelector('app-station-types') as HTMLElement;
+    const field = (label: string) => {
+      const f = [...(t.dialog() ?? t.doc()).querySelectorAll('mat-form-field')].find((x) =>
+        x.querySelector('mat-label')?.textContent?.includes(label),
+      );
+      return f?.querySelector('input') as HTMLInputElement;
+    };
+    const fill = (label: string, value: string) => {
+      field(label).value = value;
+      field(label).dispatchEvent(new Event('input'));
+    };
+    const rowOf = (name: string) =>
+      [...types().querySelectorAll('li')].find((li) => li.textContent?.includes(name))!;
+
+    it('lists every type, on or off, with how it is billed', async () => {
+      t = await startPage('/settings?id=types');
+      const names = [...types().querySelectorAll('li span.font-medium')].map((e) => t.text(e));
+      expect(names).toEqual(['PlayStation 5', 'VR', 'Pool']);
+      expect(t.text(rowOf('PlayStation 5'))).toContain(
+        'PS5 · By the minute, hourly rate · controllers · games · 4 stations',
+      );
+    });
+
+    it('a new arena has none and says what to add', async () => {
+      t = await startPage('/settings?id=types', 1440, (apis) => {
+        apis.pricing.types = [];
+      });
+      expect(t.text(types())).toContain('No station types yet. Add one, e.g. Game Station');
+    });
+
+    it('adds a type with a code that follows its name', async () => {
+      t = await startPage('/settings?id=types');
+      t.button('Type', types())!.click();
+      await t.settle();
+      // Happy hours are pricing rules now: the type has no happy-hour switch.
+      expect(t.text(t.dialog())).not.toMatch(/happy/i);
+      fill('Name', 'Racing Simulator');
+      await t.settle();
+      expect(field('Code').value).toBe('RACINGSIMULA');
+      fill('Code', 'race');
+      t.button('Add type', t.dialog()!)!.click();
+      await t.settle();
+      await t.settle();
+      expect(t.dialog()).toBeNull();
+      expect(t.snack()).toBe('Racing Simulator added · set its price in Pricing');
+      expect(t.pricing.types.at(-1)?.code).toBe('RACE');
+    });
+
+    it('a taken code is refused in the dialog', async () => {
+      t = await startPage('/settings?id=types');
+      t.button('Type', types())!.click();
+      await t.settle();
+      fill('Name', 'Another');
+      fill('Code', 'PS5');
+      t.button('Add type', t.dialog()!)!.click();
+      await t.settle();
+      expect(t.text(t.dialog()!.querySelector('[role="alert"]'))).toBe(
+        'Another type already uses that code',
+      );
+    });
+
+    it('a type with stations cannot be turned off or removed', async () => {
+      t = await startPage('/settings?id=types');
+      (rowOf('PlayStation 5').querySelector('mat-slide-toggle button') as HTMLButtonElement).click();
+      await t.settle();
+      expect(t.snack()).toBe('Remove PlayStation 5 from its 4 stations first');
+      expect(t.pricing.types.find((x) => x.id === 't-ps5')?.active).toBe(true);
+      (rowOf('PlayStation 5').querySelector('button[aria-label="Remove PlayStation 5"]') as HTMLButtonElement).click();
+      await t.settle();
+      expect(t.text(t.dialog())).toContain('4 stations offer it');
+    });
+
+    it('removes a type no station offers: never used → deleted', async () => {
+      t = await startPage('/settings?id=types');
+      (rowOf('Pool').querySelector('button[aria-label="Remove Pool"]') as HTMLButtonElement).click();
+      await t.settle();
+      t.button('Remove', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
+      await t.settle();
+      expect(t.pricing.types.some((x) => x.id === 't-pool')).toBe(false);
+      expect(t.snack()).toBe('Pool deleted');
+    });
+  });
+
+  describe('accessory types', () => {
+    const kinds = () => t.doc().querySelector('app-accessory-types') as HTMLElement;
+
+    it('lists kinds with whether they count as a controller', async () => {
+      t = await startPage('/settings?id=accessories');
+      const lines = [...kinds().querySelectorAll('li')].map((li) => t.text(li));
+      expect(lines[0]).toContain('Controller Counts as a controller · 2 on stations');
+      expect(lines[1]).toContain('VR headset Tracked only · 1 on stations');
+    });
+
+    it('adds a kind that is tracked only', async () => {
+      t = await startPage('/settings?id=accessories');
+      t.button('Type', kinds())!.click();
+      await t.settle();
+      t.type('Name', 'Steering wheel', t.dialog()!);
+      t.button('Add type', t.dialog()!)!.click();
+      await t.settle();
+      await t.settle();
+      expect(t.snack()).toBe('Steering wheel added');
+      expect(t.accessories.ops.at(-1)).toEqual({
+        kind: 'accessory_kind.upsert',
+        payload: expect.objectContaining({ name: 'Steering wheel', counts_as_controller: false }),
+      });
+    });
+
+    it('a kind still on accessories is turned off, not deleted', async () => {
+      t = await startPage('/settings?id=accessories');
+      (kinds().querySelector('button[aria-label="Remove VR headset"]') as HTMLButtonElement).click();
+      await t.settle();
+      t.button('Remove', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
+      await t.settle();
+      await t.settle();
+      expect(t.snack()).toBe('VR headset turned off');
+      expect(t.accessories.kindList.find((k) => k.id === 'k-vr')?.active).toBe(false);
+    });
+  });
+
+  it('billing: manual discount limits save as discount_options', async () => {
+    t = await startPage('/settings?id=billing');
+    const billing = t.doc().querySelector('app-billing-settings') as HTMLElement;
+    t.type('Max staff discount', '15', billing);
+    await t.settle();
+    t.button('Save', t.doc().querySelector('app-unsaved-bar')!)!.click();
+    await t.settle();
+    await t.settle();
+    expect(t.pricing.discountOptions).toEqual({ manualMaxPercent: 15, reasonRequired: true });
+    expect(t.floorOptions.writes).toEqual([]);
   });
 });

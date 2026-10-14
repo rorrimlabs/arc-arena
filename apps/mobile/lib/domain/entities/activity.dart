@@ -17,7 +17,6 @@ abstract class Activity with _$Activity {
     required bool usesControllers,
     required bool usesGames,
     required DurationModel durationModel,
-    required bool happyHourEligible,
     @Default(0) int sortOrder,
     @Default(true) bool active,
   }) = _Activity;
@@ -26,6 +25,5 @@ abstract class Activity with _$Activity {
   ActivitySpec get spec => ActivitySpec(
         code: code,
         durationModel: durationModel,
-        happyEligible: happyHourEligible,
       );
 }

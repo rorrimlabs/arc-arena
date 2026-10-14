@@ -12,8 +12,10 @@ import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/pricing/billing_policy.dart';
+import 'package:arena_ops/domain/pricing/pricing_rule.dart';
 import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
+import 'package:arena_ops/domain/pricing/rule_engine.dart';
 import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/value/floor_options.dart';
@@ -102,23 +104,26 @@ class LocalCatalogRepository implements CatalogRepository {
 
   @override
   Future<PricingSnapshot> currentSnapshot() async {
+    // Rate rows of a retired band (left by an older build or an older server)
+    // are never priced, and the server's snapshot no longer lists them.
     final rateRows = await _db.select(_db.rates).get();
-    final rates = rateRows
-        .map((r) => Rate(
-              activityCode: r.activityCode,
-              band: Band.fromCode(r.band),
-              controllerCount: r.controllerCount,
-              unitMinutes: r.unitMinutes,
-              price: Paise(r.pricePaise),
-            ))
-        .toList();
+    final rates = [
+      for (final r in rateRows)
+        if (Band.tryFromCode(r.band) case final band?)
+          Rate(
+            activityCode: r.activityCode,
+            band: band,
+            controllerCount: r.controllerCount,
+            unitMinutes: r.unitMinutes,
+            price: Paise(r.pricePaise),
+          ),
+    ];
 
     final activityRows = await _db.select(_db.activities).get();
     final specs = activityRows
         .map((a) => ActivitySpec(
               code: a.code,
               durationModel: DurationModel.fromCode(a.durationModel),
-              happyEligible: a.happyHourEligible,
             ))
         .toList();
 
@@ -145,7 +150,17 @@ class LocalCatalogRepository implements CatalogRepository {
       hours: await businessHours(),
       holidays: holidays,
       closedDays: closedDays,
+      rules: await activePricingRules(),
     );
+  }
+
+  /// The arena's active pricing rules (synced from the server, read-only on
+  /// the floor app), in rule order.
+  Future<List<PricingRule>> activePricingRules() async {
+    final rows = await (_db.select(_db.pricingRules)
+          ..where((t) => t.active.equals(true)))
+        .get();
+    return [for (final r in rows) pricingRuleFromRow(r)]..sort(compareRuleOrder);
   }
 
   // --- compatibility (spec §4) ----------------------------------------------

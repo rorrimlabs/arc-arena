@@ -53,7 +53,7 @@ class PricingScreen extends ConsumerWidget {
               AppSpacing.xxl,
             ),
             children: [
-              _HappyHoursBanner(hours: snapshot.hours),
+              _TradingHoursBanner(hours: snapshot.hours),
               const SizedBox(height: AppSpacing.lg),
               Text(
                 'Tap any rate to change it. New prices apply to sessions '
@@ -86,8 +86,6 @@ class _ActivityRates extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final arena = context.arena;
-
     Rate? find(Band band, int? controllers) {
       for (final r in rates) {
         if (r.activityCode == activity.code &&
@@ -111,26 +109,7 @@ class _ActivityRates extends ConsumerWidget {
                 ? activity.name
                 : '$c controller${c == 1 ? '' : 's'}',
             standard: find(Band.standard, c),
-            happy: find(Band.happy, c),
-            happyEligible: activity.happyHourEligible,
             onEdit: (band) => _edit(context, ref, band, c, find(band, c)),
-          ),
-        if (!activity.happyHourEligible)
-          Padding(
-            padding: const EdgeInsets.only(top: AppSpacing.xs),
-            child: Row(
-              children: [
-                Icon(Icons.info_outline, size: 14, color: arena.textSubtle),
-                const SizedBox(width: AppSpacing.xs),
-                Expanded(
-                  child: Text(
-                    'No happy-hour rate was given for ${activity.name} — '
-                    'standard pricing applies all day. (Owner confirmation.)',
-                    style: ArenaType.caption.copyWith(color: arena.textSubtle),
-                  ),
-                ),
-              ],
-            ),
           ),
       ],
     );
@@ -164,7 +143,7 @@ class _ActivityRates extends ConsumerWidget {
       builder: (_) => _RateEditor(
         title: activity.name,
         subtitle: [
-          band == Band.happy ? 'Happy hour' : 'Standard',
+          'Standard',
           if (controllers != null)
             '$controllers controller${controllers == 1 ? '' : 's'}',
         ].join(' · '),
@@ -201,15 +180,11 @@ class _RateRow extends StatelessWidget {
   const _RateRow({
     required this.label,
     required this.standard,
-    required this.happy,
-    required this.happyEligible,
     required this.onEdit,
   });
 
   final String label;
   final Rate? standard;
-  final Rate? happy;
-  final bool happyEligible;
   final ValueChanged<Band> onEdit;
 
   @override
@@ -230,7 +205,7 @@ class _RateRow extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
                 Text(
-                  band == Band.happy ? 'Happy' : 'Standard',
+                  'Standard',
                   style: ArenaType.caption.copyWith(color: arena.textSubtle),
                 ),
                 Text(
@@ -261,7 +236,6 @@ class _RateRow extends StatelessWidget {
             child: Text(label, style: ArenaType.body.copyWith(color: arena.text)),
           ),
           cell(Band.standard, standard, arena.text),
-          if (happyEligible) cell(Band.happy, happy, arena.primary),
         ],
       ),
     );
@@ -366,10 +340,10 @@ class _RateEditorState extends State<_RateEditor> {
   }
 }
 
-/// Reads the happy-hour window out of the configured hours, so it can never
-/// claim a schedule the engine is not using.
-class _HappyHoursBanner extends StatelessWidget {
-  const _HappyHoursBanner({required this.hours});
+/// Reads the trading days out of the configured hours, so it can never claim
+/// a schedule the app is not using.
+class _TradingHoursBanner extends StatelessWidget {
+  const _TradingHoursBanner({required this.hours});
 
   final BusinessHours hours;
 
@@ -393,18 +367,10 @@ class _HappyHoursBanner extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final arena = context.arena;
-    final happyDays = [
-      for (final e in _short.entries)
-        if (hours.happyByWeekday[e.key] != null) e.value,
-    ];
     final openDays = [
       for (final e in _short.entries)
         if (hours.openByWeekday[e.key] != null) e.value,
     ];
-    final sample = hours.happyByWeekday.values.firstWhere(
-      (w) => w != null,
-      orElse: () => null,
-    );
     final openSample = hours.openByWeekday.values.firstWhere(
       (w) => w != null,
       orElse: () => null,
@@ -443,15 +409,6 @@ class _HappyHoursBanner extends StatelessWidget {
                 : 'Open ${openDays.join(', ')}'
                     '${openSample == null ? '' : ' · ${_fmt(openSample.startMinute)} – ${_fmt(openSample.endMinute)}'}',
             style: ArenaType.body.copyWith(color: arena.text),
-          ),
-          const SizedBox(height: 2),
-          Text(
-            happyDays.isEmpty
-                ? 'Happy hour is off.'
-                : 'Happy hour ${happyDays.join(', ')}'
-                    '${sample == null ? '' : ' · ${_fmt(sample.startMinute)} – ${_fmt(sample.endMinute)}'}'
-                    ' · never on a public holiday',
-            style: ArenaType.caption.copyWith(color: arena.primary),
           ),
         ],
       ),

@@ -22,7 +22,8 @@ begin
   -- A price-list change retires the previous catalog into
   -- pricing_catalog_history, so a session priced on it still validates.
   if p_kind in ('rate.upsert', 'rate.delete', 'policy.save', 'settings.save',
-                'holiday.upsert', 'holiday.delete', 'activity.upsert', 'activity.remove') then
+                'holiday.upsert', 'holiday.delete', 'activity.upsert', 'activity.remove',
+                'rule.upsert', 'rule.delete', 'rule.reorder') then
     v_before := _pricing_canon(_pricing_snapshot(p_arena));
   end if;
 
@@ -46,6 +47,8 @@ begin
       when 'controller.move'      then op_controller_move(p_arena, p)
       when 'controller.upsert'    then op_controller_upsert(p_arena, p)
       when 'controller.set_status' then op_controller_set_status(p_arena, p)
+      when 'accessory_kind.upsert' then op_accessory_kind_upsert(p_arena, p)
+      when 'accessory_kind.remove' then op_accessory_kind_remove(p_arena, p)
       when 'customer.create'      then op_customer_create(p_arena, p)
       when 'customer.update'      then op_customer_update(p_arena, p)
       when 'booking.create'       then op_booking_create(p_arena, p)
@@ -67,6 +70,12 @@ begin
       when 'settings.save'        then op_settings_save(p_arena, p)
       when 'holiday.upsert'       then op_holiday_upsert(p_arena, p)
       when 'holiday.delete'       then op_holiday_delete(p_arena, p)
+      when 'rule.upsert'          then op_rule_upsert(p_arena, p)
+      when 'rule.delete'          then op_rule_delete(p_arena, p)
+      when 'rule.reorder'         then op_rule_reorder(p_arena, p)
+      when 'discount.upsert'      then op_discount_upsert(p_arena, p)
+      when 'discount.set_active'  then op_discount_set_active(p_arena, p)
+      when 'discount.delete'      then op_discount_delete(p_arena, p)
       when 'staff.update'         then op_staff_update(p_arena, p)
       when 'arena.update'         then op_arena_update(p_arena, p)
       else null

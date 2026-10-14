@@ -4,17 +4,22 @@
 ///
 /// Flow (spec §15):
 ///   1. Validate the interval.
-///   2. Apply grace (free if under grace) and minimum-charge (extend interval).
-///   3. Split the interval at every happy-hour boundary (spec §16).
-///   4. For each segment, resolve the band rate (happy → standard fallback).
+///   2. Find the pricing rule judged at the rule instant (the session's or
+///      group's start; see `rule_engine.dart`).
+///   3. Apply grace (free if under grace) and minimum-charge (extend interval).
+///   4. Resolve the standard rate and adjust its unit price by the rule.
 ///   5. Apply the billing policy to get billed time/units.
 ///   6. Compute amounts in integer paise (never floating point).
 ///   7. Round per rounding-scope, then apply final cash rounding.
 ///
+/// Every quote is one charge line at [Band.standard]: time-of-day prices are
+/// pricing rules, which change the unit price for the whole quote.
+///
 /// SERVER PARITY: the server re-prices every bill with a plpgsql port of this
-/// code (migration 0013, `_pr_*`) and refuses any difference. Changing how
-/// money is computed here needs a matching new migration and a green
-/// `bash tool/pricing_parity.sh` — see docs/SYNC.md "Changing pricing".
+/// code (`_pr_quote`, `_pr_rule`, `_pr_rule_price`) and refuses any
+/// difference. Changing how money is computed here needs the matching change
+/// to `supabase/schemas/` and a green `bash tool/pricing_parity.sh` — see
+/// docs/SYNC.md "Changing pricing".
 ///
 /// Late arrival (§8) and early exit (§5) are decided by the *caller* choosing
 /// which interval to price; the engine stays pure over `[start, end]`.
@@ -23,24 +28,29 @@ library;
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/money/rounding.dart';
 import 'package:arena_ops/core/result/result.dart';
-import 'package:arena_ops/core/time/business_calendar.dart';
-import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/core/time/utc_interval.dart';
 import 'package:arena_ops/domain/pricing/billing_policy.dart';
 import 'package:arena_ops/domain/pricing/pricing_quote.dart';
 import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
-import 'package:arena_ops/domain/pricing/rate.dart';
+import 'package:arena_ops/domain/pricing/rule_engine.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 
 class PricingService {
   const PricingService();
 
+  /// Prices `[start, end]` of [activityCode] at [controllerCount].
+  ///
+  /// [ruleAt] is the instant the pricing rule is judged at: the session's (or
+  /// group's) start, so every segment and extension of one session gets the
+  /// same rule. Defaults to [start] (`_pr_quote`'s `coalesce(p_rule_at,
+  /// p_start)`).
   Result<PricingQuote> quote({
     required PricingSnapshot snapshot,
     required String activityCode,
     required int? controllerCount,
     required DateTime start,
     required DateTime end,
+    DateTime? ruleAt,
   }) {
     final startUtc = start.toUtc();
     final endUtc = end.toUtc();
@@ -62,6 +72,7 @@ class PricingService {
       ));
     }
 
+    final rule = snapshot.ruleFor(activityCode, (ruleAt ?? startUtc).toUtc());
     final policy = snapshot.policy;
     final totalSeconds = endUtc.difference(startUtc).inSeconds;
 
@@ -73,6 +84,7 @@ class PricingService {
         billedMinutes: 0,
         subtotal: Paise.zero,
         amount: Paise.zero,
+        rule: rule,
       ));
     }
 
@@ -82,70 +94,58 @@ class PricingService {
         ? startUtc.add(Duration(seconds: minSeconds))
         : endUtc;
 
-    final actual = UtcInterval(startUtc, endUtc);
-    final bandSegs = _bandSegments(startUtc, billedEnd, activity, snapshot.calendar);
-
-    final segments = <PricingSegment>[];
-    var subtotalNumerator = 0;
-    int? commonDen;
-    var mixedDen = false;
-    var totalBilledMinutes = 0;
-
-    for (final bs in bandSegs) {
-      final rate = _resolveRate(
-        snapshot: snapshot,
-        activityCode: activityCode,
-        band: bs.band,
-        controllerCount: controllerCount,
-        happyEligible: activity.happyEligible,
-      );
-      if (rate == null) {
-        return Err(Failure(
-          message: 'No price is configured for this combination.',
-          fix: controllerCount == null
-              ? 'Add a $activityCode rate in Settings → Pricing.'
-              : 'Add a $activityCode rate for $controllerCount '
-                  'controller${controllerCount == 1 ? '' : 's'} '
-                  'in Settings → Pricing.',
-          code: 'no_rate',
-        ));
-      }
-
-      final billedSeconds = bs.interval.duration.inSeconds;
-      final playedSeconds =
-          actual.intersection(bs.interval)?.duration.inSeconds ?? 0;
-
-      final _SegMath m = activity.durationModel == DurationModel.unit
-          ? _unitCharge(billedSeconds, rate, policy)
-          : _timeCharge(billedSeconds, rate, policy);
-
-      commonDen ??= m.den;
-      if (m.den != commonDen) mixedDen = true;
-      subtotalNumerator += m.num;
-      totalBilledMinutes += m.billedMinutes;
-
-      segments.add(PricingSegment(
-        interval: bs.interval,
-        band: bs.band,
-        playedSeconds: playedSeconds,
-        billedMinutes: m.billedMinutes,
-        units: m.units,
-        unitMinutes: rate.unitMinutes,
-        unitPrice: rate.price,
-        amount: Paise(roundDivHalfUp(m.num, m.den)),
-        rawNumerator: m.num,
-        rawDenominator: m.den,
+    final rate = snapshot.rateFor(
+      activityCode: activityCode,
+      band: Band.standard,
+      controllerCount: controllerCount,
+    );
+    if (rate == null) {
+      return Err(Failure(
+        message: 'No price is configured for this combination.',
+        fix: controllerCount == null
+            ? 'Add a $activityCode rate in Settings → Pricing.'
+            : 'Add a $activityCode rate for $controllerCount '
+                'controller${controllerCount == 1 ? '' : 's'} '
+                'in Settings → Pricing.',
+        code: 'no_rate',
       ));
     }
+    final unitPrice = applyRulePrice(rate.price.value, rate.unitMinutes, rule);
 
-    // Rounding scope: round each segment (segment) or once at the end (session).
-    final int subtotalPaise;
-    if (policy.roundingScope == RoundingScope.segment || mixedDen) {
-      subtotalPaise =
-          segments.fold<int>(0, (sum, s) => sum + s.amount.value);
-    } else {
-      subtotalPaise = roundDivHalfUp(subtotalNumerator, commonDen ?? 1);
-    }
+    // One billed piece; it may run past [end] (minimum charge), but played
+    // time counts only the real interval.
+    final billed = UtcInterval(startUtc, billedEnd);
+    final billedSeconds = billed.duration.inSeconds;
+    final playedSeconds = UtcInterval(startUtc, endUtc)
+            .intersection(billed)
+            ?.duration
+            .inSeconds ??
+        0;
+
+    final _SegMath m = activity.durationModel == DurationModel.unit
+        ? _unitCharge(billedSeconds, unitPrice, rate.unitMinutes, policy)
+        : _timeCharge(billedSeconds, unitPrice, rate.unitMinutes, policy);
+
+    final segment = PricingSegment(
+      interval: billed,
+      band: Band.standard,
+      playedSeconds: playedSeconds,
+      billedMinutes: m.billedMinutes,
+      units: m.units,
+      unitMinutes: rate.unitMinutes,
+      unitPrice: Paise(unitPrice),
+      amount: Paise(roundDivHalfUp(m.num, m.den)),
+      rawNumerator: m.num,
+      rawDenominator: m.den,
+    );
+
+    // Rounding scope: round the piece (segment) or the exact sum once
+    // (session). With a single piece both give the same paise; the branch is
+    // kept so a future multi-piece quote cannot silently change the rule.
+    final int subtotalPaise =
+        policy.roundingScope == RoundingScope.segment
+            ? segment.amount.value
+            : roundDivHalfUp(m.num, m.den);
 
     final finalPaise = applyMoneyRounding(
       subtotalPaise,
@@ -154,106 +154,19 @@ class PricingService {
     );
 
     return Ok(PricingQuote(
-      segments: segments,
+      segments: [segment],
       playedSeconds: totalSeconds,
-      billedMinutes: totalBilledMinutes,
+      billedMinutes: m.billedMinutes,
       subtotal: Paise(subtotalPaise),
       amount: Paise(finalPaise),
+      rule: rule,
     ));
-  }
-
-  // --- band resolution -------------------------------------------------------
-
-  Rate? _resolveRate({
-    required PricingSnapshot snapshot,
-    required String activityCode,
-    required Band band,
-    required int? controllerCount,
-    required bool happyEligible,
-  }) {
-    var rate = snapshot.rateFor(
-      activityCode: activityCode,
-      band: band,
-      controllerCount: controllerCount,
-    );
-    // Fall back to the standard rate when no special rate exists (spec §15 #6).
-    if (rate == null && band == Band.happy) {
-      rate = snapshot.rateFor(
-        activityCode: activityCode,
-        band: Band.standard,
-        controllerCount: controllerCount,
-      );
-    }
-    return rate;
-  }
-
-  List<_BandSeg> _bandSegments(
-    DateTime start,
-    DateTime end,
-    ActivitySpec activity,
-    BusinessCalendar calendar,
-  ) {
-    if (!end.isAfter(start)) return const [];
-
-    // Non-eligible activities are never split; the whole span is standard.
-    if (!activity.happyEligible) {
-      return [_BandSeg(UtcInterval(start, end), Band.standard)];
-    }
-
-    final boundaries = <DateTime>{start, end};
-    var day = IstDate.fromUtc(start);
-    final lastDay = IstDate.fromUtc(end);
-    while (day.compareTo(lastDay) <= 0) {
-      final hw = calendar.happyWindow(day);
-      if (hw != null) {
-        if (hw.start.isAfter(start) && hw.start.isBefore(end)) {
-          boundaries.add(hw.start);
-        }
-        if (hw.end.isAfter(start) && hw.end.isBefore(end)) {
-          boundaries.add(hw.end);
-        }
-      }
-      day = day.addDays(1);
-    }
-
-    final sorted = boundaries.toList()..sort();
-    final raw = <_BandSeg>[];
-    for (var i = 0; i < sorted.length - 1; i++) {
-      final s = sorted[i];
-      final e = sorted[i + 1];
-      if (!e.isAfter(s)) continue;
-      final midMicros = s.microsecondsSinceEpoch +
-          (e.difference(s).inMicroseconds ~/ 2);
-      final mid = DateTime.fromMicrosecondsSinceEpoch(midMicros, isUtc: true);
-      final band = _isHappyAt(mid, calendar) ? Band.happy : Band.standard;
-      raw.add(_BandSeg(UtcInterval(s, e), band));
-    }
-
-    // Merge adjacent segments of the same band.
-    final merged = <_BandSeg>[];
-    for (final seg in raw) {
-      if (merged.isNotEmpty && merged.last.band == seg.band) {
-        merged[merged.length - 1] = _BandSeg(
-          UtcInterval(merged.last.interval.start, seg.interval.end),
-          seg.band,
-        );
-      } else {
-        merged.add(seg);
-      }
-    }
-    return merged;
-  }
-
-  bool _isHappyAt(DateTime instant, BusinessCalendar calendar) {
-    final hw = calendar.happyWindow(IstDate.fromUtc(instant));
-    return hw != null && hw.contains(instant);
   }
 
   // --- segment math ----------------------------------------------------------
 
-  _SegMath _timeCharge(int billedSeconds, Rate rate, BillingPolicy policy) {
-    final price = rate.price.value;
-    final unitMinutes = rate.unitMinutes;
+  _SegMath _timeCharge(
+      int billedSeconds, int price, int unitMinutes, BillingPolicy policy) {
 
     if (policy.billingUnit == BillingUnit.perMinute) {
       // Per-second proration of the per-unit price — the truest "actual time".
@@ -280,9 +193,8 @@ class PricingService {
     );
   }
 
-  _SegMath _unitCharge(int billedSeconds, Rate rate, BillingPolicy policy) {
-    final price = rate.price.value;
-    final unitMinutes = rate.unitMinutes;
+  _SegMath _unitCharge(
+      int billedSeconds, int price, int unitMinutes, BillingPolicy policy) {
     final unitSeconds = unitMinutes * 60;
 
     switch (policy.vrUnitRounding) {
@@ -311,12 +223,6 @@ class PricingService {
         );
     }
   }
-}
-
-class _BandSeg {
-  const _BandSeg(this.interval, this.band);
-  final UtcInterval interval;
-  final Band band;
 }
 
 class _SegMath {

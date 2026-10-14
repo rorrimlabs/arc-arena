@@ -11,7 +11,6 @@ Activity _type(String code, {bool pads = true, bool games = true, bool active = 
       usesControllers: pads,
       usesGames: games,
       durationModel: DurationModel.hourly,
-      happyHourEligible: true,
       active: active,
     );
 

@@ -1,9 +1,11 @@
 -- _pricing_snapshot(p_arena) — the arena's current price list in PricingSnapshot.toJson() shape.
 --
--- What an in-sync device would freeze into a new session: rates from sync_v_rates (active cards),
+-- What an in-sync device would freeze into a new session: standard rates from sync_v_rates (active
+-- cards; rows of the retired happy band are left out, as the floor app leaves them out),
 -- activities, the oldest-created active billing_policies row (else _pr_policy defaults),
 -- settings.business_hours (else BusinessHours.current() defaults), all holidays, and closed ones
--- as closed_days. Compared via _pricing_canon by _assert_snapshot and _sync_apply.
+-- as closed_days, plus rules (active pricing_rules in priority order) only when there are any.
+-- Compared via _pricing_canon by _assert_snapshot and _sync_apply.
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._pricing_snapshot (
   p_arena uuid
@@ -18,9 +20,10 @@ create or replace function public._pricing_snapshot (
     'rate_card_name', 'Current',
     'rates', coalesce((select jsonb_agg(jsonb_build_object('activity_code', activity_code,
         'band', band, 'controller_count', controller_count, 'unit_minutes', unit_minutes,
-        'price_paise', price_paise)) from sync_v_rates where arena_id = p_arena), '[]'::jsonb),
+        'price_paise', price_paise)) from sync_v_rates
+        where arena_id = p_arena and band = 'standard'), '[]'::jsonb),
     'activities', coalesce((select jsonb_agg(jsonb_build_object('code', code,
-        'duration_model', duration_model, 'happy_eligible', happy_hour_eligible))
+        'duration_model', duration_model))
         from activities where arena_id = p_arena), '[]'::jsonb),
     'policy', coalesce((select jsonb_build_object('billing_unit', billing_unit,
         'block_rounding', block_rounding, 'grace_minutes', grace_minutes,
@@ -36,12 +39,21 @@ create or replace function public._pricing_snapshot (
     'hours', coalesce((select json from settings where arena_id = p_arena and key = 'business_hours'),
       '{"open":{"1":null,"2":{"start":840,"end":1380},"3":{"start":840,"end":1380},
                 "4":{"start":840,"end":1380},"5":{"start":840,"end":1380},
-                "6":{"start":840,"end":1380},"7":{"start":840,"end":1380}},
-        "happy":{"1":null,"2":{"start":840,"end":1020},"3":{"start":840,"end":1020},
-                 "4":{"start":840,"end":1020},"5":{"start":840,"end":1020},"6":null,"7":null}}'::jsonb),
+                "6":{"start":840,"end":1380},"7":{"start":840,"end":1380}}}'::jsonb),
     'holidays', coalesce((select jsonb_agg(day::text) from holidays where arena_id = p_arena), '[]'::jsonb),
     'closed_days', coalesce((select jsonb_agg(day::text) from holidays
-        where arena_id = p_arena and closed), '[]'::jsonb));
+        where arena_id = p_arena and closed), '[]'::jsonb))
+  -- Active pricing rules, only when there are any: an arena without rules keeps
+  -- exactly the snapshot (and canon) floor apps built before rules produce.
+  || coalesce((select jsonb_build_object('rules', jsonb_agg(jsonb_build_object(
+        'id', r.id, 'name', r.name, 'priority', r.priority, 'days', to_jsonb(r.days),
+        'start_min', r.start_min, 'end_min', r.end_min, 'holiday_mode', r.holiday_mode,
+        'valid_from', r.valid_from, 'valid_until', r.valid_until,
+        'activity_codes', to_jsonb(r.activity_codes), 'adjust_kind', r.adjust_kind,
+        'adjust_value', r.adjust_value)
+        order by r.priority, r.name collate "C", r.id::text collate "C"))
+        from pricing_rules r where r.arena_id = p_arena and r.active
+        having count(*) > 0), '{}'::jsonb);
 $function$;
 
 comment on function public._pricing_snapshot(uuid) is 'Pricing: the arena''s current price list built from its catalog, in the device''s PricingSnapshot JSON shape.';

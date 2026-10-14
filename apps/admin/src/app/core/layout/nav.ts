@@ -1,6 +1,6 @@
 /**
- * Side-nav destinations, in the design's order (`const NAV` in design/admin.html), plus
- * Controllers (not in the design) after Stations.
+ * Side-nav destinations. Accessories (controllers, headsets…) live inside Stations, and station
+ * and accessory types inside Settings, so neither has its own entry.
  */
 export interface NavItem {
   /** Top-level route path. */
@@ -27,7 +27,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     heading: 'Configure',
     items: [
       { path: 'stations', label: 'Stations', icon: 'sports_esports' },
-      { path: 'controllers', label: 'Controllers', icon: 'videogame_asset' },
       { path: 'pricing', label: 'Pricing', icon: 'sell' },
       { path: 'games', label: 'Games', icon: 'stadia_controller' },
     ],

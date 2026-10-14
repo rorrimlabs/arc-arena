@@ -27,7 +27,7 @@ import { HolidayDialog, HolidayDialogData, HolidayDialogResult } from '../dialog
       <span class="text-[13px] leading-[1.3] text-muted">{{ day() }}</span>
     </span>
     <app-status-pill [tone]="h.closed ? 'warning' : 'info'">{{
-      h.closed ? 'Closed' : 'Open · no happy hour'
+      h.closed ? 'Closed' : 'Open'
     }}</app-status-pill>
     <button
       mat-icon-button
@@ -59,8 +59,8 @@ export class HolidayRow {
 }
 
 /**
- * Holidays (server: holidays; part of the price list): days with no happy hour, optionally closed
- * all day. Coming-up days first, then past ones (most recent first). Each change is saved on its
+ * Holidays (server: holidays; part of the price list): special days that pricing rules can skip
+ * (or apply only on), optionally closed all day. Coming-up days first, then past ones (most recent first). Each change is saved on its
  * own (holiday.upsert / holiday.delete) and the price list reloads.
  */
 @Component({
@@ -82,7 +82,7 @@ export class HolidayRow {
 
       <app-detail-section
         heading="Coming up"
-        subtitle="Happy-hour prices never apply on these days. A closed day is shut all day."
+        subtitle="Rules set to skip holidays don't apply on these days. A closed day is shut all day."
       >
         @for (h of upcoming(); track h.day) {
           <app-holiday-row
@@ -171,7 +171,7 @@ export class HolidaysDetail {
   protected remove(h: Holiday): void {
     const data: ConfirmDialogData = {
       title: `Delete ${h.name}?`,
-      message: `${formatHolidayDay(h.day)} becomes a normal day: happy-hour prices apply again${
+      message: `${formatHolidayDay(h.day)} becomes a normal day for pricing rules${
         h.closed ? ' and the arena counts as open' : ''
       }. Sessions already started keep their prices.`,
       confirm: 'Delete',

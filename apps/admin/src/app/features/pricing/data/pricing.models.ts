@@ -2,7 +2,6 @@ import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { BillingPolicy } from './billing-policy';
 
 export type DurationModel = 'hourly' | 'unit' | 'flat_hourly';
-export type Band = 'standard' | 'happy';
 
 /** A station type (server: activities) — what can be played and how it is billed. */
 export interface StationType {
@@ -14,17 +13,18 @@ export interface StationType {
   readonly usesControllers: boolean;
   readonly usesGames: boolean;
   readonly durationModel: DurationModel;
-  readonly happyEligible: boolean;
   readonly sortOrder: number;
   readonly active: boolean;
   /** Stations offering it (not disabled). */
   readonly stations: number;
 }
 
-/** One price on the active rate card. `controllerCount` null = any number of players. */
+/**
+ * One price on the active rate card (the standard band: day/time changes are pricing rules).
+ * `controllerCount` null = any number of players.
+ */
 export interface Rate {
   readonly activityCode: string;
-  readonly band: string;
   readonly controllerCount: number | null;
   readonly unitMinutes: number;
   readonly pricePaise: number;
@@ -36,17 +36,18 @@ export interface DayWindow {
   readonly end: number;
 }
 
-/** ISO weekday '1' (Mon) … '7' (Sun) → window, or null (closed / no happy hour). */
+/** ISO weekday '1' (Mon) … '7' (Sun) → window, or null (closed). */
 export type WeekWindows = Readonly<Record<string, DayWindow | null>>;
 
+/** Opening hours per weekday (settings key business_hours). */
 export interface BusinessHours {
   readonly open: WeekWindows;
-  readonly happy: WeekWindows;
 }
 
 /**
- * A day off the regular calendar (server: holidays). Happy hour never applies on it; `closed`
- * marks the arena shut all day. Part of the price list, like the hours.
+ * A day off the regular calendar (server: holidays). Pricing rules set to skip holidays don't
+ * apply on it (and rules set to holidays only apply only on it); `closed` marks the arena shut
+ * all day. Part of the price list, like the hours.
  */
 export interface Holiday {
   /** The IST calendar date, "2026-11-08" (one holiday per day). */
@@ -63,6 +64,11 @@ export interface PricingData {
   readonly holidays: readonly Holiday[];
   /** The arena's billing rules (the server's defaults until it saves its own). */
   readonly policy: BillingPolicy;
+  /** Day/time price rules, by priority. */
+  readonly rules: readonly PricingRule[];
+  /** Preset discounts and coupons. */
+  readonly discounts: readonly Discount[];
+  readonly discountOptions: DiscountOptions;
 }
 
 /** What the type dialog sends (activity.upsert). */
@@ -73,7 +79,6 @@ export interface TypeInput {
   readonly usesControllers: boolean;
   readonly usesGames: boolean;
   readonly durationModel: DurationModel;
-  readonly happyEligible: boolean;
   readonly sortOrder: number;
   readonly active: boolean;
 }
@@ -81,7 +86,6 @@ export interface TypeInput {
 /** A price to set (`pricePaise`) or remove (null) on the active card. */
 export interface RateChange {
   readonly activityCode: string;
-  readonly band: Band;
   readonly controllerCount: number | null;
   readonly unitMinutes: number;
   readonly pricePaise: number | null;
@@ -129,12 +133,9 @@ export function rateRows(type: Pick<StationType, 'usesControllers'>): (number | 
 export function findRate(
   rates: readonly Rate[],
   code: string,
-  band: string,
   controllers: number | null,
 ): Rate | undefined {
-  return rates.find(
-    (r) => r.activityCode === code && r.band === band && r.controllerCount === controllers,
-  );
+  return rates.find((r) => r.activityCode === code && r.controllerCount === controllers);
 }
 
 /** Block length used by a type's rates (60 for hourly types). */
@@ -142,47 +143,37 @@ export function unitMinutesOf(type: StationType, rates: readonly Rate[]): number
   return ratesFor(type, rates)[0]?.unitMinutes ?? (type.durationModel === 'unit' ? 30 : 60);
 }
 
-/** Most controllers with a standard price (players a station of this type takes). */
+/** Most controllers with a price (players a station of this type takes). */
 export function maxPlayers(type: StationType, rates: readonly Rate[]): number {
   if (!type.usesControllers) return 0;
   return Math.max(
     0,
     ...ratesFor(type, rates)
-      .filter((r) => r.band === 'standard' && r.controllerCount != null)
+      .filter((r) => r.controllerCount != null)
       .map((r) => r.controllerCount as number),
   );
 }
 
-/** The list's headline price: the cheapest standard rate, per its block. */
+/** A type's cheapest rate (its headline price), or null when it has none. */
+export function cheapestRate(type: StationType, rates: readonly Rate[]): Rate | null {
+  const own = ratesFor(type, rates);
+  return own.length ? own.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a)) : null;
+}
+
+/** "per hour", "per 30 min". */
+export function perLabel(unitMinutes: number): string {
+  return unitMinutes === 60 ? 'per hour' : `per ${unitMinutes} min`;
+}
+
+/** The list's headline price: the cheapest rate, per its block. */
 export function headlinePrice(
   type: StationType,
   rates: readonly Rate[],
 ): { price: string; per: string } | null {
-  const standard = ratesFor(type, rates).filter((r) => r.band === 'standard');
-  if (!standard.length) return null;
-  const cheapest = standard.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a));
-  const per = cheapest.unitMinutes === 60 ? 'per hour' : `per ${cheapest.unitMinutes} min`;
-  return { price: formatRupees(cheapest.pricePaise), per };
-}
-
-/**
- * Happy hour's preview row for a type (design: the rule's "Preview" section): the headline
- * standard rate → the happy rate for the same controller count, or why there is none.
- */
-export function happyPreview(
-  type: StationType,
-  rates: readonly Rate[],
-): { value: string; included: boolean } {
-  if (!type.happyEligible) return { value: 'Not included', included: false };
-  const standard = ratesFor(type, rates).filter((r) => r.band === 'standard');
-  if (!standard.length) return { value: 'No standard price', included: false };
-  const cheapest = standard.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a));
-  const per = cheapest.unitMinutes === 60 ? '/h' : `/${cheapest.unitMinutes} min`;
-  const happy = findRate(rates, type.code, 'happy', cheapest.controllerCount);
-  const value = happy
-    ? `${formatRupees(cheapest.pricePaise)} → ${formatRupees(happy.pricePaise)}${per}`
-    : `${formatRupees(cheapest.pricePaise)}${per} · standard price`;
-  return { value, included: true };
+  const cheapest = cheapestRate(type, rates);
+  return cheapest
+    ? { price: formatRupees(cheapest.pricePaise), per: perLabel(cheapest.unitMinutes) }
+    : null;
 }
 
 /** "2:00 pm" from minutes after IST midnight (1440 = midnight). */
@@ -259,4 +250,145 @@ export function suggestCode(name: string): string {
     .toUpperCase()
     .replace(/[^A-Z0-9]+/g, '')
     .slice(0, 12);
+}
+
+/**
+ * A day/time price rule (server: pricing_rules). Judged at a session's start (IST): the first
+ * enabled rule by priority whose days, time window, holiday setting, dates and types match
+ * changes every price of that session, for the whole session.
+ */
+export interface PricingRule {
+  readonly id: string;
+  readonly name: string;
+  /** Lower comes first. */
+  readonly priority: number;
+  readonly active: boolean;
+  /** ISO weekdays 1 (Mon) … 7 (Sun). */
+  readonly days: readonly number[];
+  /** Minutes after IST midnight; the window is [startMin, endMin). */
+  readonly startMin: number;
+  readonly endMin: number;
+  readonly holidayMode: 'any' | 'only' | 'skip';
+  /** IST dates "2026-11-01"; null = open-ended. */
+  readonly validFrom: string | null;
+  readonly validUntil: string | null;
+  /** Station type codes; empty = every type. */
+  readonly activityCodes: readonly string[];
+  readonly adjustKind: 'percent' | 'per_hour';
+  /** Signed: positive raises the price. Percent, or paise per hour. */
+  readonly adjustValue: number;
+}
+
+/** A preset discount or a coupon (server: discounts). */
+export interface Discount {
+  readonly id: string;
+  readonly kind: 'preset' | 'coupon';
+  readonly name: string;
+  readonly code: string | null;
+  readonly valueKind: 'percent' | 'flat';
+  /** Percent (1–100) or paise. */
+  readonly value: number;
+  readonly maxDiscountPaise: number | null;
+  readonly minBillPaise: number | null;
+  readonly activityCodes: readonly string[];
+  /** Instants (UTC ISO); validUntil is a coupon's expiry. */
+  readonly validFrom: string | null;
+  readonly validUntil: string | null;
+  readonly maxUses: number | null;
+  readonly active: boolean;
+}
+
+/** How far staff may discount by hand (settings key discount_options). */
+export interface DiscountOptions {
+  /** Percent of the bill a staff member without Settings may take off; 0 = none. */
+  readonly manualMaxPercent: number;
+  readonly reasonRequired: boolean;
+}
+
+export const DEFAULT_DISCOUNT_OPTIONS: DiscountOptions = { manualMaxPercent: 0, reasonRequired: true };
+
+/** One use of a discount on a bill (arena_discount_usage). */
+export interface DiscountUse {
+  readonly billId: string;
+  readonly kind: 'single' | 'group';
+  readonly at: string;
+  readonly customer: string | null;
+  readonly billedPaise: number | null;
+  readonly amountPaise: number;
+  readonly status: string;
+  readonly by: string | null;
+}
+
+export interface DiscountUsage {
+  readonly uses: number;
+  /** Uses on bills that were not voided (what counts toward the limit). */
+  readonly activeUses: number;
+  readonly rows: readonly DiscountUse[];
+  /** Pass back for the next page; null at the end. */
+  readonly next: string | null;
+}
+
+/** The pricing rule's effect on one price, as _pr_rule_price works it out (paise, ≥ 0). */
+export function rulePrice(
+  pricePaise: number,
+  unitMinutes: number,
+  rule: Pick<PricingRule, 'adjustKind' | 'adjustValue'>,
+): number {
+  if (rule.adjustKind === 'percent') {
+    // Round half up (the server's _pr_div), never below 0.
+    return Math.max(0, Math.floor((2 * pricePaise * (100 + rule.adjustValue) + 100) / 200));
+  }
+  return Math.max(0, pricePaise + Math.floor((2 * rule.adjustValue * unitMinutes + 60) / 120));
+}
+
+/** How a rule changes the price, in owner words: "Percent", "Flat ₹ per hour". */
+export const ADJUST_KINDS: readonly {
+  readonly key: PricingRule['adjustKind'];
+  readonly label: string;
+}[] = [
+  { key: 'percent', label: 'Percent' },
+  { key: 'per_hour', label: 'Flat ₹ per hour' },
+];
+
+export function adjustKindLabel(kind: PricingRule['adjustKind']): string {
+  return ADJUST_KINDS.find((k) => k.key === kind)?.label ?? kind;
+}
+
+/** "20% higher", "20% lower", "₹30/hr lower", "No change". */
+export function adjustLabel(rule: Pick<PricingRule, 'adjustKind' | 'adjustValue'>): string {
+  if (rule.adjustValue === 0) return 'No change';
+  const abs = Math.abs(rule.adjustValue);
+  // A flat change may carry paise (₹12.50/hr): show them rather than round.
+  const rupees =
+    abs % 100 === 0
+      ? formatRupees(abs)
+      : `₹${(abs / 100).toLocaleString('en-IN', { minimumFractionDigits: 2 })}`;
+  const amount = rule.adjustKind === 'percent' ? `${abs}%` : `${rupees}/hr`;
+  return `${amount} ${rule.adjustValue > 0 ? 'higher' : 'lower'}`;
+}
+
+/** "Sat–Sun · 6:00–11:00 pm" for a rule's days and window. */
+export function ruleWhen(rule: Pick<PricingRule, 'days' | 'startMin' | 'endMin'>): string {
+  const keys = new Set(rule.days.map(String));
+  const windows: Record<string, DayWindow | null> = {};
+  for (const d of WEEKDAYS) {
+    windows[d.key] = keys.has(d.key) ? { start: rule.startMin, end: rule.endMin } : null;
+  }
+  return summarizeWindows(windows);
+}
+
+/** "20% off", "₹50 off". */
+export function discountValueLabel(d: Pick<Discount, 'valueKind' | 'value'>): string {
+  return d.valueKind === 'percent' ? `${d.value}% off` : `${formatRupees(d.value)} off`;
+}
+
+export type CouponState = 'active' | 'scheduled' | 'expired' | 'used_up' | 'off';
+
+/** Where a preset or coupon stands at `now` (use counts come from its usage read). */
+export function discountState(d: Discount, now: Date, activeUses?: number): CouponState {
+  if (!d.active) return 'off';
+  if (d.validUntil && Date.parse(d.validUntil) < now.getTime()) return 'expired';
+  if (d.validFrom && Date.parse(d.validFrom) > now.getTime()) return 'scheduled';
+  if (d.maxUses != null && activeUses != null && activeUses >= d.maxUses) return 'used_up';
+  return 'active';
 }

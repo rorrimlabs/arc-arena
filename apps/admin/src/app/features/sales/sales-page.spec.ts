@@ -131,8 +131,16 @@ describe('Sales', () => {
     expect(totals()).toBe('Expected ₹1,380 Collected ₹1,380 Outstanding ₹0');
   });
 
-  it('wide: shows the first bill with its times, lines, payments and history', async () => {
+  it('wide: opens nothing until a bill is picked (no detail read)', async () => {
     t = await startPage('/sales');
+    expect(detail()).toBeNull();
+    expect(t.text(t.doc().querySelector('app-list-detail'))).toContain(
+      'Pick a bill to see its lines, payments and history',
+    );
+  });
+
+  it('shows a picked bill with its times, lines, payments and history', async () => {
+    t = await startPage('/sales?id=3f9a2c10-0000-4000-8000-000000000001');
     expect(detail()?.querySelector('h2')?.textContent?.trim()).toBe('S-3F9A2C');
     const text = t.text(detail());
     expect(text).toContain('Paid · UPI');
@@ -399,6 +407,8 @@ describe('sales helpers', () => {
       voidReason: null,
       voidedAt: null,
       voidedBy: null,
+      discountPaise: 0,
+      discount: null,
       ...o,
     });
     const s = summarize([

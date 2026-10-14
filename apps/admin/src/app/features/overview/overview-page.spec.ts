@@ -60,4 +60,11 @@ describe('Overview', () => {
     expect(latest.length).toBeGreaterThan(0);
     expect(latest[0].getAttribute('href')).toMatch(/^\/sales\?id=/);
   });
+
+  it('reads the figures in one server call, and only open play for the live pane', async () => {
+    t = await startPage('/overview?period=12m');
+    expect(t.sales.overviewReads).toBe(1);
+    expect(t.floor.reads.filter((r) => r === 'plays')).toHaveLength(1);
+    expect(t.floor.reads).not.toContain('stationFigures');
+  });
 });

@@ -11,6 +11,8 @@ import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
+import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/domain/pricing/pricing_rule.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 
 Customer customerFromRow(CustomerRow r) => Customer(
@@ -32,7 +34,6 @@ Activity activityFromRow(ActivityRow r) => Activity(
       usesControllers: r.usesControllers,
       usesGames: r.usesGames,
       durationModel: DurationModel.fromCode(r.durationModel),
-      happyHourEligible: r.happyHourEligible,
       sortOrder: r.sortOrder,
       active: r.active,
     );
@@ -255,4 +256,19 @@ SessionCharge chargeFromRow(SessionChargeRow r) => SessionCharge(
       unitMinutes: r.unitMinutes,
       unitPricePaise: r.unitPricePaise,
       amountPaise: r.amountPaise,
+    );
+
+PricingRule pricingRuleFromRow(PricingRuleRow r) => PricingRule(
+      id: r.id,
+      name: r.name,
+      priority: r.priority,
+      days: r.days,
+      startMin: r.startMin,
+      endMin: r.endMin,
+      holidayMode: RuleHolidayMode.fromCode(r.holidayMode),
+      validFrom: r.validFrom == null ? null : IstDate.parse(r.validFrom!),
+      validUntil: r.validUntil == null ? null : IstDate.parse(r.validUntil!),
+      activityCodes: r.activityCodes,
+      adjustKind: RuleAdjustKind.fromCode(r.adjustKind),
+      adjustValue: r.adjustValue,
     );

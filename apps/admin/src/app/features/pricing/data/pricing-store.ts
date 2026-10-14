@@ -5,7 +5,18 @@ import { LoginScope } from '../../../core/auth/login-scope';
 import { partlyApplied, writeThenReload } from '../../../core/sync/push-ops';
 import { BillingPolicy } from './billing-policy';
 import { PricingApi } from './pricing-api';
-import { BusinessHours, Holiday, PricingData, RateChange, TypeInput } from './pricing.models';
+import {
+  BusinessHours,
+  DEFAULT_DISCOUNT_OPTIONS,
+  Discount,
+  DiscountOptions,
+  DiscountUsage,
+  Holiday,
+  PricingData,
+  PricingRule,
+  RateChange,
+  TypeInput,
+} from './pricing.models';
 
 /**
  * The current arena's price list. Every change goes to the server first; the screen then
@@ -24,10 +35,14 @@ export class PricingStore {
   readonly hours = computed(() => this.data()?.hours ?? null);
   readonly holidays = computed(() => this.data()?.holidays ?? []);
   readonly policy = computed(() => this.data()?.policy ?? null);
+  readonly rules = computed(() => this.data()?.rules ?? []);
+  readonly discounts = computed(() => this.data()?.discounts ?? []);
+  readonly discountOptions = computed(() => this.data()?.discountOptions ?? DEFAULT_DISCOUNT_OPTIONS);
   readonly byId = computed(() => new Map(this.types().map((t) => [t.id, t])));
   readonly loading = signal(false);
   readonly loadError = signal('');
   private loadedArena: string | null = null;
+  private outOfDate = false;
   /** Each load's number; only the newest one's answer lands (a switch of arena mid-load). */
   private latest = 0;
 
@@ -44,8 +59,9 @@ export class PricingStore {
 
   async load(force = false): Promise<void> {
     const arenaId = this.arena.current().id;
-    if (!arenaId || (!force && this.loadedArena === arenaId)) return;
+    if (!arenaId || (!force && !this.outOfDate && this.loadedArena === arenaId)) return;
     if (this.loadedArena !== arenaId) this.data.set(null);
+    this.outOfDate = false;
     const call = ++this.latest;
     this.loading.set(true);
     this.loadError.set('');
@@ -59,6 +75,19 @@ export class PricingStore {
     } finally {
       if (call === this.latest) this.loading.set(false);
     }
+  }
+
+  /**
+   * Marks the data out of date without reading it (a live update while no screen shows it): the
+   * next screen that loads it reads it again, instead of a download nobody looks at.
+   */
+  stale(): void {
+    this.outOfDate = true;
+  }
+
+  /** Reads again if a screen has loaded the price list (live updates). */
+  async refresh(): Promise<void> {
+    if (this.loadedArena) await this.load(true);
   }
 
   async saveType(type: TypeInput): Promise<void> {
@@ -112,6 +141,70 @@ export class PricingStore {
       () => this.api.deleteHoliday(arenaId, day),
       () => this.load(true),
     );
+  }
+
+  /** Rules are part of the price list: the whole list reloads after a change. */
+  async saveRule(rule: PricingRule): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.saveRule(arenaId, rule),
+      () => this.load(true),
+    );
+  }
+
+  async deleteRule(id: string): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.deleteRule(arenaId, id),
+      () => this.load(true),
+    );
+  }
+
+  /** Every rule id, first-tried first. A refusal (stale) reloads so the screen shows the truth. */
+  async reorderRules(ids: readonly string[]): Promise<void> {
+    const arenaId = this.arena.current().id;
+    try {
+      await this.api.reorderRules(arenaId, ids);
+    } finally {
+      await this.load(true);
+    }
+  }
+
+  async saveDiscount(discount: Discount): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.saveDiscount(arenaId, discount),
+      () => this.load(true),
+    );
+  }
+
+  async setDiscountActive(id: string, active: boolean): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.setDiscountActive(arenaId, id, active),
+      () => this.load(true),
+    );
+  }
+
+  async deleteDiscount(id: string): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.deleteDiscount(arenaId, id),
+      () => this.load(true),
+    );
+  }
+
+  async saveDiscountOptions(options: DiscountOptions): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.saveDiscountOptions(arenaId, options),
+      () => this.load(true),
+    );
+  }
+
+  /** One page of the bills a preset or coupon was used on (read when it is opened). */
+  discountUsage(id: string, limit = 20, cursor: string | null = null): Promise<DiscountUsage> {
+    return this.api.discountUsage(this.arena.current().id, id, limit, cursor);
   }
 
   async savePolicy(policy: BillingPolicy): Promise<void> {

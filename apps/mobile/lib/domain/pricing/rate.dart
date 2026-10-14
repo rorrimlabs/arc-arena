@@ -11,39 +11,36 @@ class ActivitySpec {
   const ActivitySpec({
     required this.code,
     required this.durationModel,
-    required this.happyEligible,
   });
 
   final String code; // PS5 | VR | POOL | LOUNGE
   final DurationModel durationModel;
 
-  /// Whether happy-hour rates ever apply to this activity (OWNER #10/#11).
-  final bool happyEligible;
-
+  /// Same keys as the server's `_pricing_snapshot` activities.
   Map<String, dynamic> toJson() => {
         'code': code,
         'duration_model': durationModel.code,
-        'happy_eligible': happyEligible,
       };
 
+  /// Snapshots frozen by older builds carry an extra activity flag; it is
+  /// ignored (nothing prices by it any more).
   factory ActivitySpec.fromJson(Map<String, dynamic> j) => ActivitySpec(
         code: j['code'] as String,
         durationModel: DurationModel.fromCode(j['duration_model'] as String),
-        happyEligible: j['happy_eligible'] as bool,
       );
 
   @override
   bool operator ==(Object other) =>
       other is ActivitySpec &&
       other.code == code &&
-      other.durationModel == durationModel &&
-      other.happyEligible == happyEligible;
+      other.durationModel == durationModel;
 
   @override
-  int get hashCode => Object.hash(code, durationModel, happyEligible);
+  int get hashCode => Object.hash(code, durationModel);
 }
 
-/// A price for a given activity + band + (optional) controller count.
+/// A price for a given activity + band + (optional) controller count. The
+/// pricer only ever reads [Band.standard] rates.
 ///
 /// [unitMinutes] is the length of one priced unit: 60 for hourly rates, 30 for
 /// VR. [price] is the money for exactly one unit.
@@ -78,6 +75,10 @@ class Rate {
         unitMinutes: j['unit_minutes'] as int,
         price: Paise(j['price_paise'] as int),
       );
+
+  /// [Rate.fromJson], or null for a rate of a retired band (never priced).
+  static Rate? tryFromJson(Map<String, dynamic> j) =>
+      Band.tryFromCode(j['band'] as String) == null ? null : Rate.fromJson(j);
 
   @override
   bool operator ==(Object other) =>

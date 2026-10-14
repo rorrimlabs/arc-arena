@@ -36,7 +36,7 @@ void main() {
   late Customer rahul;
 
   const billing = SegmentBilling();
-  // Friday 6 PM — outside happy hour, so one clean standard hour.
+  // Friday 6 PM — outside the demo rule's window, so one clean standard hour.
   final start = ist(2026, 10, 2, 18, 0);
 
   setUp(() async {
@@ -75,6 +75,7 @@ void main() {
       snapshot: session.snapshot,
       segments: segs,
       openEndAt: end,
+      sessionStart: session.startedAt,
     );
     final r = await sessions.end(EndSessionCommand(
       sessionId: id,
@@ -126,6 +127,7 @@ void main() {
         snapshot: stored.snapshot,
         segments: segs,
         openEndAt: start.add(const Duration(hours: 1)),
+        sessionStart: stored.startedAt,
       );
       expect(rebilled.total.value, 15000);
 
@@ -144,6 +146,7 @@ void main() {
         snapshot: next.valueOrNull!.snapshot,
         segments: await sessions.segmentsFor(next.valueOrNull!.id),
         openEndAt: start.add(const Duration(hours: 3)),
+        sessionStart: next.valueOrNull!.startedAt,
       );
       expect(nextBill.total.value, 20000);
     });

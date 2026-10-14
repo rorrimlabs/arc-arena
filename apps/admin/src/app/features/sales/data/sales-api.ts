@@ -3,9 +3,11 @@ import { dbError } from '../../../core/arena/arena-api';
 import { AppError } from '../../../core/auth/auth-api';
 import { Supabase } from '../../../core/supabase/supabase';
 import { SyncOp, pushOps } from '../../../core/sync/push-ops';
+import { OverviewData, withAverage } from '../../overview/data/overview.models';
 import {
   Bill,
   BillDetail,
+  BillDiscount,
   BillExtension,
   BillHistoryEntry,
   BillKind,
@@ -51,10 +53,23 @@ export abstract class SalesApi {
   /** Bills that closed in [from, to), newest first. */
   abstract list(arenaId: string, from: Date, to: Date): Promise<Bill[]>;
   abstract get(arenaId: string, id: string): Promise<BillDetail>;
+  /** The Overview's figures for a period and the one before it (arena_overview). */
+  abstract overview(arenaId: string, q: OverviewQuery): Promise<OverviewData>;
   abstract void(arenaId: string, bill: Bill, reason: string): Promise<void>;
   abstract recordPayment(arenaId: string, bill: Bill, entry: PaymentEntry): Promise<void>;
   abstract refund(arenaId: string, bill: Bill, entry: RefundEntry): Promise<void>;
   abstract correct(arenaId: string, bill: Bill, correction: MethodCorrection): Promise<void>;
+}
+
+/** What the Overview asks arena_overview for. */
+export interface OverviewQuery {
+  readonly from: Date;
+  readonly to: Date;
+  readonly prevFrom: Date;
+  readonly prevTo: Date;
+  readonly bucket: 'hour' | 'day' | 'month';
+  /** Start of today (IST): the latest bills are those closed since. */
+  readonly today: Date;
 }
 
 /** Server codes (sync_push / arena_sales) worded for the Sales screen. */
@@ -137,11 +152,29 @@ export function toBill(r: Row): Bill {
     voidReason: text(r['void_reason']),
     voidedAt: text(r['voided_at']),
     voidedBy: text(r['voided_by']),
+    discountPaise: Number(r['discount_paise'] ?? 0),
+    discount: toDiscount(r['discount'] as Row | null),
+  };
+}
+
+function toDiscount(d: Row | null): BillDiscount | null {
+  if (!d) return null;
+  return {
+    source: (d['source'] as BillDiscount['source']) ?? 'preset',
+    name: String(d['name'] ?? ''),
+    code: text(d['code']),
+    discountId: text(d['discount_id']),
+    valueKind: d['value_kind'] === 'flat' ? 'flat' : 'percent',
+    value: Number(d['value'] ?? 0),
+    amountPaise: Number(d['amount_paise'] ?? 0),
+    reason: text(d['reason']),
+    by: text(d['by']),
   };
 }
 
 export function toDetail(r: Row): BillDetail {
   const voided = r['voided'] as Row | null;
+  const rule = r['rule'] as Row | null;
   const json = (v: unknown) =>
     v && typeof v === 'object' ? (v as Readonly<Record<string, unknown>>) : null;
   return {
@@ -150,7 +183,6 @@ export function toDetail(r: Row): BillDetail {
       player: l['player'] == null ? null : Number(l['player']),
       station: String(l['station'] ?? ''),
       activity: String(l['activity'] ?? ''),
-      band: String(l['band'] ?? 'standard'),
       controllers: l['controllers'] == null ? null : Number(l['controllers']),
       start: text(l['start']),
       end: text(l['end']),
@@ -174,6 +206,13 @@ export function toDetail(r: Row): BillDetail {
       after: json(h['after']),
     })),
     voidRecord: voided ? { at: String(voided['at']), by: text(voided['by']) } : null,
+    rule: rule
+      ? {
+          name: String(rule['name'] ?? ''),
+          adjustKind: rule['adjust_kind'] === 'per_hour' ? 'per_hour' : 'percent',
+          adjustValue: Number(rule['adjust_value'] ?? 0),
+        }
+      : null,
   };
 }
 
@@ -193,6 +232,58 @@ class SupabaseSalesApi extends SalesApi {
     });
     if (error) throw salesError(error);
     return (data as Row[]).map(toBill);
+  }
+
+  async overview(arenaId: string, q: OverviewQuery): Promise<OverviewData> {
+    const client = await this.supabase.client();
+    const { data, error } = await client.rpc('arena_overview', {
+      p_arena: arenaId,
+      p_from: q.from.toISOString(),
+      p_to: q.to.toISOString(),
+      p_prev_from: q.prevFrom.toISOString(),
+      p_prev_to: q.prevTo.toISOString(),
+      p_bucket: q.bucket,
+      p_today: q.today.toISOString(),
+    });
+    if (error) throw salesError(error);
+    const d = (data ?? {}) as Record<string, Row & Row[]>;
+    const totals = (t: Row | undefined) =>
+      withAverage({
+        takingsPaise: Number(t?.['takings_paise'] ?? 0),
+        bills: Number(t?.['bills'] ?? 0),
+        minutes: Number(t?.['minutes'] ?? 0),
+      });
+    return {
+      totals: {
+        ...totals(d['totals']),
+        discountPaise: Number(d['totals']?.['discount_paise'] ?? 0),
+        discounts: Number(d['totals']?.['discounts'] ?? 0),
+      },
+      previous: totals(d['previous']),
+      buckets: ((d['buckets'] as Row[] | undefined) ?? []).map((b) => ({
+        start: String(b['start']),
+        paise: Number(b['paise'] ?? 0),
+      })),
+      methods: Object.fromEntries(
+        Object.entries((d['methods'] as Row | undefined) ?? {}).map(([m, v]) => [
+          m,
+          { paise: Number((v as Row)['paise'] ?? 0), bills: Number((v as Row)['bills'] ?? 0) },
+        ]),
+      ),
+      byType: new Map(
+        Object.entries((d['by_type'] as Row | undefined) ?? {}).map(([k, v]) => [k, Number(v)]),
+      ),
+      topGames: ((d['top_games'] as Row[] | undefined) ?? []).map((g) => ({
+        name: String(g['name']),
+        minutes: Number(g['minutes'] ?? 0),
+      })),
+      byStaff: ((d['by_staff'] as Row[] | undefined) ?? []).map((u) => ({
+        name: String(u['name']),
+        bills: Number(u['bills'] ?? 0),
+        paise: Number(u['paise'] ?? 0),
+      })),
+      latest: ((d['latest'] as Row[] | undefined) ?? []).map(toBill),
+    };
   }
 
   async get(arenaId: string, id: string): Promise<BillDetail> {

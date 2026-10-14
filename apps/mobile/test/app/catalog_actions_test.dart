@@ -119,7 +119,6 @@ void main() {
                 ...h.openByWeekday,
                 DateTime.monday: const DayWindow.hm(10, 0, 22, 0),
               },
-              happyByWeekday: h.happyByWeekday,
             ),
           );
         },

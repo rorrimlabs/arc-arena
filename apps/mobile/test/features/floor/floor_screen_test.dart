@@ -22,7 +22,7 @@ import '../../support/test_db.dart';
 void main() {
   late AppDatabase db;
 
-  // Friday 6 PM — open, outside happy hour.
+  // Friday 6 PM — open.
   final start = ist(2026, 10, 2, 18, 0);
 
   setUp(() async => db = await seededMemoryDb());

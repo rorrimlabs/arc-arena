@@ -132,12 +132,13 @@ select ok(not has_function_privilege('anon', 'private.can_use_arena_topic(text)'
 -- ------------------------------------------- 3. the publication
 select is((select array_agg(tablename::text order by tablename) from pg_publication_tables
             where pubname = 'supabase_realtime' and schemaname = 'public'),
-  array['activities', 'billing_policies', 'bookings', 'controller_allocations', 'controller_moves',
-        'controllers', 'customers', 'game_categories', 'game_controls', 'game_resources', 'games',
+  array['accessory_kinds', 'activities', 'bill_discounts', 'billing_policies', 'bookings',
+        'controller_allocations', 'controller_moves', 'controllers', 'customers', 'discounts',
+        'game_categories', 'game_controls', 'game_resources', 'games',
         'group_assignments', 'group_charges', 'group_extensions', 'group_payments', 'group_sessions',
-        'holidays', 'payments', 'rate_bands', 'rate_cards', 'rates', 'resource_activities', 'resources',
-        'session_charges', 'session_extensions', 'session_segments', 'sessions', 'settings',
-        'staff_profiles'],
+        'holidays', 'payments', 'pricing_rules', 'rate_bands', 'rate_cards', 'rates',
+        'resource_activities', 'resources', 'session_charges', 'session_extensions',
+        'session_segments', 'sessions', 'settings', 'staff_profiles'],
   'Realtime announces every arena table the apps show live');
 select is((select count(*)::int from pg_publication_tables pt
              join pg_class c on c.relname = pt.tablename
