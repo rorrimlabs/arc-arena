@@ -216,6 +216,10 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
           Game(
             id: _id,
             name: name,
+            // Fields this form does not edit keep their stored values (aliases
+            // are set on the admin dashboard).
+            aliases: widget.game?.aliases ?? const [],
+            lastPlayedAt: widget.game?.lastPlayedAt,
             categoryId: _categoryId,
             platforms: _platforms.toList(),
             playerMode: _playerMode,

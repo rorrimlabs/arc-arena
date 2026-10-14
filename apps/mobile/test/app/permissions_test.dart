@@ -300,6 +300,7 @@ void main() {
         session,
         await sessions.segmentsFor(session.id),
         markWaived: true,
+        waiveReason: 'Birthday treat',
       );
       expect(waived.isOk, isTrue, reason: waived.failureOrNull?.display);
     });

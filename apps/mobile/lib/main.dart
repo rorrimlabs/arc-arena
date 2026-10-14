@@ -3,9 +3,10 @@ import 'dart:io';
 
 import 'package:arena_ops/app/arena_ops_app.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
-import 'package:arena_ops/app/providers/notification_providers.dart';
+import 'package:arena_ops/app/notifications/reminder_startup.dart';
 import 'package:arena_ops/app/sync/cloud_root.dart';
 import 'package:arena_ops/app/sync/secure_session_storage.dart';
+import 'package:arena_ops/app/sync/staff_access.dart' show serverLabel;
 import 'package:arena_ops/core/config/app_config.dart';
 import 'package:arena_ops/core/monitoring/sentry_setup.dart';
 import 'package:arena_ops/data/local/database.dart';
@@ -55,6 +56,11 @@ Future<void> main() async {
             localStorage: SecureSessionStorage(backendUrl: config.supabaseUrl!),
           ),
         );
+        // Which project this build signs in to, in the `flutter run` console
+        // only: logins exist only on the project they were invited on.
+        if (kDebugMode) {
+          debugPrint('Staff app signs in to: ${serverLabel(config.supabaseUrl!)}');
+        }
         final documents = await getApplicationDocumentsDirectory();
         runApp(SentryWidget(child: CloudRoot(documentsPath: documents.path)));
         return;
@@ -111,11 +117,12 @@ Future<void> main() async {
       // actually typed a PIN. The router sends an unauthenticated session to
       // /login.
 
-      // Booking reminders (spec §23): ask permission once, then reconcile the
-      // device's scheduled reminders with the current bookings (de-dupes on
-      // restart). Fire-and-forget so it never delays first paint, and failures here
-      // never block the app.
-      unawaited(_initReminders(container));
+      // Booking reminders and session timer alerts (spec §23): ask permission
+      // once, then rebuild the device's scheduled alerts from the database
+      // (de-dupes on restart; running sessions ring again after a restart).
+      // Fire-and-forget so it never delays first paint, and failures here never
+      // block the app.
+      unawaited(startReminders(container));
 
       runApp(
         SentryWidget(
@@ -127,17 +134,6 @@ Future<void> main() async {
       );
     },
   );
-}
-
-Future<void> _initReminders(ProviderContainer container) async {
-  try {
-    final service = container.read(notificationServiceProvider);
-    await service.init();
-    await service.requestPermission();
-    await container.read(bookingRemindersProvider).syncUpcoming();
-  } catch (e) {
-    debugPrint('reminder init skipped: $e');
-  }
 }
 
 /// Shown instead of the app when the build's configuration is unusable.

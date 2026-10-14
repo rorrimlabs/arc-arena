@@ -1,3 +1,15 @@
+-- op_session_end — sync op 'session.end': end an active single session and store its final bill.
+--
+-- Permission: bill; plus discount when mark_waived.
+-- Payload: session_id, ended_at, billed_amount_paise, mark_waived?, waive_reason?,
+--   expected_segment_ids[], expected_scheduled_end_at, charges[] (one row per priced piece).
+-- Checks / errors: forbidden; not_found; not_active; stale (segments or scheduled end differ
+--   from what the device saw); invalid_time; price_mismatch (total or charge rows differ from
+--   the server's re-pricing on the frozen snapshot, 0 paise tolerance).
+-- Writes: session_segments / controller_allocations (ended), session_charges, sessions
+--   (completed, actual_ended_at, billed_amount_paise, payment_status), and on a waive an
+--   audit_log row (action waive: billed, paid, written off, reason). Returns: {payment_status}.
+-- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_session_end (
   p_arena uuid,
   p       jsonb
@@ -47,6 +59,17 @@ begin
   update sessions set status = 'completed', actual_ended_at = v_ended,
       billed_amount_paise = v_billed, payment_status = v_pay, updated_at = v_now
     where id = v_session;
+  -- A waive writes off what was not paid: audited with the amount and the staff reason
+  -- (waive_reason; optional here so floor builds that do not send it still end the session).
+  if v_waive then
+    insert into audit_log(arena_id, entity_type, entity_id, action, reason, before, after,
+        created_by, created_at)
+      values (p_arena, 'session', v_session, 'waive',
+        nullif(btrim(coalesce(p->>'waive_reason', '')), ''),
+        jsonb_build_object('billed_paise', v_billed, 'paid_paise', v_paid),
+        jsonb_build_object('written_off_paise', greatest(coalesce(v_billed, 0) - v_paid, 0)),
+        auth.uid(), v_now);
+  end if;
 
   -- Server-side pricing (0013): re-price the bill from the stored segments and
   -- refuse the op unless the total AND every charge row match exactly.

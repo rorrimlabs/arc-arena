@@ -147,6 +147,10 @@ select pg_temp.as_user('15000000-0000-0000-0000-000000000001');
 select is(pg_temp.push('activity.remove', jsonb_build_object('id', 'a1500000-0000-0000-0000-000000000001'))
     ->>'error', 'activity_has_stations', 'a type a station still offers is refused');
 select is(pg_temp.push('resource.set_status', jsonb_build_object('id', 'b1500000-0000-0000-0000-000000000001',
+    'status', 'disabled'))->>'error', 'resource_busy', 'HEX cannot be retired while its session runs');
+select is(pg_temp.push('session.void', jsonb_build_object('session_id', 'f1500000-0000-0000-0000-000000000001',
+    'reason', 'test', 'at', '2026-10-01T08:30:00Z'))->>'status', 'applied', 'the session is closed (voided)');
+select is(pg_temp.push('resource.set_status', jsonb_build_object('id', 'b1500000-0000-0000-0000-000000000001',
     'status', 'disabled'))->>'status', 'applied', 'the owner retires HEX');
 select is(pg_temp.push('activity.remove', jsonb_build_object('id', 'a1500000-0000-0000-0000-000000000001'))
     ->'result'->>'removed', 'retired', 'PS5 has a session on record: it is retired, not deleted');

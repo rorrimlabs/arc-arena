@@ -6,7 +6,9 @@ import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
 import { MatSlideToggle, MatSlideToggleChange } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailRow } from '../../../shared/list-detail/detail-row';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
@@ -67,8 +69,17 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
       (closed)="closed.emit()"
     >
       <div actions class="arena-compact flex gap-2">
-        <button mat-stroked-button type="button" (click)="edit()">
+        <button mat-stroked-button type="button" [disabled]="!canEdit()" (click)="edit()">
           <mat-icon aria-hidden="true">edit</mat-icon>Edit
+        </button>
+        <button
+          mat-button
+          type="button"
+          class="danger-action"
+          [disabled]="busy() || !canEdit()"
+          (click)="remove()"
+        >
+          <mat-icon aria-hidden="true">delete</mat-icon>Remove
         </button>
       </div>
       <app-status-pill chip [tone]="t.active ? 'primary' : 'info'">{{
@@ -149,7 +160,7 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
             hideIcon
             aria-labelledby="type-enabled"
             [checked]="t.active"
-            [disabled]="busy()"
+            [disabled]="busy() || !canEdit()"
             (change)="setActive($event)"
           />
         </div>
@@ -178,6 +189,8 @@ const cell = (band: Band, controllers: number | null) => `${band}:${controllers 
   `,
 })
 export class TypeDetail {
+  /** Without the Settings permission the server refuses every change here. */
+  protected readonly canEdit = inject(ArenaContext).canEdit;
   private readonly store = inject(PricingStore);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
@@ -350,6 +363,51 @@ export class TypeDetail {
       .afterClosed()
       .subscribe((result) => {
         if (result) this.say(result.snack);
+      });
+  }
+
+  /**
+   * activity.remove: a type no session, booking or pad ever used is deleted with its prices;
+   * one with history is turned off and kept for past bills. Refused while stations offer it.
+   */
+  protected remove(): void {
+    const t = this.type();
+    const data: ConfirmDialogData = t.stations
+      ? {
+          title: `${t.name} can't be removed yet`,
+          message: `${t.stations} station${t.stations === 1 ? ' offers' : 's offer'} it. Remove it from those stations (or remove the stations) first.`,
+        }
+      : {
+          title: `Remove ${t.name}?`,
+          message:
+            'If no session or booking ever used it, it is deleted with its prices. Otherwise it is turned off: staff can no longer pick it, and past bills keep it.',
+          confirm: 'Remove',
+          danger: true,
+        };
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
+        data,
+        width: '520px',
+        maxWidth: 'calc(100vw - 32px)',
+      })
+      .afterClosed()
+      .subscribe(async (yes) => {
+        if (!yes) return;
+        this.busy.set(true);
+        this.error.set('');
+        try {
+          const outcome = await this.store.removeType(t.id);
+          this.say(
+            outcome === 'deleted'
+              ? `${t.name} deleted`
+              : `${t.name} turned off · past bills keep it`,
+          );
+          if (outcome === 'deleted') this.closed.emit();
+        } catch (e) {
+          this.error.set(toAppError(e).message);
+        } finally {
+          this.busy.set(false);
+        }
       });
   }
 

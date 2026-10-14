@@ -83,7 +83,10 @@ client functions predates the current client API (it still names
    * **Secure password change**: ON. A person whose last sign-in is older than 24 h may be asked to sign out and back in before More → Change password succeeds.
 2. **Authentication → Sign In / Providers → Anonymous sign-ins**: **OFF**.
 3. **Authentication → Policies / Passwords** (wording varies): minimum length **10**, require letters and digits; enable **leaked-password protection** if your plan offers it.
-4. **Authentication → URL Configuration**: **Site URL** = the admin dashboard's https URL; **Redirect URLs** must include `https://<dashboard>/accept-invite` (or `https://<dashboard>/**`). The sign-up confirmation uses a code, but the invitation and sign-in e-mails link to the dashboard's `/accept-invite` page. The floor app needs no redirect URLs (no OAuth, no deep links).
+4. **Authentication → URL Configuration**: **Site URL** = the admin dashboard's https URL; **Redirect URLs** must include `https://<dashboard>/accept-invite` **and** `https://<dashboard>/reset-password` (or simply `https://<dashboard>/**`). The sign-up confirmation uses a code, but the invitation and sign-in e-mails link to the dashboard's `/accept-invite` page, and the password-reset e-mail (Sign in → *Forgot your password?*) links to `/reset-password`. The dashboard asks for the redirect to its own address (`<the origin it is served from>/reset-password`); a redirect URL missing from this list makes Supabase send the person to the Site URL instead, where the link does nothing. The floor app needs no redirect URLs (no OAuth, no deep links); staff who forgot their password can reset it from the dashboard's sign-in page too.
+   * **Authentication → Emails → Templates → Reset password**: the default template (a link, `{{ .ConfirmationURL }}`) works as is; change only the wording if you like. It needs the SMTP sender from step 1 like every other e-mail.
+   * The reset link signs the person in, so **Secure password change** (step 1) does not get in the way: they set the new password right after a fresh sign-in.
+   * Locally, `supabase/config.toml` already allows `http://127.0.0.1:4200/**` and `http://localhost:4200/**`; the reset e-mail shows up in Mailpit (`http://127.0.0.1:54434`, `[inbucket]` in `config.toml`).
 5. Leave JWT expiry (3600 s) and refresh-token rotation at their defaults (they match the local stack the app was tested with). A Realtime revocation takes effect within the JWT expiry.
 6. *(Optional, smaller surface)* **Integrations / Database → Extensions**: the app does not use GraphQL; you may disable `pg_graphql`.
 7. **Realtime → Settings**: turn **off** "Allow public access" (private channels only). Both apps use private channels; this is a dashboard-only setting.
@@ -124,9 +127,22 @@ Rules while linked:
 
 ## 4a. Bringing an already-deployed project up to date (0016 and after)
 
-The hosted dev project was pushed with `0001` … `0015` on 2026-10-11 (not
-re-verified against hosted since). **Nothing after that has been pushed;
-pushing needs the owner's approval.** Pending, in push order:
+**Status 2026-10-14 (with the owner's approval): done on the hosted dev project
+`ouxvtvlzhxddmqirmnxo`.** `0016` was already there; the 20 files from
+`20261011202706` to `20261014065708` were pushed after the pre-checks below
+passed (`verify_all.sh --with-it --with-psql`: no failures, no skips; drift check
+clean; hosted publication empty). `supabase migration list --linked`: 36/36
+match. `supabase db advisors --linked`: only `auth_leaked_password_protection`
+(an Auth setting, §3). `staff-admin` deployed (`--no-verify-jwt`, no
+`ADMIN_SITE_URL` yet: links use the dashboard's own address). The dashboard's
+`environment.production.ts` holds the hosted URL and anon key. Still to do by
+the owner: §3.4 redirect URLs (add `http://127.0.0.1:4200/**` and
+`http://localhost:4200/**` while the dashboard runs locally against hosted),
+custom SMTP (§3; without it Supabase e-mails only the project's team
+members), leaked-password protection.
+
+The hosted dev project was pushed with `0001` … `0015` on 2026-10-11. The list
+below is what was pending before 2026-10-14, in push order:
 
 1. `0016_integrity_and_authz` (money integrity, owner protection, pad-move
    permission, same-arena triggers, pinned `search_path` — see SYNC.md "Money
@@ -151,6 +167,43 @@ pushing needs the owner's approval.** Pending, in push order:
     `realtime.messages` authorization policies and
     `private.can_use_arena_topic`; generated, so not renamed)
 19. `20261013174642_live_sync_publication_money_rls_staff_update`
+20. `20261014053857_game_lifecycle_delete_archive` (`game.delete` for never-used
+    games; game names trimmed and unique ignoring case; an edit over a newer
+    archive is refused; a deleted game is never re-created; `game.set_compat`
+    keeps a note it is not sent)
+21. `20261014065708_station_status_guard` (a station with a live session can no
+    longer be taken out of service or removed through `resource.set_status` /
+    `resource.upsert`; a `resource.upsert` without a status keeps it)
+22. `20261014102347_sales_corrections_and_audit` (a void needs a reason; refunds
+    allowed on a voided bill; waives audited; new server-only op
+    `op_payment_correct` = `payment.correct`; `arena_sales` / `arena_sale` return
+    the payments ledger, returning customer, player-minutes, void who/when,
+    server receipt time and the audit history)
+23. `20261014102752_payment_voided_before_balance` (a payment on a voided bill is
+    refused as `voided` before the balance check)
+24. `20261014105230_sales_correction_rows_not_refunds` (a method correction's
+    rows are flagged and left out of the refunds total)
+
+> **Verified read-only on 2026-10-14** with `supabase migration list --linked`:
+> hosted has `0001` … `0016`. Item 1 above (`0016`) is therefore already applied;
+> items 2–24 are not. `supabase functions list` shows no Edge Function deployed.
+
+The first two 2026-10-14 migrations only replace function bodies and add one new
+server-only function (`op_game_delete`, no client grant); no table changes,
+nothing rewritten. Older floor-app builds keep working: they always send the
+fields the new checks read as optional. A floor app on the new build also
+needs these migrations: it sends `base_active` on game edits (an older server
+ignores it) and drops games/station types the server deleted.
+
+Items 22–24 (the staff handover audit, `STAFF_HANDOVER_AUDIT_2026-10-14.md`) also
+only replace function bodies and add one server-only function
+(`op_payment_correct`, no client grant); no table changes. Behaviour a client can
+notice: a void without a reason is refused (`void_reason_required`; the dashboard
+always sends one, the floor app never voids); a payment on a voided bill answers
+`voided` instead of `overpayment`. Floor builds that do not send `waive_reason`
+still end waived sessions (the reason is optional on the server). The dashboard
+from this audit needs items 22–24 (it reads the new `arena_sales` fields and
+sends `payment.correct`).
 
 ```bash
 bash tool/verify_all.sh --with-it --with-psql

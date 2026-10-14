@@ -29,6 +29,17 @@ class _GroupEndSheet extends ConsumerStatefulWidget {
 class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
   bool _waive = false;
   bool _busy = false;
+  final _waiveReasonCtrl = TextEditingController();
+
+  @override
+  void dispose() {
+    _waiveReasonCtrl.dispose();
+    super.dispose();
+  }
+
+  /// A waive writes money off: it is never recorded without a reason.
+  bool get _waiveReasonMissing =>
+      _waive && _waiveReasonCtrl.text.trim().isEmpty;
 
   @override
   Widget build(BuildContext context) {
@@ -75,9 +86,21 @@ class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
             value: _waive,
             onChanged: (v) => setState(() => _waive = v),
           ),
+          if (_waive)
+            TextField(
+              key: const ValueKey('waive-reason'),
+              controller: _waiveReasonCtrl,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Reason for waiving',
+                helperText: 'The owner sees it with the amount written off',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
           const SizedBox(height: AppSpacing.sm),
           FilledButton.icon(
-            onPressed: _busy ? null : _confirm,
+            onPressed: _busy || _waiveReasonMissing ? null : _confirm,
             icon: const Icon(Icons.check),
             label: Text(_busy ? 'Ending…' : 'End & bill'),
           ),
@@ -93,7 +116,9 @@ class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
     setState(() => _busy = true);
     final r = await ref
         .read(groupSessionActionsProvider)
-        .end(widget.group, markWaived: _waive);
+        .end(widget.group,
+            markWaived: _waive,
+            waiveReason: _waive ? _waiveReasonCtrl.text : null);
     if (r.isOk && _returning.isNotEmpty) {
       await returnPadsHome(ref, _returning);
     }

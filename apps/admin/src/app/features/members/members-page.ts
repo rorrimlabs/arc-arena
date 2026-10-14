@@ -6,7 +6,7 @@ import { MatInput } from '@angular/material/input';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
-import { FloorStore } from '../../core/floor/floor-store';
+import { FloorRead, FloorStore } from '../../core/floor/floor-store';
 import { initials } from '../../core/floor/floor.models';
 import { Layout } from '../../core/layout/layout';
 import { injectNow } from '../../core/time/ticker';
@@ -62,7 +62,7 @@ import { MemberSummary, daysAgo, matchesMember, summarizeMembers } from './data/
           <mat-progress-bar mode="indeterminate" aria-label="Loading members" />
         }
         <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
-          @if (floor.loadError(); as error) {
+          @if (floor.errorOf(reads); as error) {
             <div class="flex flex-col items-center gap-3 px-4 py-12 text-center">
               <p role="alert" class="text-sm text-danger">{{ error }}</p>
               <button mat-stroked-button type="button" (click)="load(true)">Try again</button>
@@ -108,6 +108,14 @@ import { MemberSummary, daysAgo, matchesMember, summarizeMembers } from './data/
 })
 export class MembersPage {
   protected readonly floor = inject(FloorStore);
+  /** What this screen reads (and reports errors for). */
+  protected readonly reads: readonly FloorRead[] = [
+    'stations',
+    'games',
+    'customers',
+    'plays',
+    'visits',
+  ];
   private readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
@@ -143,7 +151,7 @@ export class MembersPage {
   }
 
   protected load(force = false): void {
-    void this.floor.load(['stations', 'games', 'customers', 'plays', 'visits'], force);
+    void this.floor.load(this.reads, force);
   }
 
   protected subtitle(m: MemberSummary): string {

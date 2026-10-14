@@ -62,6 +62,10 @@ export async function writeThenReload(
  *
  * Only after the server answered are the arena's other devices told which kinds were applied
  * (never on a transport error, never for a refused op).
+ *
+ * An op the server answers `retry` (a lock or serialization conflict: not recorded, and the
+ * batch stopped there) is sent again shortly with the same op ids, so the ops already applied
+ * replay their answers instead of applying twice. Still busy after that: refused as `retry`.
  */
 export async function pushOps(
   client: SupabaseClient,
@@ -70,27 +74,39 @@ export async function pushOps(
   messages: Readonly<Record<string, string>> = {},
 ): Promise<Record<string, unknown>[]> {
   if (!ops.length) return [];
-  const { data, error } = await client.rpc('sync_push', {
-    p_arena: arenaId,
-    p_ops: ops.map((op) => ({ op_id: crypto.randomUUID(), kind: op.kind, payload: op.payload })),
-    p_device: 'admin-web',
-  });
-  if (error) throw dbError(error);
-  const results =
-    (
-      data as {
-        results?: { status: string; error?: string; result?: Record<string, unknown> }[];
-      } | null
-    )?.results ?? [];
+  const batch = ops.map((op) => ({
+    op_id: crypto.randomUUID(),
+    kind: op.kind,
+    payload: op.payload,
+  }));
+  let results: PushResult[] = [];
+  for (let attempt = 0; ; attempt++) {
+    const { data, error } = await client.rpc('sync_push', {
+      p_arena: arenaId,
+      p_ops: batch,
+      p_device: 'admin-web',
+    });
+    if (error) throw dbError(error);
+    results = (data as { results?: PushResult[] } | null)?.results ?? [];
+    if (attempt >= RETRY_DELAYS_MS.length || !results.some((r) => r.status === 'retry')) break;
+    await new Promise((resolve) => setTimeout(resolve, RETRY_DELAYS_MS[attempt]));
+  }
   const applied = ops.filter((_, i) => results[i]?.status === 'applied').map((op) => op.kind);
   void announcePush(client, arenaId, applied);
   const refused = ops.findIndex((_, i) => results[i]?.status !== 'applied');
   if (refused >= 0) {
-    const code = results[refused]?.error ?? 'rejected';
+    const r = results[refused];
+    // A `retry` carries the SQLSTATE in `error`; the code to show is `retry` itself.
+    const code = r?.status === 'retry' ? 'retry' : (r?.error ?? 'rejected');
     throw new PushRefusal(code, messages[code] ?? OP_MESSAGES[code] ?? code, applied);
   }
   return results.map((r) => r.result ?? {});
 }
+
+type PushResult = { status: string; error?: string; result?: Record<string, unknown> };
+
+/** Waits before resending a batch the server answered `retry` (then it is refused). */
+const RETRY_DELAYS_MS = [250, 750];
 
 /**
  * Tells the arena's other devices which op kinds were just committed: a nudge to pull, never

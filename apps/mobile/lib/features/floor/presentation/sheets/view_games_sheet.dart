@@ -74,6 +74,7 @@ class _ViewGamesSheet extends ConsumerWidget {
                           resource: resource,
                           game: g.game,
                           status: g.status,
+                          notes: g.notes,
                           canEdit: canEdit,
                         ),
                     ],
@@ -105,12 +106,16 @@ class _GameRow extends ConsumerWidget {
     required this.resource,
     required this.game,
     required this.status,
+    this.notes,
     required this.canEdit,
   });
 
   final Resource resource;
   final Game game;
   final GameAvailability status;
+
+  /// Why it has this status here ("disc scratched"); kept when the status changes.
+  final String? notes;
 
   /// Whether to offer the status editor (the signed-in user holds
   /// `settings`). Without it the row is read-only.
@@ -130,7 +135,8 @@ class _GameRow extends ConsumerWidget {
       subtitle: Text(
         '${game.playerMode.label}'
         '${game.playerMode.isMultiplayer ? ' · up to ${game.maxLocalPlayers}' : ''}'
-        '${status.isPlayable ? '' : ' · ${status.label}'}',
+        '${status.isPlayable ? '' : ' · ${status.label}'}'
+        '${notes == null || notes!.isEmpty ? '' : ' · $notes'}',
       ),
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
@@ -162,6 +168,7 @@ class _GameRow extends ConsumerWidget {
         gameName: game.name,
         resourceName: resource.name,
         initial: status,
+        initialNotes: notes,
       ),
     );
     if (result == null) return;
@@ -193,11 +200,15 @@ class _StatusEditor extends StatefulWidget {
     required this.gameName,
     required this.resourceName,
     required this.initial,
+    this.initialNotes,
   });
 
   final String gameName;
   final String resourceName;
   final GameAvailability initial;
+
+  /// The stored note, prefilled so saving a status change never wipes it.
+  final String? initialNotes;
 
   @override
   State<_StatusEditor> createState() => _StatusEditorState();
@@ -205,7 +216,7 @@ class _StatusEditor extends StatefulWidget {
 
 class _StatusEditorState extends State<_StatusEditor> {
   late GameAvailability _status = widget.initial;
-  final _notes = TextEditingController();
+  late final _notes = TextEditingController(text: widget.initialNotes ?? '');
 
   @override
   void dispose() {

@@ -1,11 +1,18 @@
 -- audit_log — append-only record of sensitive actions and sync-time adjustments
 --
--- Written by op_session_void / op_group_void (entity session / group_session,
--- action void, with the owner's reason) and op_customer_create (entity customer,
--- action duplicate_phone_on_sync, when a phone already belongs to another customer
--- and the new row is kept without it). Only owner-level members (money /
--- reports) can read it; it has no sync_xid,
--- so it is not part of the sync_pull change feed.
+-- Written by:
+--   op_session_void / op_group_void (entity session / group_session, action void,
+--     with the owner's required reason);
+--   op_session_end / op_group_end on a waive (action waive, the staff reason when
+--     given, before {billed_paise, paid_paise}, after {written_off_paise});
+--   op_payment_correct (action payment_correct, the required reason, before
+--     {payment_id, method, amount_paise}, after {method, amount_paise, refund_id,
+--     payment_id});
+--   op_customer_create (entity customer, action duplicate_phone_on_sync, when a
+--     phone already belongs to another customer and the new row is kept without it).
+-- Refunds are not repeated here: each is its own append-only payments row with a
+-- reason and who recorded it. Only owner-level members (money / reports) can read
+-- it; it has no sync_xid, so it is not part of the sync_pull change feed.
 create table "public"."audit_log" (
   "id"          uuid                     not null default gen_random_uuid(),
   "arena_id"    uuid                     not null,
@@ -23,7 +30,7 @@ create table "public"."audit_log" (
   constraint "audit_log_pkey" primary key (id)
 );
 
-comment on table public.audit_log is 'Append-only audit trail of voids and sync-time data adjustments, per arena. Not part of the sync change feed.';
+comment on table public.audit_log is 'Append-only audit trail of voids, waives, payment-method corrections and sync-time data adjustments, per arena. Not part of the sync change feed.';
 
 comment on column public.audit_log.arena_id is 'Owning arena (tenant); RLS shows the row only to active members of this arena.';
 
@@ -31,9 +38,9 @@ comment on column public.audit_log.entity_type is 'Kind of row acted on, e.g. se
 
 comment on column public.audit_log.entity_id is 'Id of the row acted on (no FK; entity_type names its table).';
 
-comment on column public.audit_log.action is 'What happened, e.g. void or duplicate_phone_on_sync.';
+comment on column public.audit_log.action is 'What happened: void, waive, payment_correct or duplicate_phone_on_sync.';
 
-comment on column public.audit_log.reason is 'Human reason (the owner''s void reason, or a system explanation).';
+comment on column public.audit_log.reason is 'Human reason (the void or correction reason, the waive reason when given, or a system explanation).';
 
 comment on column public.audit_log.before is 'Relevant state before the action, if recorded.';
 

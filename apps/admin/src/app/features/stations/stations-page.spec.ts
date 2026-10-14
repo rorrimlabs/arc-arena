@@ -105,6 +105,35 @@ describe('Stations', () => {
     expect(t.floor.ops).toEqual([]);
   });
 
+  const removedSection = () =>
+    t.doc().querySelector('section[aria-labelledby="stations-removed"]') as HTMLElement | null;
+
+  it('a removed station is listed under Removed and can be restored', async () => {
+    t = await startPage('/stations');
+    expect(t.text(removedSection())).toContain('PS4');
+    t.button('Restore', removedSection()!)!.click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([
+      { kind: 'resource.set_status', payload: { id: 's-ps4', status: 'available' } },
+    ]);
+    expect(t.snack()).toBe('PS4 restored · back on the floor');
+    expect(t.rows().map((r) => t.rowText(r)[0])).toContain('PS4');
+    expect(removedSection()).toBeNull();
+  });
+
+  it('adding a removed station’s name points to Restore instead', async () => {
+    t = await startPage('/stations');
+    t.button('Add')!.click();
+    await t.settle();
+    t.type('Name', 'ps4', t.dialog()!);
+    t.button('Add', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!.querySelector('[role="alert"]'))).toBe(
+      'ps4 was removed · restore it from Removed below the station list',
+    );
+    expect(t.floor.ops).toEqual([]);
+  });
+
   it('a station with two types keeps both when renamed', async () => {
     t = await startPage('/stations?id=s-rift');
     expect(t.text(detail()!.querySelector('mat-select'))).toContain('PlayStation 5, VR');
@@ -129,9 +158,11 @@ describe('Stations', () => {
     expect(t.floor.ops).toEqual([
       {
         kind: 'resource.upsert',
-        payload: expect.objectContaining({ id: 's-ghost', name: 'SPECTRE', status: 'available' }),
+        payload: expect.objectContaining({ id: 's-ghost', name: 'SPECTRE' }),
       },
     ]);
+    // A rename never carries a status: one changed elsewhere meanwhile stays as it is.
+    expect(t.floor.ops[0].payload).not.toHaveProperty('status');
     expect(t.snack()).toBe('Station saved');
   });
 

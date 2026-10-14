@@ -15,6 +15,7 @@ import {
   passwordProblem,
   toAppError,
 } from '../../core/auth/auth-api';
+import { InviteeAuth } from '../../core/auth/invitee-auth';
 import { Session } from '../../core/auth/session';
 import { MATERIAL_DEFAULTS } from '../../shared/material/material-defaults';
 import { AuthCard } from './auth-card';
@@ -43,6 +44,11 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
  * replaced with `/accept-invite` straight away. A new login chooses its password before
  * joining; anyone without a link session can sign in to accept. Owners continue to the
  * dashboard; staff are told to sign in on the staff app.
+ *
+ * The invitee is signed in on InviteeAuth, never on the dashboard's stored session: the owner who
+ * sent the invitation is often signed in in this same browser (every tab shares that session),
+ * and must stay signed in as themselves. Only an owner-level invitee who chooses "Open dashboard"
+ * becomes this browser's dashboard sign-in.
  */
 @Component({
   selector: 'app-accept-invite',
@@ -205,6 +211,12 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
             subtitle="You can now manage the arena on this dashboard."
           >
             <p role="status" class="sr-only">Invitation accepted.</p>
+            @if (otherLogin(); as other) {
+              <p class="text-sm leading-[1.45] text-muted">
+                {{ other }} is signed in to the dashboard in this browser. Opening the dashboard
+                signs them out here and signs you in.
+              </p>
+            }
             <button mat-flat-button type="button" class="arena-cta" (click)="openDashboard()">
               Open dashboard
             </button>
@@ -216,6 +228,10 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
           >
             <p role="status" class="text-sm leading-[1.45]">
               Sign in on the staff app with {{ email() }} and your password.
+            </p>
+            <p class="text-sm leading-[1.45] text-muted">
+              Staff run the floor in the 404 Arena staff app; this dashboard is for owners and
+              managers.
             </p>
             <button mat-flat-button type="button" class="arena-cta" (click)="done()">Done</button>
           </app-auth-card>
@@ -229,9 +245,9 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
               Try again
             </button>
           }
-          @if (session.signedIn()) {
+          @if (email()) {
             <button mat-stroked-button type="button" class="arena-cta" (click)="switchAccount()">
-              Sign out
+              Sign in as someone else
             </button>
           } @else {
             <p class="text-sm text-muted"><a routerLink="/sign-in">Go to sign in</a></p>
@@ -248,7 +264,8 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
 })
 export class AcceptInvite {
   private readonly api = inject(AuthApi);
-  protected readonly session = inject(Session);
+  private readonly invitee = inject(InviteeAuth);
+  private readonly session = inject(Session);
   private readonly arena = inject(ArenaContext);
   private readonly router = inject(Router);
   private readonly location = inject(Location);
@@ -272,7 +289,13 @@ export class AcceptInvite {
   protected readonly result = signal<AcceptedInvite | null>(null);
   /** The joined login may use this dashboard (owner level); otherwise it is floor staff. */
   protected readonly dashboard = signal(false);
-  protected readonly email = computed(() => this.session.user()?.email ?? '');
+  /** The invitee signed in on this page (InviteeAuth), not the dashboard's login. */
+  protected readonly email = signal('');
+  /** Someone else signed in to the dashboard in this browser (named before it is replaced). */
+  protected readonly otherLogin = computed(() => {
+    const other = this.session.user()?.email ?? '';
+    return other && other !== this.email() ? other : '';
+  });
 
   protected readonly signInModel = signal({ email: '', password: '' });
   protected readonly signInForm = form(this.signInModel, (p) => {
@@ -311,6 +334,7 @@ export class AcceptInvite {
     };
     // The one-time token (and any session tokens) must not stay in the address bar or history.
     this.location.replaceState('/accept-invite');
+    this.invitee.begin();
     void this.start();
   }
 
@@ -326,8 +350,7 @@ export class AcceptInvite {
     }
     if (this.link.access && this.link.refresh) {
       try {
-        await this.api.signInFromLink(this.link.access, this.link.refresh);
-        await this.session.refresh();
+        this.email.set((await this.invitee.fromLink(this.link.access, this.link.refresh)).email);
       } catch (e) {
         const err = toAppError(e);
         if (err.code === 'network') {
@@ -342,8 +365,8 @@ export class AcceptInvite {
       this.step.set(this.link.type === 'invite' ? 'password' : 'confirm');
       return;
     }
-    await this.session.ready;
-    this.step.set(this.session.signedIn() ? 'confirm' : 'sign-in');
+    // No link session: the invitee signs in here (whoever the dashboard is signed in as).
+    this.step.set('sign-in');
   }
 
   protected async signIn(event: Event): Promise<void> {
@@ -357,8 +380,7 @@ export class AcceptInvite {
     this.busy.set(true);
     this.error.set('');
     try {
-      await this.api.signIn(address.trim().toLowerCase(), password);
-      await this.session.refresh();
+      this.email.set((await this.invitee.signIn(address.trim().toLowerCase(), password)).email);
     } catch (e) {
       const err = toAppError(e);
       this.error.set(
@@ -386,7 +408,7 @@ export class AcceptInvite {
       this.busy.set(true);
       this.error.set('');
       try {
-        await this.api.setPassword(password);
+        await this.invitee.setPassword(password);
       } catch (e) {
         this.error.set(toAppError(e).message);
         this.busy.set(false);
@@ -399,44 +421,70 @@ export class AcceptInvite {
     await this.accept();
   }
 
+  /**
+   * After a failure the invitee may still be signed in (account made, accept refused or not
+   * reached): accepting again is safe — accept_invite applies once, a used link says so.
+   */
   protected async retry(): Promise<void> {
-    if (this.session.signedIn()) await this.accept();
+    if (this.invitee.account()) await this.accept();
     else await this.start();
   }
 
-  /** Signs out of the wrong (or someone else's) login and offers to sign in as the invitee. */
+  /** Ends the invitee sign-in on this page (the wrong login) and asks for the invited one. */
   protected async switchAccount(): Promise<void> {
-    await this.api.signOut();
-    await this.session.refresh();
+    await this.invitee.end();
+    this.email.set('');
     this.error.set('');
     this.step.set('sign-in');
   }
 
+  /**
+   * An owner-level invitee chose to manage the arena here: their sign-in becomes this browser's
+   * dashboard sign-in (replacing anyone else's, as the page said), then the dashboard opens.
+   */
   protected async openDashboard(): Promise<void> {
     const joined = this.result();
+    const tokens = this.invitee.tokens();
+    this.busy.set(true);
+    try {
+      if (tokens) {
+        await this.api.signInFromLink(tokens.accessToken, tokens.refreshToken);
+        await this.session.refresh();
+        await this.arena.load(true);
+      }
+    } catch (e) {
+      this.fail(toAppError(e).message, true);
+      return;
+    } finally {
+      this.busy.set(false);
+    }
     if (joined) this.arena.select(joined.arenaId);
     await this.router.navigateByUrl('/');
   }
 
-  /** Staff are done here: they work on the staff app, so leave the dashboard signed out. */
+  /**
+   * Staff are done here: they work on the staff app. Their sign-in on this page ends; whoever is
+   * signed in to the dashboard in this browser (the owner) is back where they were.
+   */
   protected async done(): Promise<void> {
-    await this.session.signOut();
+    await this.invitee.end();
+    await this.router.navigateByUrl(this.session.signedIn() ? '/' : '/sign-in');
   }
 
   private async accept(): Promise<void> {
     this.step.set('working');
     this.error.set('');
     try {
-      const joined = await this.api.acceptInvite(this.inviteId, this.token);
+      const joined = await this.invitee.accept(this.inviteId, this.token);
       this.result.set(joined);
+      // Who may use the dashboard is the server's answer (the invitee's own memberships).
+      let manages = joined.role === 'owner';
       try {
-        await this.arena.load(true);
+        manages = manages || (await this.invitee.canManage(joined.arenaId));
       } catch {
         // Not readable right now: decide by the invitation's role.
       }
-      this.dashboard.set(
-        joined.role === 'owner' || this.arena.arenas().some((a) => a.id === joined.arenaId),
-      );
+      this.dashboard.set(manages);
       this.step.set('done');
     } catch (e) {
       const err = toAppError(e);

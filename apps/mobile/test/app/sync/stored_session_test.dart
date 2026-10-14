@@ -137,6 +137,24 @@ void main() {
     await b.client.dispose();
   }, timeout: const Timeout(Duration(minutes: 1)));
 
+  test('Auth never answers (captive or very weak network): the sign-in is '
+      'kept and the start goes offline instead of spinning', () async {
+    final hang = Completer<http.Response>();
+    final b = _Backend(() => hang.future);
+    await b.restore(accessExpiry: past);
+    expect(
+      await checkStoredSession(
+        b.client.auth,
+        timeout: const Duration(milliseconds: 200),
+      ),
+      StoredSession.offline,
+    );
+    expect(b.client.auth.currentSession, isNotNull);
+    // The refresh lands late (in the app it carries on in the background).
+    hang.complete(_json(200, _session(_jwt(future), 'rotated-refresh-token')));
+    await b.client.dispose();
+  }, timeout: const Timeout(Duration(minutes: 1)));
+
   test(
     'expired but refreshable: refreshed once, then called as the user',
     () async {

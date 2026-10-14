@@ -1,4 +1,5 @@
 import { formatRupees } from '../../../shared/money/rupees.pipe';
+import { BillingPolicy } from './billing-policy';
 
 export type DurationModel = 'hourly' | 'unit' | 'flat_hourly';
 export type Band = 'standard' | 'happy';
@@ -43,10 +44,25 @@ export interface BusinessHours {
   readonly happy: WeekWindows;
 }
 
+/**
+ * A day off the regular calendar (server: holidays). Happy hour never applies on it; `closed`
+ * marks the arena shut all day. Part of the price list, like the hours.
+ */
+export interface Holiday {
+  /** The IST calendar date, "2026-11-08" (one holiday per day). */
+  readonly day: string;
+  readonly name: string;
+  readonly closed: boolean;
+}
+
 export interface PricingData {
   readonly types: readonly StationType[];
   readonly rates: readonly Rate[];
   readonly hours: BusinessHours;
+  /** Ordered by day. */
+  readonly holidays: readonly Holiday[];
+  /** The arena's billing rules (the server's defaults until it saves its own). */
+  readonly policy: BillingPolicy;
 }
 
 /** What the type dialog sends (activity.upsert). */
@@ -212,6 +228,29 @@ export function summarizeWindows(windows: WeekWindows): string {
     i = j + 1;
   }
   return parts.join(', ');
+}
+
+const holidayDay = new Intl.DateTimeFormat('en-IN', {
+  weekday: 'short',
+  day: 'numeric',
+  month: 'short',
+  year: 'numeric',
+  timeZone: 'UTC',
+});
+
+/** "Sun, 8 Nov 2026" for a holiday's calendar date (already an IST date: no zone shift). */
+export function formatHolidayDay(day: string): string {
+  const parts = holidayDay.formatToParts(new Date(`${day}T00:00:00Z`));
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    parts.find((p) => p.type === type)?.value ?? '';
+  return `${part('weekday')}, ${part('day')} ${part('month')} ${part('year')}`;
+}
+
+/** A real calendar date written "YYYY-MM-DD". */
+export function isCalendarDay(day: string): boolean {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) return false;
+  const at = new Date(`${day}T00:00:00Z`);
+  return !Number.isNaN(at.getTime()) && at.toISOString().slice(0, 10) === day;
 }
 
 /** A code suggestion from a name: "PlayStation 5" → "PLAYSTATION5" (12 max). */

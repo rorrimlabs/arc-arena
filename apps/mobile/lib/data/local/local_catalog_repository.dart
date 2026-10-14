@@ -171,13 +171,17 @@ class LocalCatalogRepository implements CatalogRepository {
   Future<List<GameOnResource>> gamesForResource(String resourceId) async {
     final games = await this.games(activeOnly: true);
     final compat = await compatibility();
-    final statusByGame = <String, GameAvailability>{
+    final byGame = <String, GameResource>{
       for (final c in compat)
-        if (c.resourceId == resourceId) c.gameId: c.status,
+        if (c.resourceId == resourceId) c.gameId: c,
     };
     return [
       for (final g in games)
-        (game: g, status: statusByGame[g.id] ?? GameAvailability.notInstalled),
+        (
+          game: g,
+          status: byGame[g.id]?.status ?? GameAvailability.notInstalled,
+          notes: byGame[g.id]?.notes,
+        ),
     ];
   }
 
@@ -224,6 +228,11 @@ class LocalCatalogRepository implements CatalogRepository {
   @override
   Future<Game> upsertGame(Game game) async {
     await _db.transaction(() async {
+      // The active flag this device held before the edit: the server refuses
+      // the edit (stale) instead of flipping back an archive or restore made
+      // elsewhere meanwhile.
+      final before = await (_db.select(_db.games)..where((t) => t.id.equals(game.id)))
+          .getSingleOrNull();
       await _db.into(_db.games).insertOnConflictUpdate(GamesCompanion(
             id: Value(game.id),
             name: Value(game.name),
@@ -244,6 +253,7 @@ class LocalCatalogRepository implements CatalogRepository {
         'player_mode': game.playerMode.code,
         'max_local_players': game.maxLocalPlayers,
         'active': game.active,
+        if (before != null) 'base_active': before.active,
       });
     });
     return (await gameById(game.id))!;

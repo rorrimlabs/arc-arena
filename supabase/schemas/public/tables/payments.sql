@@ -1,10 +1,12 @@
 -- payments — append-only money in (payments) and out (refunds) for a single session
 --
--- Written only by op_payment (scope single), which also recomputes
--- sessions.payment_status. Rules: payments positive, refunds negative with a
+-- Written only by op_payment (scope single; it also recomputes
+-- sessions.payment_status) and op_payment_correct. Rules: payments positive, refunds negative with a
 -- reason (check constraints); refunds need the discount permission; once a bill
 -- is final, payments may not exceed it and refunds may not exceed what was
--- collected (0016, parent session row locked). No payment on a voided session.
+-- collected (0016, parent session row locked). No payment on a voided session; a
+-- refund is allowed (money taken before the void can be given back).
+-- op_payment_correct moves money between methods as a refund + payment pair.
 -- The device-generated id is the primary key, so a re-sent payment cannot double.
 create table "public"."payments" (
   "id"           uuid                     not null default gen_random_uuid(),

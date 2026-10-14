@@ -23,6 +23,7 @@ class CloudBinding {
     required this.signOut,
     required this.changePassword,
     this.realtime,
+    this.switchArena,
   });
 
   final String arenaId;
@@ -42,6 +43,11 @@ class CloudBinding {
   /// Online-only: replace the signed-in person's own password, so a login the
   /// owner set up becomes credentials only that person knows.
   final Future<void> Function(String newPassword) changePassword;
+
+  /// Closes this arena on the device and shows the arena list, keeping the
+  /// sign-in. Null when this login works in only one arena (the app reopens
+  /// the last arena by itself, so this is the way to another one).
+  final Future<void> Function()? switchArena;
 }
 
 /// Overridden in cloud mode; null in local-only mode.

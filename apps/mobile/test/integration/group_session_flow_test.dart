@@ -182,4 +182,21 @@ void main() {
     );
     expect(timer.remaining(atEnd), Duration.zero);
   });
+
+  test('a group waive needs a reason; with one the group ends waived', () async {
+    final created = await actions.create(draft());
+    expect(created.isOk, isTrue, reason: created.failureOrNull?.display);
+    clock.advance(const Duration(hours: 1));
+    final active = (await groups.activeGroups()).single;
+
+    final refused = await actions.end(active, markWaived: true, waiveReason: ' ');
+    expect(refused.failureOrNull?.code, 'waive_reason_required');
+    expect((await groups.activeGroups()), hasLength(1),
+        reason: 'the group keeps running');
+
+    final waived =
+        await actions.end(active, markWaived: true, waiveReason: 'Tournament prize');
+    expect(waived.isOk, isTrue, reason: waived.failureOrNull?.display);
+    expect(waived.valueOrNull!.paymentStatus, PaymentStatus.waived);
+  });
 }

@@ -16,7 +16,11 @@ export interface StationInput {
   readonly id: string;
   readonly name: string;
   readonly kind: Station['kind'];
-  readonly status: StationStatus;
+  /**
+   * A new station's status. An edit leaves it out, so a rename made on an old copy never puts a
+   * station back in service or takes it out (that is resource.set_status).
+   */
+  readonly status?: StationStatus;
   readonly sortOrder: number;
   readonly activityCodes: readonly string[];
 }
@@ -111,6 +115,17 @@ export interface Visit {
   readonly endedAt: string | null;
   /** Final bill; null while running or when voided before it ended. */
   readonly billedPaise: number | null;
+}
+
+/**
+ * What still refers to a game, which decides between deleting and archiving it. Read when the
+ * owner asks to delete; game.delete checks again on the server under a lock.
+ */
+export interface GameUsage {
+  /** Stations playing it right now (open session segments and group players). */
+  readonly playingNow: number;
+  /** Session segments, group players and bookings that name it, past or present. */
+  readonly records: number;
 }
 
 /** What game.upsert sends. */

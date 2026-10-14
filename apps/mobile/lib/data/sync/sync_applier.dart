@@ -85,7 +85,7 @@ class SyncApplier {
   @visibleForTesting
   static String? rowKey(String table, Map<String, dynamic> r) =>
       switch (table) {
-        'rates' || 'game_controls' => '$table:${r['id']}',
+        'rates' || 'game_controls' || 'games' || 'activities' => '$table:${r['id']}',
         'holidays' => 'holidays:${r['day']}',
         'game_resources' => 'game_resources:${r['game_id']}:${r['resource_id']}',
         'resource_activities' =>
@@ -634,6 +634,21 @@ class SyncApplier {
             .go();
       case 'game_controls':
         await (_db.delete(_db.gameControls)..where((t) => t.id.equals(id()!)))
+            .go();
+      case 'games':
+        // game.delete removes only a game nothing ever used (a used one is
+        // archived instead), so no session or booking here names it. Its
+        // station statuses and control guide go with it (their own tombstones
+        // follow too, but may land in a later page).
+        await (_db.delete(_db.gameResources)..where((t) => t.gameId.equals(id()!)))
+            .go();
+        await (_db.delete(_db.gameControls)..where((t) => t.gameId.equals(id()!)))
+            .go();
+        await (_db.delete(_db.games)..where((t) => t.id.equals(id()!))).go();
+      case 'activities':
+        // activity.remove deletes only a type nothing ever used; its prices and
+        // station links arrive as their own tombstones.
+        await (_db.delete(_db.activities)..where((t) => t.id.equals(id()!)))
             .go();
       case 'game_resources':
         await (_db.delete(_db.gameResources)

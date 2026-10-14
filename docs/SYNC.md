@@ -146,7 +146,19 @@ side must be reported).
   so it outranks a tombstone for the same key in that page (a delete the same
   or an earlier transaction undid — `game.replace_controls`, a holiday or
   station link removed and re-added). Before 2026-10-12 the tombstone was
-  applied last and wiped the row on every other device.
+  applied last and wiped the row on every other device. Until 2026-10-14 the
+  device ignored `games` and `activities` tombstones, so a game deleted on the
+  dashboard (`game.delete`) or a never-used station type (`activity.remove`)
+  stayed on every device; now both are removed, a deleted game taking its
+  station statuses and control guide with it even if their own tombstones land
+  in a later page.
+* **Games: archive vs delete.** An archived game (`games.active = false`) stays
+  on the device for history but is offered nowhere (new session, change game,
+  group, booking pickers read active games only). A game edit from the device
+  sends `base_active` (the flag it held), so a queued edit never undoes an
+  archive or restore made elsewhere: the server refuses it as `stale` and the
+  device converges on the server's catalog. A station-status save sends only the
+  stations that changed, keeping their notes.
 * **Realtime nudges a pull; polling stays as the fallback.** Both apps join one
   PRIVATE channel per arena, topic `arena:<arena uuid>` (`private: true`; the
   user's JWT is set on the socket before joining). The `realtime.messages`
@@ -223,6 +235,9 @@ server is the referee for devices working on stale numbers.
 |---|---|---|
 | Once a bill is final, payments may only fill it up to the bill (`overpayment`). A running session's advance payments are not capped. A waived bill is unchanged. | `op_payment` wrapper locks the bill, sums payments | `paymentBalanceProblem` (`lib/domain/services/payment_rules.dart`), checked inside the write transaction |
 | A refund may never exceed what was collected (`refund_exceeds_paid`). | same | same |
+| A void needs a reason (`void_reason_required`, 2026-10-14). A voided bill takes no payment (`voided`, checked before the balance) but may be refunded, so money taken before the void can go back. | `op_session_void`, `op_group_void`, `op_payment` | the floor app never voids; refunds only from the dashboard |
+| A waive writes an `audit_log` entry (amount written off, reason). The server accepts a waive without a reason so older builds still end the session; the current floor app refuses to waive without one (`waive_reason_required`). | `op_session_end`, `op_group_end` | `SessionActions.end` / `GroupSessionActions.end`, end sheets |
+| `payment.correct` (dashboard only, Money permission) moves all or part of a payment to another method as a refund + payment pair with a reason; never more than the payment. The device receives the two rows like any payment; they net to zero. | `op_payment_correct` | — |
 | The End sheet collects only what is still due (an advance taken while the session ran is not collected again) and says when the payment did not go in. Take payment books only the balance on a final bill and tells staff the change to return. | — | `end_session_sheet.dart`, `take_payment_sheet.dart` |
 | A `role='owner'` profile always holds every permission and stays active; `staff.update` rewrites it so and answers `adjusted` (the device refetches). An arena can therefore never be left without an owner; removing an owner is an operator action on the database. | `op_staff_update` wrapper | the device reverts to the server row |
 | `add_staff_by_email` cannot overwrite an existing owner's profile (`owner_profile`), refuses unknown permission codes, and must leave someone holding Settings. (Since removed: people join only by invitation — *Auth and roles*.) | redefined | — |
@@ -282,6 +297,25 @@ unsent work stays in that person's database file and goes after they sign in.
   person's profile in that arena only. The person then signs in on the floor
   app with their e-mail and their own password. Owners see pending invites on
   the Users page and can withdraw them.
+* **Both apps must use the same Supabase project.** A login, its invitation and
+  its membership exist only in the project where the invitation was accepted. A
+  staff member invited on one server gets "That e-mail and password don't match a
+  login on this server" from a floor app on the other. Pair them:
+
+  | Server | Dashboard (`apps/admin/`) | Floor app (`apps/mobile/`) |
+  |---|---|---|
+  | Local stack | `npm run dev` (`environment.ts`) | `bash tool/dev_run.sh`, or VS Code "arena_ops (local stack…)" (`dart_define.dev.json`) |
+  | Hosted project | `npm run dev:hosted`, or a production build (`environment.production.ts`) | `dart_define.prod.json` / `dart_define.hosted-dev.json`; every release build |
+
+  On the local stack the dashboard says so on every page, sign-in and invitation
+  pages included ("Local test server …"), and links its mail catcher, where the
+  local stack's invitation e-mails land. The floor app's sign-in screen does not
+  name its server (removed at the owner's request); a debug build prints it in
+  the log. Inviting on the hosted project also needs the invitation migrations
+  (DEPLOY_SUPABASE.md §4a), `staff-admin` deployed, the dashboard's
+  `/accept-invite` and `/reset-password` addresses in Auth → Redirect URLs, and
+  custom SMTP (the built-in sender only mails the Supabase organisation's team
+  members).
 * Removed: `add_member_by_email` / `add_staff_by_email` (they linked an
   existing login without its consent), the owner-set starting password, and
   the floor app's "Add by e-mail" (it now explains that invitations are sent
@@ -304,7 +338,14 @@ unsent work stays in that person's database file and goes after they sign in.
   sign-in is kept and the last arena opens from disk; *sign-in needed* (Auth
   refused the refresh token, the API rejected the token, or the session is
   gone) → cleared locally, sign-in screen; *server refused* (reachable, signed
-  in, refused) → error with retry, sign-in kept.
+  in, refused) → error with retry, sign-in kept. Opening an arena: when
+  `my_arenas` has just reported the membership active but the device's copy of
+  the staff list says off (or lacks the person), the app syncs once and checks
+  again before saying "turned off" (`confirmAccess`, `lib/app/sync/staff_access.dart`).
+  Every message is in plain words (`signInFailureMessage`,
+  `arenaListFailureMessage`, `firstDownloadFailureMessage`): never a raw
+  exception, SQL error or token. A keystore that cannot be read at start means
+  "sign in again", never a crash (`SecureSessionStorage`).
 * **During a shift.** A refresh that fails for lack of network is "offline":
   the engine keeps retrying with backoff and the outbox is kept. Nothing is
   sent without a session. A 42501 counts as "access turned off" only when the
@@ -339,11 +380,30 @@ step failed. The declarative drift check (`supabase db schema declarative sync
 it writes a migration file when there is drift. Each piece can also be run on
 its own, in any order.
 
+**Invitations need the stack's Edge Function runtime.** `supabase start` runs
+it (`config.toml` `[edge_runtime]`), and the dashboard's *Invite user* reaches
+`staff-admin` through it; no extra secret or env file is needed locally (the
+function takes the link base from the dashboard's `Origin`, and the stack's URL
+and keys from the runtime). If the Users page says "The invitation service is
+not running" and the request shows `503 {"message":"name resolution failed"}`,
+the gateway cannot find the runtime's container: `supabase status` lists
+`supabase_edge_runtime_arena_ops` under *Stopped services*. `supabase start` on
+a running stack does not bring it back; run `supabase stop && supabase start`
+(data is kept). It goes missing when a `supabase functions serve` that took it
+over exits, so do not run `functions serve` against this stack by hand;
+`tool/sync_it.sh` uses the stack's runtime and serves its own only when the
+stack has none.
+
 `tool/sync_it.sh` is the cross-app suite, on the LOCAL stack only (it refuses
-anything else). It provisions throw-away `it-*@arena.test` logins (Auth admin
-API with the local stack's service key), an arena via `bootstrap_owner` +
-`_seed_arena_catalog`, joins the staff login by invite → accept, and serves
-the `staff-admin` function locally. Then: a Flutter device listens live while
+anything else), one run at a time (a lock in `supabase/.temp`). It provisions
+throw-away `it-*@arena.test` logins (Auth admin API with the local stack's
+service key), an arena via `bootstrap_owner` + `_seed_arena_catalog`, and joins
+the staff login by invite → accept. Step 0 (`tool/it_invitations.sh`) checks
+the invitation service over HTTP as the dashboard calls it: who may invite,
+input checks, the e-mail, a re-invite replacing the first link, accepting once,
+and two brief outages (the mail catcher, then the database API, each stopped
+and restarted): a failed send is withdrawn and never reported as sent. Then: a
+Flutter device listens live while
 dashboard phase 1 runs (the Angular data layer under `ng test
 --runner-config=vitest.it.config.mts`, Node environment: builds a game and its
 station availability, saves floor options, invites a new person by e-mail and
@@ -351,7 +411,8 @@ accepts from the Mailpit link); the dashboard listens live while the Flutter
 `test/sync/` suite runs (two-device sync, cross-app, private-channel
 authorization, arena isolation); dashboard phase 2 checks that the owner's
 Sales shows the staff's bill with one payment and that another arena's owner
-sees nothing. It cleans up exactly the logins and arenas it created. The specs
+sees nothing. Step 6 checks the stack's function runtime is still up after the
+run. It cleans up exactly the logins and arenas it created. The specs
 (`apps/admin/src/integration/*.it.spec.ts`, `apps/mobile/test/sync/*`) skip
 themselves outside `sync_it.sh`.
 

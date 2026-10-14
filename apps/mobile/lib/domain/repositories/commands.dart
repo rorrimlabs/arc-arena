@@ -117,6 +117,7 @@ class EndSessionCommand {
     required this.charges,
     required this.billedAmountPaise,
     this.markWaived = false,
+    this.waiveReason,
   });
 
   final String sessionId;
@@ -128,6 +129,10 @@ class EndSessionCommand {
 
   /// Complimentary session: billed amount is forgiven (spec §28).
   final bool markWaived;
+
+  /// Why it was waived (the action layer requires one); the server audits it
+  /// with the amount written off.
+  final String? waiveReason;
 }
 
 @immutable

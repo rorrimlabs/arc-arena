@@ -1,6 +1,7 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { LoginScope } from '../../../core/auth/login-scope';
 import { UsersApi } from './users-api';
 import { ArenaUser, NewUser, PendingInvite, UserChange } from './user.models';
 
@@ -27,6 +28,23 @@ export class UsersStore {
   /** userId of a user (or inviteId of an invitation) with a change in flight. */
   readonly saving = signal<string | null>(null);
   private loadedArena: string | null = null;
+  /** Each load's number; only the newest one's answer lands (a switch of arena mid-load). */
+  private latest = 0;
+
+  constructor() {
+    // Sign-out or another login: the people and invitations leave memory; a read in flight does
+    // not land.
+    inject(LoginScope).onEnd(() => {
+      this.latest++;
+      this.loadedArena = null;
+      this.users.set([]);
+      this.invites.set([]);
+      this.loading.set(false);
+      this.loadError.set('');
+      this.invitesError.set('');
+      this.saving.set(null);
+    });
+  }
 
   /** Loads the current arena's users and invitations (again on an arena switch, or forced). */
   async load(force = false): Promise<void> {
@@ -36,16 +54,18 @@ export class UsersStore {
       this.users.set([]);
       this.invites.set([]);
     }
+    const call = ++this.latest;
     this.loading.set(true);
     this.loadError.set('');
     try {
       const [users] = await Promise.all([this.api.list(arenaId), this.loadInvites(arenaId)]);
+      if (call !== this.latest) return;
       this.users.set(users);
       this.loadedArena = arenaId;
     } catch (e) {
-      this.loadError.set(toAppError(e).message);
+      if (call === this.latest) this.loadError.set(toAppError(e).message);
     } finally {
-      this.loading.set(false);
+      if (call === this.latest) this.loading.set(false);
     }
   }
 

@@ -38,6 +38,19 @@ class ReminderPlan {
   final bool enableVibration;
   final bool playSound;
 
+  /// The same notification at another instant.
+  ReminderPlan at(DateTime fireAtUtc) => ReminderPlan(
+        id: id,
+        bookingId: bookingId,
+        sessionId: sessionId,
+        fireAtUtc: fireAtUtc,
+        title: title,
+        body: body,
+        channelId: channelId,
+        enableVibration: enableVibration,
+        playSound: playSound,
+      );
+
   @override
   bool operator ==(Object other) =>
       other is ReminderPlan &&

@@ -2,7 +2,8 @@ import { A11yModule } from '@angular/cdk/a11y';
 import { CdkMenu, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
 import { Component, computed, effect, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { ArenaContext } from '../arena/arena-context';
+import { LocalServerNote } from '../../shared/local-server-note/local-server-note';
+import { ACCESS_HOME, ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
 import { RealtimeSync } from '../sync/realtime-sync';
 import { Layout } from './layout';
@@ -19,6 +20,7 @@ import { NAV_GROUPS } from './nav';
     CdkMenuTrigger,
     CdkMenu,
     CdkMenuItemRadio,
+    LocalServerNote,
   ],
   templateUrl: './shell.html',
   host: { class: 'flex h-dvh overflow-hidden bg-bg text-fg' },
@@ -49,10 +51,19 @@ export class Shell {
   );
 
   constructor() {
-    // Signed out from elsewhere (another tab, or the refresh token was rejected): leave the
-    // dashboard instead of keeping the previous login's figures on screen.
     effect(() => {
-      if (!this.session.user()) void this.router.navigate(['/sign-in']);
+      // Signed out from elsewhere (another tab, or the refresh token was rejected): leave the
+      // dashboard instead of keeping the previous login's figures on screen.
+      if (!this.session.user()) {
+        void this.router.navigate(['/sign-in']);
+      } else if (!this.arenaContext.loaded()) {
+        // Another login signed in (in another tab): open the dashboard for it, through the guards.
+        void this.router.navigateByUrl('/');
+      } else if (this.arenaContext.access() !== 'owner') {
+        // Access to every arena it managed was turned off or narrowed to floor work (live staff
+        // change): leave, as the arena guard would on a reload (never to Create Arena for staff).
+        void this.router.navigateByUrl(ACCESS_HOME[this.arenaContext.access()]);
+      }
     });
   }
 }

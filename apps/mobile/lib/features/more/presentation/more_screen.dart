@@ -37,6 +37,34 @@ class MoreScreen extends ConsumerWidget {
     ));
   }
 
+  /// Before closing this arena's database with [pending] changes unsent:
+  /// nothing is lost — they stay in this person's database on this device and
+  /// go [when] — but they reach no one until then.
+  Future<bool> _okToLeave(
+    BuildContext context,
+    int pending, {
+    required String when,
+    required String stay,
+    required String leave,
+  }) async {
+    if (pending == 0) return true;
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (c) => AlertDialog(
+        title: const Text('Changes not sent yet'),
+        content: Text('$pending change(s) have not reached the server. They '
+            'stay on this device and are sent $when.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(c, false), child: Text(stay)),
+          TextButton(
+              onPressed: () => Navigator.pop(c, true), child: Text(leave)),
+        ],
+      ),
+    );
+    return go == true;
+  }
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final arena = context.arena;
@@ -110,6 +138,20 @@ class MoreScreen extends ConsumerWidget {
                   subtitle: '${cloud.arenaName} · what is waiting or refused',
                   onTap: () => _push(context, const SyncScreen()),
                 ),
+              if (cloud?.switchArena case final switchArena?)
+                ArenaListRow(
+                  icon: Icons.swap_horiz_rounded,
+                  title: 'Switch arena',
+                  subtitle: 'Leave ${cloud!.arenaName} for another arena',
+                  onTap: () async {
+                    if (await _okToLeave(context, pending,
+                        when: 'the next time you open ${cloud.arenaName} here',
+                        stay: 'Stay here',
+                        leave: 'Switch')) {
+                      await switchArena();
+                    }
+                  },
+                ),
               if (cloud != null)
                 ArenaListRow(
                   icon: Icons.password_rounded,
@@ -140,28 +182,12 @@ class MoreScreen extends ConsumerWidget {
                     ? 'Lock this device'
                     : 'Sign out of ${cloud.email}',
                 onTap: () async {
-                  if (cloud != null && pending > 0) {
-                    // Nothing is lost — the changes stay in this person's
-                    // database on this device and go next time they sign in
-                    // here — but they will not reach anyone until then.
-                    final go = await showDialog<bool>(
-                      context: context,
-                      builder: (c) => AlertDialog(
-                        title: const Text('Changes not sent yet'),
-                        content: Text('$pending change(s) have not reached the '
-                            'server. They stay on this device and are sent the '
-                            'next time you sign in here.'),
-                        actions: [
-                          TextButton(
-                              onPressed: () => Navigator.pop(c, false),
-                              child: const Text('Stay signed in')),
-                          TextButton(
-                              onPressed: () => Navigator.pop(c, true),
-                              child: const Text('Sign out')),
-                        ],
-                      ),
-                    );
-                    if (go != true) return;
+                  if (cloud != null &&
+                      !await _okToLeave(context, pending,
+                          when: 'the next time you sign in here',
+                          stay: 'Stay signed in',
+                          leave: 'Sign out')) {
+                    return;
                   }
                   if (cloud != null) {
                     cloud.signOut();

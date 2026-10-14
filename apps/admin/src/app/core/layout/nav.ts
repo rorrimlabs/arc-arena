@@ -1,4 +1,7 @@
-/** Side-nav destinations, in the design's order (`const NAV` in design/admin.html). */
+/**
+ * Side-nav destinations, in the design's order (`const NAV` in design/admin.html), plus
+ * Controllers (not in the design) after Stations.
+ */
 export interface NavItem {
   /** Top-level route path. */
   readonly path: string;
@@ -24,6 +27,7 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     heading: 'Configure',
     items: [
       { path: 'stations', label: 'Stations', icon: 'sports_esports' },
+      { path: 'controllers', label: 'Controllers', icon: 'videogame_asset' },
       { path: 'pricing', label: 'Pricing', icon: 'sell' },
       { path: 'games', label: 'Games', icon: 'stadia_controller' },
     ],

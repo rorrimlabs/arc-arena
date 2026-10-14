@@ -3,6 +3,7 @@
 /// preferences, so another app or a backup of app data cannot lift it.
 library;
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
@@ -26,19 +27,40 @@ class SecureSessionStorage extends LocalStorage {
   /// Drops a sign-in stored under the old shared key: which backend it belongs
   /// to is unknown, so the person signs in once more instead of replaying it.
   @override
-  Future<void> initialize() => _storage.delete(key: _legacyKey);
+  Future<void> initialize() => _guard(() => _storage.delete(key: _legacyKey));
 
   @override
-  Future<bool> hasAccessToken() async =>
-      (await _storage.read(key: _key)) != null;
+  Future<bool> hasAccessToken() async => (await accessToken()) != null;
 
+  /// The stored sign-in, or null. A keystore that cannot be read must not stop
+  /// the app at start: the person is asked to sign in. The entry is NOT
+  /// deleted — the error may be passing (iOS refuses Keychain reads while the
+  /// device is locked) — and the next sign-in overwrites it anyway.
   @override
-  Future<String?> accessToken() => _storage.read(key: _key);
+  Future<String?> accessToken() async {
+    try {
+      return await _storage.read(key: _key);
+    } on Object catch (e) {
+      debugPrint('stored sign-in unreadable (${e.runtimeType}); asking to sign in');
+      return null;
+    }
+  }
 
+  /// Not kept if the keystore refuses it: the sign-in still works until the
+  /// app closes, and the next start asks for it again.
   @override
   Future<void> persistSession(String persistSessionString) =>
-      _storage.write(key: _key, value: persistSessionString);
+      _guard(() => _storage.write(key: _key, value: persistSessionString));
 
   @override
-  Future<void> removePersistedSession() => _storage.delete(key: _key);
+  Future<void> removePersistedSession() =>
+      _guard(() => _storage.delete(key: _key));
+
+  static Future<void> _guard(Future<void> Function() action) async {
+    try {
+      await action();
+    } on Object catch (e) {
+      debugPrint('keystore: ${e.runtimeType}');
+    }
+  }
 }

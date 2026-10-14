@@ -123,8 +123,14 @@ export class StationDialog {
       this.error.set('Use up to 40 characters');
       return;
     }
-    if (this.floor.stations().some((s) => s.name.toLowerCase() === name.toLowerCase())) {
-      this.error.set(`${name} already exists`);
+    const taken = this.floor.stations().find((s) => s.name.toLowerCase() === name.toLowerCase());
+    if (taken) {
+      // A removed station keeps its name (past bills use it): bring that one back instead.
+      this.error.set(
+        taken.status === 'disabled'
+          ? `${name} was removed · restore it from Removed below the station list`
+          : `${name} already exists`,
+      );
       return;
     }
     const id = crypto.randomUUID();

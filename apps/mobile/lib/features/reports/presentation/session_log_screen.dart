@@ -1,6 +1,8 @@
+import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/reports/report_models.dart';
 import 'package:arena_ops/features/reports/application/reports_providers.dart';
 import 'package:arena_ops/features/reports/presentation/session_history_screen.dart';
@@ -74,12 +76,19 @@ class _SessionLogScreenState extends ConsumerState<SessionLogScreen> {
 }
 
 /// Reuses the history list the Reports tab shows, so both read identically.
-class _Body extends StatelessWidget {
+/// Bill amounts only for those who handle money (bill, money or reports), the
+/// same people the server lets read payment rows.
+class _Body extends ConsumerWidget {
   const _Body({required this.report});
   final ArenaReport report;
 
   @override
-  Widget build(BuildContext context) {
-    return SessionHistoryBody(report: report);
+  Widget build(BuildContext context, WidgetRef ref) {
+    final user = ref.watch(authControllerProvider);
+    final showMoney = user != null &&
+        (user.can(Permission.bill) ||
+            user.can(Permission.money) ||
+            user.can(Permission.reports));
+    return SessionHistoryBody(report: report, showMoney: showMoney);
   }
 }

@@ -192,6 +192,22 @@ class SyncEngine {
     _debounce?.cancel();
   }
 
+  /// The app is going to the background: stop polling, but first send what is
+  /// waiting — a session started just before the phone was locked must reach
+  /// the other devices now, not when this one is opened again. One pass at
+  /// most; if it cannot finish (offline, or the OS suspends the app) the
+  /// changes stay in the outbox for [start] on resume.
+  Future<void> pause() async {
+    final nudged = _debounce?.isActive ?? false;
+    stop();
+    try {
+      await _running;
+      if (nudged || await _count(OutboxStatus.pending) > 0) await syncNow();
+    } on Object catch (_) {
+      // The database is closing (sign-out): nothing left to send from here.
+    }
+  }
+
   Future<void> dispose() async {
     stop();
     await _running;

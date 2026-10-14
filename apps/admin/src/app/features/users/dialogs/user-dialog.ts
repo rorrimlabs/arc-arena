@@ -12,6 +12,7 @@ import {
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
 import { toAppError } from '../../../core/auth/auth-api';
+import { LOCAL_SERVER } from '../../../core/supabase/local-server';
 import { UsersStore } from '../data/users-store';
 import { ArenaUser, DEFAULT_STAFF_PERMS, INVITE_DAYS, UserRole } from '../data/user.models';
 import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
@@ -110,6 +111,8 @@ export class UserDialog {
   protected readonly data = inject<UserDialogData>(MAT_DIALOG_DATA);
   protected readonly ref = inject<MatDialogRef<UserDialog, UserDialogResult>>(MatDialogRef);
   private readonly store = inject(UsersStore);
+  /** On the local stack an invitation is mailed to its mail catcher, never to the real inbox. */
+  private readonly localServer = inject(LOCAL_SERVER);
 
   protected readonly editing = !!this.data.user;
   protected readonly role = signal<UserRole>('staff');
@@ -160,7 +163,9 @@ export class UserDialog {
         perms: role === 'owner' ? [] : DEFAULT_STAFF_PERMS,
       });
       this.ref.close({
-        snack: `Invitation sent to ${email}${role === 'owner' ? ' as an owner' : ''}`,
+        snack:
+          `Invitation sent to ${email}${role === 'owner' ? ' as an owner' : ''}` +
+          (this.localServer ? ' on the local test server: the e-mail is in the local mailbox' : ''),
       });
     } catch (e) {
       this.error.set(toAppError(e).message);

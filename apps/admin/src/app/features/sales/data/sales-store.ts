@@ -1,46 +1,63 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
-import { Clock } from '../../../core/time/clock';
-import { SalesApi } from './sales-api';
-import { Bill, SalesRange, rangeBounds } from './sale.models';
+import { LoginScope } from '../../../core/auth/login-scope';
+import { MethodCorrection, PaymentEntry, RefundEntry, SalesApi } from './sales-api';
+import { Bill, SalesPeriod, periodBounds } from './sale.models';
 
 /**
- * The current arena's closed bills for one date range. A void goes to the server first; the list
- * and any open bill then reload to show what the server recorded.
+ * The current arena's closed bills for one period (IST days). Every write goes to the server
+ * first; the list and any open bill then reload to show what the server recorded.
  */
 @Service()
 export class SalesStore {
   private readonly api = inject(SalesApi);
   private readonly arena = inject(ArenaContext);
-  private readonly clock = inject(Clock);
 
   readonly bills = signal<readonly Bill[]>([]);
   readonly byId = computed(() => new Map(this.bills().map((b) => [b.id, b])));
   readonly loading = signal(false);
   readonly loadError = signal('');
+  /** When the list last came from the server (null before the first load). */
+  readonly loadedAt = signal<Date | null>(null);
   /** Bumped after a change so an open bill's detail reloads. */
   readonly revision = signal(0);
-  /** Arena + range + its start: a new day (or arena, or range) loads again. */
+  /** Arena + period: another day (or arena, or period) loads again. */
   private loadedKey: string | null = null;
-  private currentRange: SalesRange = 'today';
+  private current: SalesPeriod | null = null;
   private latest = 0;
 
-  async load(range: SalesRange, force = false): Promise<void> {
-    this.currentRange = range;
+  constructor() {
+    // Sign-out or another login: the bills leave memory; a read in flight does not land.
+    inject(LoginScope).onEnd(() => {
+      this.latest++;
+      this.loadedKey = null;
+      this.current = null;
+      this.bills.set([]);
+      this.loading.set(false);
+      this.loadError.set('');
+      this.loadedAt.set(null);
+    });
+  }
+
+  async load(period: SalesPeriod, force = false): Promise<void> {
+    this.current = period;
     const arenaId = this.arena.current().id;
     if (!arenaId) return;
-    const { from, to } = rangeBounds(range, this.clock.now());
-    const key = `${arenaId}|${range}|${from.toISOString()}`;
+    const { from, to } = periodBounds(period);
+    const key = `${arenaId}|${period.first}|${period.last}`;
     if (!force && key === this.loadedKey) return;
     const call = ++this.latest;
-    if (!this.loadedKey?.startsWith(`${arenaId}|${range}|`)) this.bills.set([]);
+    if (this.loadedKey !== key) this.bills.set([]);
     this.loadedKey = key;
     this.loading.set(true);
     this.loadError.set('');
     try {
       const bills = await this.api.list(arenaId, from, to);
-      if (call === this.latest) this.bills.set(bills);
+      if (call === this.latest) {
+        this.bills.set(bills);
+        this.loadedAt.set(new Date());
+      }
     } catch (e) {
       if (call === this.latest) {
         this.loadError.set(toAppError(e).message);
@@ -55,15 +72,37 @@ export class SalesStore {
     return this.api.get(this.arena.current().id, id);
   }
 
-  async void(bill: Bill, reason: string, range: SalesRange): Promise<void> {
-    await this.api.void(this.arena.current().id, bill, reason);
-    this.revision.update((n) => n + 1);
-    await this.load(range, true);
+  void(bill: Bill, reason: string): Promise<void> {
+    return this.write(() => this.api.void(this.arena.current().id, bill, reason));
   }
 
+  recordPayment(bill: Bill, entry: PaymentEntry): Promise<void> {
+    return this.write(() => this.api.recordPayment(this.arena.current().id, bill, entry));
+  }
+
+  refund(bill: Bill, entry: RefundEntry): Promise<void> {
+    return this.write(() => this.api.refund(this.arena.current().id, bill, entry));
+  }
+
+  correct(bill: Bill, correction: MethodCorrection): Promise<void> {
+    return this.write(() => this.api.correct(this.arena.current().id, bill, correction));
+  }
+
+  /**
+   * A live update (another device voided or took payment on a bill), the Refresh button or a
+   * reconnect: reloads the list and bumps `revision`, so an open bill's detail reads it again
+   * instead of showing the old state.
+   */
   async refresh(): Promise<void> {
-    if (this.loadedKey) {
-      await this.load(this.currentRange, true);
+    if (this.current && (this.loadedKey || this.loadError())) {
+      this.revision.update((n) => n + 1);
+      await this.load(this.current, true);
     }
+  }
+
+  private async write(change: () => Promise<void>): Promise<void> {
+    await change();
+    this.revision.update((n) => n + 1);
+    if (this.current) await this.load(this.current, true);
   }
 }

@@ -59,16 +59,43 @@ export function ageTone(age: AgeRating): PillTone {
   return age >= 18 ? 'age18' : age >= 16 ? 'age16' : 'info';
 }
 
-const PLAYER_MODES: Readonly<Record<Game['playerMode'], string>> = {
-  single: 'Single player',
-  local: 'Local multiplayer',
-  online: 'Online',
-  both: 'Local and online',
-};
+/** games.player_mode values, as the dialog offers them. */
+export const PLAYER_MODES: readonly { readonly key: Game['playerMode']; readonly label: string }[] =
+  [
+    { key: 'single', label: 'Single player' },
+    { key: 'local', label: 'Local multiplayer' },
+    { key: 'online', label: 'Online' },
+    { key: 'both', label: 'Local and online' },
+  ];
+
+/** games.max_local_players is 1-8 (players_exceeded above it on the floor). */
+export const MAX_PLAYERS = 8;
 
 export function playerModeLabel(g: Game): string {
-  const mode = PLAYER_MODES[g.playerMode] ?? g.playerMode;
+  const mode = PLAYER_MODES.find((m) => m.key === g.playerMode)?.label ?? g.playerMode;
   return g.maxLocalPlayers > 1 ? `${mode} · up to ${g.maxLocalPlayers}` : mode;
+}
+
+/** The library order: available games first, archived ones after, each by name. */
+export function libraryOrder(games: readonly Game[]): Game[] {
+  return [...games].sort(
+    (a, b) => Number(!a.active) - Number(!b.active) || a.name.localeCompare(b.name),
+  );
+}
+
+/**
+ * What a delete would do, from the game's usage: delete it for good, or explain why not (and
+ * offer to archive it when it is still available). The server re-checks under a lock.
+ */
+export type DeletePlan =
+  | { readonly kind: 'delete' }
+  | { readonly kind: 'in_play' }
+  | { readonly kind: 'history'; readonly records: number };
+
+export function deletePlan(usage: { playingNow: number; records: number }): DeletePlan {
+  if (usage.playingNow > 0) return { kind: 'in_play' };
+  if (usage.records > 0) return { kind: 'history', records: usage.records };
+  return { kind: 'delete' };
 }
 
 export function platformLabel(g: Game): string {

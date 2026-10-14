@@ -11,6 +11,12 @@ export interface SupabaseConfig {
 
 const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '0.0.0.0', '::1', '[::1]']);
 
+/** A Supabase stack on this computer or its local network, never a hosted project. */
+export function isLocalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return LOCAL_HOSTS.has(host) || host.endsWith('.local');
+}
+
 /**
  * Why this build cannot be used as configured, worded for whoever deploys it; null when it is
  * fine. Only a publishable key (`sb_publishable_…`) or a legacy JWT with role `anon` may reach a
@@ -38,7 +44,7 @@ export function configProblem(config: SupabaseConfig): string | null {
       return `A production build must reach Supabase over https. Fix supabaseUrl in ${file}.`;
     }
     const host = url.hostname.toLowerCase();
-    if (LOCAL_HOSTS.has(host) || host.endsWith('.local')) {
+    if (isLocalHost(host)) {
       return `This production build points at a local Supabase stack (${host}). Set the hosted project's URL in ${file}.`;
     }
   }
@@ -94,9 +100,59 @@ export class Supabase {
     if (this.configProblem) return Promise.reject(new Error(this.configProblem));
     this.created ??= import('@supabase/supabase-js').then(({ createClient }) =>
       createClient(environment.supabaseUrl, environment.supabaseKey, {
-        auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+        auth: {
+          persistSession: true,
+          autoRefreshToken: true,
+          detectSessionInUrl: false,
+          storageKey: authStorageKey(environment.supabaseUrl),
+        },
       }),
     );
     return this.created;
   }
+
+  /**
+   * A separate client whose sign-in lives only in this page's memory: never stored, never
+   * refreshed, never shared with other tabs. The invitation page signs the invitee in here, so
+   * accepting an invitation in a browser where an owner is signed in leaves the owner signed in
+   * (the browser's stored session is the dashboard's, and every tab shares it).
+   */
+  async isolatedClient(): Promise<SupabaseClient> {
+    if (this.configProblem) throw new Error(this.configProblem);
+    const { createClient } = await import('@supabase/supabase-js');
+    const memory = new Map<string, string>();
+    return createClient(environment.supabaseUrl, environment.supabaseKey, {
+      auth: {
+        persistSession: false,
+        autoRefreshToken: false,
+        detectSessionInUrl: false,
+        // Its own key and storage: nothing it does reaches the dashboard's stored session.
+        storageKey: 'arenaos-invitee',
+        storage: {
+          getItem: (key) => memory.get(key) ?? null,
+          setItem: (key, value) => void memory.set(key, value),
+          removeItem: (key) => void memory.delete(key),
+        },
+      },
+    });
+  }
+
+  /**
+   * Removes the sign-in stored in this browser (localStorage), for a sign-out the server could
+   * not be told about.
+   */
+  forgetStoredSession(): void {
+    if (this.configProblem) return;
+    const key = authStorageKey(environment.supabaseUrl);
+    try {
+      for (const suffix of ['', '-user', '-code-verifier']) localStorage.removeItem(key + suffix);
+    } catch {
+      // Storage blocked: nothing was stored either.
+    }
+  }
+}
+
+/** supabase-js's own default key, named here so sign-out can clear it (stored sign-ins stay). */
+function authStorageKey(supabaseUrl: string): string {
+  return `sb-${new URL(supabaseUrl).hostname.split('.')[0]}-auth-token`;
 }

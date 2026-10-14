@@ -1,7 +1,8 @@
 -- op_group_end — sync op 'group.end': end an active group and store its final bill.
 --
 -- Permission: bill; plus discount when mark_waived.
--- Payload: group_id, ended_at, billed_amount_paise, mark_waived?, expected_assignment_ids[],
+-- Payload: group_id, ended_at, billed_amount_paise, mark_waived?, waive_reason?,
+--   expected_assignment_ids[],
 --   expected_scheduled_end_at; charges[] {id, assignment_id?, player_number?, charge_index,
 --   band_code, activity_code, resource_id?, controller_count?, segment_start, segment_end,
 --   played_minutes, billed_minutes, unit_minutes, unit_price_paise, amount_paise}.
@@ -11,7 +12,8 @@
 --   started); price_mismatch (total differs from _pr_group_bill, or the charge rows differ from
 --   its keys).
 -- Writes: group_assignments.ended_at, controller_allocations.ended_at, group_charges,
---   group_sessions (completed, actual_ended_at, billed_amount_paise, payment_status). Returns:
+--   group_sessions (completed, actual_ended_at, billed_amount_paise, payment_status), and on a
+--   waive an audit_log row (action waive: billed, paid, written off, reason). Returns:
 --   {payment_status} ('waived', or derived from payments already taken).
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_group_end (
@@ -61,6 +63,17 @@ begin
   update group_sessions set status = 'completed', actual_ended_at = v_ended,
       billed_amount_paise = v_billed, payment_status = v_pay, updated_at = v_now
     where id = v_group;
+  -- A waive writes off what was not paid: audited with the amount and the staff reason
+  -- (waive_reason; optional here so floor builds that do not send it still end the group).
+  if v_waive then
+    insert into audit_log(arena_id, entity_type, entity_id, action, reason, before, after,
+        created_by, created_at)
+      values (p_arena, 'group_session', v_group, 'waive',
+        nullif(btrim(coalesce(p->>'waive_reason', '')), ''),
+        jsonb_build_object('billed_paise', v_billed, 'paid_paise', v_paid),
+        jsonb_build_object('written_off_paise', greatest(coalesce(v_billed, 0) - v_paid, 0)),
+        auth.uid(), v_now);
+  end if;
 
   -- Server-side pricing (0013): re-price the bill from the stored assignments
   -- and refuse the op unless the total AND every charge row match exactly.

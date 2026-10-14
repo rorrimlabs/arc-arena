@@ -23,6 +23,7 @@ import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/domain/repositories/booking_repository.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -169,6 +170,24 @@ void main() {
         expect((await bookingsRepo.getById(b.id))!.resourceId, 'void');
       },
     );
+
+    test('an edit keeps the party name and phone the form does not show',
+        () async {
+      final b = await booked();
+      await (db.update(db.bookings)..where((t) => t.id.equals(b.id))).write(
+        const BookingsCompanion(
+          partyName: Value('Asha + 3'),
+          phone: Value('9800001234'),
+        ),
+      );
+      final r = await actionsFor(floor)
+          .updateBooking(draft(resourceId: 'hex', editingId: b.id));
+      expect(r.isOk, isTrue, reason: r.failureOrNull?.display);
+      final after = (await bookingsRepo.getById(b.id))!;
+      expect(after.resourceId, 'hex');
+      expect(after.partyName, 'Asha + 3');
+      expect(after.phone, '9800001234');
+    });
   });
 
   group('cancelling a booking', () {
@@ -193,6 +212,35 @@ void main() {
         expect(after.reminderStatus, isNot(ReminderStatus.done));
       },
     );
+  });
+
+  group('marking a no-show', () {
+    test('once the start has passed, someone with start can; the slot frees',
+        () async {
+      final b = await booked();
+      clock.set(ist(2026, 10, 2, 19, 20));
+      final r = await actionsFor(floor).markNoShow(b);
+      expect(r.isOk, isTrue, reason: r.failureOrNull?.display);
+      final after = (await bookingsRepo.getById(b.id))!;
+      expect(after.status, BookingStatus.noShow);
+      expect(after.reminderStatus, ReminderStatus.done);
+      expect(await bookingsRepo.upcoming(), isEmpty);
+    });
+
+    test('before the booked start it is refused (cancel instead)', () async {
+      final b = await booked();
+      final r = await actionsFor(floor).markNoShow(b);
+      expect(r.failureOrNull?.code, 'booking_not_started');
+      expect((await bookingsRepo.getById(b.id))!.status, BookingStatus.booked);
+    });
+
+    test('someone without start is refused', () async {
+      final b = await booked();
+      clock.set(ist(2026, 10, 2, 19, 20));
+      final r = await actionsFor(till).markNoShow(b);
+      expect(r.failureOrNull?.code, 'not_permitted');
+      expect((await bookingsRepo.getById(b.id))!.status, BookingStatus.booked);
+    });
   });
 
   group('checking in', () {

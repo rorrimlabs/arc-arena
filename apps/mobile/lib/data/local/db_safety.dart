@@ -12,6 +12,7 @@
 library;
 
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
 import 'package:sqlite3/sqlite3.dart';
@@ -115,12 +116,35 @@ class DbSafety {
   /// [keep] backups are retained, except that the newest backup of each distinct
   /// schema version is never pruned — that is the one that can still be read by
   /// the build it came from.
+  ///
+  /// Runs in a background isolate: the sqlite3 calls (integrity check, counts,
+  /// checkpoint) are synchronous and read the whole file, and on iOS the UI
+  /// isolate runs on the main thread, so doing this inline blocked the app at
+  /// start.
   static Future<DbProtectReport> protect({
     required File dbFile,
     required int appSchemaVersion,
     required Directory backupDir,
     int keep = 10,
     String label = 'arena_ops',
+  }) =>
+      Isolate.run(
+        () => _protect(
+          dbFile: dbFile,
+          appSchemaVersion: appSchemaVersion,
+          backupDir: backupDir,
+          keep: keep,
+          label: label,
+        ),
+        debugName: 'DbSafety.protect',
+      );
+
+  static Future<DbProtectReport> _protect({
+    required File dbFile,
+    required int appSchemaVersion,
+    required Directory backupDir,
+    required int keep,
+    required String label,
   }) async {
     if (!dbFile.existsSync()) {
       return DbProtectReport(

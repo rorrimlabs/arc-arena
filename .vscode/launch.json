@@ -2,6 +2,24 @@
   "version": "0.2.0",
   "configurations": [
     {
+      "name": "arena_ops (local stack: same server as `npm run dev`)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "apps/mobile",
+      "program": "lib/main.dart",
+      "stopOnEntry": false,
+      "toolArgs": ["--dart-define-from-file=dart_define.dev.json"]
+    },
+    {
+      "name": "arena_ops (hosted: same server as `npm run dev:hosted`)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "apps/mobile",
+      "program": "lib/main.dart",
+      "stopOnEntry": false,
+      "toolArgs": ["--dart-define-from-file=dart_define.prod.json"]
+    },
+    {
       "name": "arena_ops (Debug)",
       "request": "launch",
       "type": "dart",

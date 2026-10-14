@@ -2,6 +2,7 @@ import { Component, computed, inject, input, signal } from '@angular/core';
 import { MatFormField } from '@angular/material/form-field';
 import { MatOption, MatSelect, MatSelectChange } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
 import { CompatStatus, Game } from '../../../core/floor/floor.models';
@@ -45,7 +46,7 @@ import { COMPAT_CHOICES, compatLabel, gameStations, playableCount } from '../dat
             <mat-select
               [aria-labelledby]="'compat-' + row.id"
               [value]="row.status"
-              [disabled]="saving() !== null"
+              [disabled]="saving() !== null || !canEdit()"
               (selectionChange)="set(row.id, row.name, row.status, $event)"
             >
               @for (o of row.options; track o.key) {
@@ -68,6 +69,7 @@ import { COMPAT_CHOICES, compatLabel, gameStations, playableCount } from '../dat
 export class GameStations {
   private readonly floor = inject(FloorStore);
   private readonly snack = inject(MatSnackBar);
+  protected readonly canEdit = inject(ArenaContext).canEdit;
 
   readonly game = input.required<Game>();
 

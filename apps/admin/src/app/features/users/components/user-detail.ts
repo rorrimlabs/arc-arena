@@ -4,7 +4,10 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
 import { MatSlideToggle, MatSlideToggleChange } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { Session } from '../../../core/auth/session';
+import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
 import { formatRupees } from '../../../shared/money/rupees.pipe';
@@ -32,7 +35,7 @@ import { initials, statusTone } from './user-format';
       (closed)="closed.emit()"
     >
       <div actions class="arena-compact flex gap-2">
-        <button mat-stroked-button type="button" [disabled]="busy()" (click)="edit()">
+        <button mat-stroked-button type="button" [disabled]="busy() || !canEdit()" (click)="edit()">
           <mat-icon aria-hidden="true">edit</mat-icon>Edit
         </button>
         @if (u.role === 'staff') {
@@ -41,13 +44,18 @@ import { initials, statusTone } from './user-format';
               mat-button
               type="button"
               class="danger-action"
-              [disabled]="busy()"
-              (click)="setActive(false)"
+              [disabled]="busy() || !canChangeAccess()"
+              (click)="deactivate()"
             >
               <mat-icon aria-hidden="true">person_off</mat-icon>Deactivate
             </button>
           } @else {
-            <button mat-stroked-button type="button" [disabled]="busy()" (click)="setActive(true)">
+            <button
+              mat-stroked-button
+              type="button"
+              [disabled]="busy() || !canChangeAccess()"
+              (click)="setActive(true)"
+            >
               <mat-icon aria-hidden="true">person</mat-icon>Reactivate
             </button>
           }
@@ -72,6 +80,9 @@ import { initials, statusTone } from './user-format';
           heading="Permissions"
           subtitle="Applies next time they sign in on the floor app."
         >
+          @if (accessNote(); as note) {
+            <p role="note" class="text-[13px] leading-[1.45] text-muted">{{ note }}</p>
+          }
           @for (p of perms; track p.code) {
             <div class="flex items-center justify-between gap-4">
               <span class="flex flex-col gap-1">
@@ -83,7 +94,7 @@ import { initials, statusTone } from './user-format';
               <mat-slide-toggle
                 hideIcon
                 [checked]="u.perms.includes(p.code)"
-                [disabled]="busy() || !u.active"
+                [disabled]="busy() || !u.active || !canChangeAccess()"
                 [aria-labelledby]="'perm-' + p.code"
                 [aria-describedby]="'perm-sub-' + p.code"
                 (change)="togglePerm(p.code, $event)"
@@ -111,6 +122,10 @@ import { initials, statusTone } from './user-format';
   `,
 })
 export class UserDetail {
+  private readonly arena = inject(ArenaContext);
+  private readonly session = inject(Session);
+  /** Without the Settings permission the server refuses every change here. */
+  protected readonly canEdit = this.arena.canEdit;
   private readonly store = inject(UsersStore);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
@@ -124,6 +139,22 @@ export class UserDetail {
   protected readonly status = computed(() => statusTone(this.user()).label);
   protected readonly tone = computed(() => statusTone(this.user()).tone);
   protected readonly busy = computed(() => this.store.saving() === this.user().userId);
+  /**
+   * Why this member's access cannot be changed from here (staff.update refuses it): it is your
+   * own, or it is owner level (money or reports) and you are not an owner. Empty when it can.
+   */
+  protected readonly accessNote = computed(() => {
+    const u = this.user();
+    if (u.userId === this.session.user()?.id) {
+      return 'This is you: someone else with Settings changes your own access.';
+    }
+    const ownerLevel = u.perms.includes('money') || u.perms.includes('reports');
+    if (ownerLevel && this.arena.currentRole() !== 'owner') {
+      return 'They have Money or Reports access, so only an owner can change their access.';
+    }
+    return '';
+  });
+  protected readonly canChangeAccess = computed(() => this.canEdit() && !this.accessNote());
 
   protected edit(): void {
     this.dialog
@@ -135,6 +166,27 @@ export class UserDetail {
       .afterClosed()
       .subscribe((result) => {
         if (result) this.say(result.snack);
+      });
+  }
+
+  /** Deactivating signs them out of the floor app: confirm first. */
+  protected deactivate(): void {
+    const u = this.user();
+    this.dialog
+      .open<ConfirmDialog, ConfirmDialogData, boolean>(ConfirmDialog, {
+        data: {
+          title: `Deactivate ${u.name}?`,
+          message:
+            'They are signed out of the floor app and cannot sign in to this arena until you reactivate them. Their past bills stay as they are.',
+          confirm: 'Deactivate',
+          danger: true,
+        },
+        width: '520px',
+        maxWidth: 'calc(100vw - 32px)',
+      })
+      .afterClosed()
+      .subscribe((yes) => {
+        if (yes) void this.setActive(false);
       });
   }
 

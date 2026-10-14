@@ -1,10 +1,12 @@
 -- group_payments — append-only money in (payments) and out (refunds) for a group session
 --
--- Written only by op_payment (scope group), which also recomputes
--- group_sessions.payment_status. Same rules as payments: payments positive,
+-- Written only by op_payment (scope group; it also recomputes
+-- group_sessions.payment_status) and op_payment_correct. Same rules as payments: payments positive,
 -- refunds negative with a reason; refunds need the discount permission; once the
 -- bill is final, no overpayment and no refund beyond what was collected (0016,
--- group row locked). No payment on a voided group.
+-- group row locked). No payment on a voided group; a refund is allowed (money
+-- taken before the void can be given back). op_payment_correct moves money between
+-- methods as a refund + payment pair.
 create table "public"."group_payments" (
   "id"           uuid                     not null default gen_random_uuid(),
   "arena_id"     uuid                     not null,

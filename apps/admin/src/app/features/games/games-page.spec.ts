@@ -10,14 +10,14 @@ describe('Games', () => {
 
   afterEach(() => t?.cleanup());
 
-  it('lists the catalog with 30-day play; hidden games say unavailable', async () => {
+  it('lists the catalog with 30-day play; archived games say so and come last', async () => {
     t = await startPage('/games');
     expect(t.rows().map(t.rowText)).toEqual([
       ['Beat Saber', 'PSVR2 · 0m'],
       ['EA SPORTS FC 25', 'PS5 · 2h 35m', '3+'],
       ['Gran Turismo 7', 'PS5 · 1h'],
-      ['Mortal Kombat 1', 'PS5 · unavailable · 1h 30m', '18+'],
       ['Tekken 8', 'PS5 · 1h 44m', '16+'],
+      ['Mortal Kombat 1', 'PS5 · archived · 1h 30m', '18+'],
     ]);
     expect([...t.doc().querySelectorAll('mat-chip-option')].map((c) => t.text(c))).toEqual([
       'All',
@@ -85,26 +85,170 @@ describe('Games', () => {
     );
   });
 
-  it('hides a game from staff with the Available switch', async () => {
+  it('a refused age rating puts the select back to what the server holds', async () => {
+    t = await startPage('/games?id=g-gt');
+    const [age] = [...detail()!.querySelectorAll('mat-select')] as HTMLElement[];
+    t.floor.failNext = 'forbidden';
+    age.click();
+    await t.settle();
+    (
+      [...t.doc().querySelectorAll('mat-option')].find((o) => t.text(o) === '12+') as HTMLElement
+    ).click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([]);
+    expect(t.text(detail()!.querySelector('[role="alert"]'))).toBe(
+      'You need the Settings permission for that',
+    );
+    expect(t.text(age.querySelector('.mat-mdc-select-value'))).toBe('Not set');
+  });
+
+  it('archives a game with the Available switch; it stays in the list, last', async () => {
     t = await startPage('/games?id=g-gt');
     (detail()!.querySelector('mat-slide-toggle button') as HTMLButtonElement).click();
     await t.settle();
     expect(t.floor.ops).toEqual([
       { kind: 'game.set_active', payload: { id: 'g-gt', active: false } },
     ]);
-    expect(t.rowText(t.rows()[2])).toEqual(['Gran Turismo 7', 'PS5 · unavailable · 1h']);
+    expect(t.rowText(t.rows()[3])).toEqual(['Gran Turismo 7', 'PS5 · archived · 1h']);
+    expect(t.text(detail()!.querySelector('h2 + div'))).toContain('Archived');
   });
 
-  it('Remove hides the game after confirming', async () => {
-    t = await startPage('/games?id=g-tekken');
-    t.button('Remove', detail()!)!.click();
+  const dialogButton = (label: string) =>
+    t.button(label, t.dialog()!.querySelector('mat-dialog-actions')!);
+
+  it('deletes a game nothing ever used, after confirming, on the server first', async () => {
+    t = await startPage('/games?id=g-beat');
+    t.button('Delete', detail()!)!.click();
     await t.settle();
-    t.button('Remove', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
+    expect(t.text(t.dialog()!.querySelector('h2'))).toBe('Delete Beat Saber permanently?');
+    expect(t.text(t.dialog()!)).toContain('It cannot be undone');
+    expect(t.floor.ops).toEqual([]);
+    dialogButton('Delete')!.click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([{ kind: 'game.delete', payload: { id: 'g-beat' } }]);
+    expect(t.snack()).toBe('Beat Saber deleted');
+    expect(t.rows().map((r) => t.rowText(r)[0])).not.toContain('Beat Saber');
+    expect(t.text(detail()?.querySelector('h2') ?? null)).not.toBe('Beat Saber');
+  });
+
+  it('a game played before cannot be deleted: it explains why and offers to archive', async () => {
+    t = await startPage('/games?id=g-gt');
+    t.button('Delete', detail()!)!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!.querySelector('h2'))).toBe("Gran Turismo 7 can't be deleted");
+    expect(t.text(t.dialog()!)).toContain('1 past session or booking use it');
+    expect(dialogButton('Delete')).toBeUndefined();
+    dialogButton('Archive')!.click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([
+      { kind: 'game.set_active', payload: { id: 'g-gt', active: false } },
+    ]);
+    expect(t.snack()).toBe('Gran Turismo 7 archived');
+  });
+
+  it('a game being played now cannot be deleted; archiving keeps those sessions running', async () => {
+    t = await startPage('/games?id=g-tekken');
+    t.button('Delete', detail()!)!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!)).toContain('It is being played on the floor right now');
+    expect(t.text(t.dialog()!)).toContain('those sessions continue');
+    dialogButton('Archive')!.click();
     await t.settle();
     expect(t.floor.ops).toEqual([
       { kind: 'game.set_active', payload: { id: 'g-tekken', active: false } },
     ]);
-    expect(t.snack()).toBe('Tekken 8 removed');
+  });
+
+  it('an archived game with history can only be explained, not deleted again', async () => {
+    t = await startPage('/games?id=g-mk');
+    t.button('Delete', detail()!)!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!)).toContain('It is already archived');
+    expect(dialogButton('Archive')).toBeUndefined();
+    dialogButton('Close')!.click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([]);
+  });
+
+  it('a booking made between the check and the delete: the server refuses, nothing is lost', async () => {
+    t = await startPage('/games?id=g-beat');
+    t.button('Delete', detail()!)!.click();
+    await t.settle();
+    t.floor.bookingsByGame.set('g-beat', 1);
+    dialogButton('Delete')!.click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([]);
+    expect(t.text(detail()!.querySelector('[role="alert"]'))).toContain(
+      'Sessions or bookings already use it',
+    );
+    expect(t.rows().map((r) => t.rowText(r)[0])).toContain('Beat Saber');
+  });
+
+  it('edits a game: title, platforms, player mode and players per station', async () => {
+    t = await startPage('/games?id=g-gt');
+    t.button('Edit', detail()!)!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!.querySelector('h2'))).toBe('Edit Gran Turismo 7');
+    t.type('Title', 'tekken 8', t.dialog()!);
+    dialogButton('Save')!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!.querySelector('[role="alert"]'))).toBe(
+      'tekken 8 is already in the list',
+    );
+    t.type('Title', 'Gran Turismo 7 Spec II', t.dialog()!);
+    const select = (label: string) =>
+      [...t.dialog()!.querySelectorAll('mat-form-field')]
+        .find((f) => t.text(f.querySelector('mat-label')) === label)!
+        .querySelector('mat-select') as HTMLElement;
+    select('Player mode').click();
+    await t.settle();
+    (
+      [...t.doc().querySelectorAll('mat-option')].find(
+        (o) => t.text(o) === 'Local multiplayer',
+      ) as HTMLElement
+    ).click();
+    await t.settle();
+    select('Players per station').click();
+    await t.settle();
+    (
+      [...t.doc().querySelectorAll('mat-option')].find((o) => t.text(o) === '4') as HTMLElement
+    ).click();
+    await t.settle();
+    dialogButton('Save')!.click();
+    await t.settle();
+    expect(t.floor.ops).toEqual([
+      {
+        kind: 'game.upsert',
+        payload: expect.objectContaining({
+          id: 'g-gt',
+          name: 'Gran Turismo 7 Spec II',
+          platforms: ['PS5'],
+          playerMode: 'local',
+          maxLocalPlayers: 4,
+          active: true,
+          baseActive: true,
+        }),
+      },
+    ]);
+    expect(t.snack()).toBe('Gran Turismo 7 Spec II saved');
+    expect(t.text(detail()!.querySelector('h2'))).toBe('Gran Turismo 7 Spec II');
+  });
+
+  it('an edit over an archive made elsewhere is refused, not applied', async () => {
+    t = await startPage('/games?id=g-gt');
+    t.button('Edit', detail()!)!.click();
+    await t.settle();
+    // Another owner archives it while this dialog is open.
+    const i = t.floor.gameList.findIndex((g) => g.id === 'g-gt');
+    t.floor.gameList[i] = { ...t.floor.gameList[i], active: false };
+    t.type('Title', 'GT7', t.dialog()!);
+    dialogButton('Save')!.click();
+    await t.settle();
+    expect(t.text(t.dialog()!.querySelector('[role="alert"]'))).toBe(
+      'It was archived or restored elsewhere meanwhile. Check it and save again',
+    );
+    expect(t.floor.ops).toEqual([]);
+    expect(t.floor.gameList[i].active).toBe(false);
   });
 
   it('adds a game, refusing a blank or taken title', async () => {
@@ -129,6 +273,8 @@ describe('Games', () => {
         payload: expect.objectContaining({
           name: 'Hades II',
           platforms: ['PS5'],
+          playerMode: 'single',
+          maxLocalPlayers: 1,
           active: true,
           ageRating: 3,
           media: 'digital',
@@ -169,10 +315,11 @@ describe('Games', () => {
       ) as HTMLElement
     ).click();
     await t.settle();
+    // No notes key: the server keeps the note staff wrote on the floor app.
     expect(t.floor.ops).toEqual([
       {
         kind: 'game.set_compat',
-        payload: { game_id: 'g-gt', resource_id: 's-hex', status: 'playable', notes: null },
+        payload: { game_id: 'g-gt', resource_id: 's-hex', status: 'playable' },
       },
     ]);
     expect(t.snack()).toBe('Gran Turismo 7 on HEX: Playable');
@@ -189,7 +336,7 @@ describe('Games', () => {
     await t.settle();
     expect(t.floor.ops.at(-1)).toEqual({
       kind: 'game.set_compat',
-      payload: { game_id: 'g-gt', resource_id: 's-rift', status: 'not_installed', notes: null },
+      payload: { game_id: 'g-gt', resource_id: 's-rift', status: 'not_installed' },
     });
   });
 
@@ -199,12 +346,8 @@ describe('Games', () => {
     });
     expect(warning()).toContain("Staff can't start this game anywhere yet");
     expect(t.rowText(t.rows()[2])).toEqual(['Gran Turismo 7', 'PS5 · 1h', 'No station']);
-    // Hidden games are not offered to staff, so they are not flagged.
-    expect(t.rowText(t.rows()[3])).toEqual([
-      'Mortal Kombat 1',
-      'PS5 · unavailable · 1h 30m',
-      '18+',
-    ]);
+    // Archived games are not offered to staff, so they are not flagged.
+    expect(t.rowText(t.rows()[4])).toEqual(['Mortal Kombat 1', 'PS5 · archived · 1h 30m', '18+']);
   });
 
   it('adds a game playable on the stations picked, in one push', async () => {
@@ -238,11 +381,11 @@ describe('Games', () => {
       { kind: 'game.upsert', payload: expect.objectContaining({ name: 'Hades II' }) },
       {
         kind: 'game.set_compat',
-        payload: { game_id: id, resource_id: 's-hex', status: 'playable', notes: null },
+        payload: { game_id: id, resource_id: 's-hex', status: 'playable' },
       },
       {
         kind: 'game.set_compat',
-        payload: { game_id: id, resource_id: 's-rift', status: 'playable', notes: null },
+        payload: { game_id: id, resource_id: 's-rift', status: 'playable' },
       },
     ]);
     expect(t.snack()).toBe('Hades II added · playable on 2 stations');

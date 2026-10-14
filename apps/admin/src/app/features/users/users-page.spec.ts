@@ -10,6 +10,7 @@ import { ArenaApi } from '../../core/arena/arena-api';
 import { SampleArenaApi } from '../../core/arena/arena-api.sample';
 import { AuthApi } from '../../core/auth/auth-api';
 import { SampleAuthApi } from '../../core/auth/auth-api.sample';
+import { LOCAL_SERVER, LocalServer } from '../../core/supabase/local-server';
 import { UsersApi } from './data/users-api';
 import { SampleUsersApi } from './data/users-api.sample';
 
@@ -31,7 +32,7 @@ describe('Users', () => {
   let api: SampleUsersApi;
   let arenas: SampleArenaApi;
 
-  async function start(url: string, width = 1440) {
+  async function start(url: string, width = 1440, local: LocalServer | null = null) {
     api = new SampleUsersApi();
     arenas = new SampleArenaApi();
     TestBed.configureTestingModule({
@@ -42,6 +43,7 @@ describe('Users', () => {
         { provide: UsersApi, useValue: api },
         { provide: BreakpointObserver, useValue: breakpoints(width) },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
+        { provide: LOCAL_SERVER, useValue: local },
       ],
     });
     harness = await RouterTestingHarness.create();
@@ -133,9 +135,19 @@ describe('Users', () => {
     expect(api.users.find((u) => u.userId === 'u2')?.perms).toEqual(['start', 'bill', 'discount']);
   });
 
-  it('deactivating staff marks them Off and says they are signed out', async () => {
+  it('deactivating staff asks first, then marks them Off and says they are signed out', async () => {
     await start('/users?id=u3');
+    const dialog = () => doc().querySelector('mat-dialog-container') as HTMLElement | null;
     button('Deactivate', detail()!)?.click();
+    await settle();
+    expect(dialog()?.textContent).toContain('Deactivate Kavya Iyer?');
+    button('Cancel', dialog()!)?.click();
+    await settle();
+    expect(api.users.find((u) => u.userId === 'u3')?.active).toBe(true);
+
+    button('Deactivate', detail()!)?.click();
+    await settle();
+    button('Deactivate', dialog()!.querySelector('mat-dialog-actions')!)?.click();
     await settle();
     expect(api.users.find((u) => u.userId === 'u3')?.active).toBe(false);
     expect(rowText(rowsIn('staff')[2])).toContain('Off');
@@ -202,6 +214,33 @@ describe('Users', () => {
       'Farhan Ali · Staff · invited by Arjun Mehra',
       'Expires 20 Oct',
     ]);
+  });
+
+  it('on the local test server, the page and the invitation say where the login will exist', async () => {
+    await start('/users', 1440, {
+      address: '127.0.0.1:54431',
+      mailUrl: 'http://127.0.0.1:54434',
+    });
+    const note = doc().querySelector('app-local-server-note [role="note"]');
+    expect(note?.textContent).toContain('Local test server (127.0.0.1:54431).');
+    expect(note?.textContent).toContain('dart_define.prod.json');
+    expect(note?.querySelector('a')?.getAttribute('href')).toBe('http://127.0.0.1:54434');
+
+    button('Invite')?.click();
+    await settle();
+    type('Name', 'Farhan Ali');
+    type('Email', 'farhan@404arena.in');
+    button('Send invitation', dialog())?.click();
+    await settle();
+    await settle();
+    expect(snack()).toBe(
+      'Invitation sent to farhan@404arena.in on the local test server: the e-mail is in the local mailbox',
+    );
+  });
+
+  it('on a hosted project there is no local server note', async () => {
+    await start('/users');
+    expect(doc().querySelector('app-local-server-note [role="note"]')).toBeNull();
   });
 
   it('an owner can invite another owner', async () => {

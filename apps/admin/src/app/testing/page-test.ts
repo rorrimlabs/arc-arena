@@ -11,7 +11,10 @@ import { AuthApi } from '../core/auth/auth-api';
 import { SampleAuthApi } from '../core/auth/auth-api.sample';
 import { FloorApi } from '../core/floor/floor-api';
 import { SampleFloorApi } from '../core/floor/floor-api.sample';
+import { LOCAL_SERVER } from '../core/supabase/local-server';
 import { Clock } from '../core/time/clock';
+import { ControllersApi } from '../features/controllers/data/controllers-api';
+import { SampleControllersApi } from '../features/controllers/data/controllers-api.sample';
 import { PricingApi } from '../features/pricing/data/pricing-api';
 import { FloorOptionsApi } from '../features/settings/data/floor-options';
 import { SampleFloorOptionsApi } from '../features/settings/data/floor-options.sample';
@@ -36,8 +39,8 @@ function breakpoints(width: number) {
 }
 
 /**
- * Opens a dashboard URL on the sample APIs (floor, pricing, sales) at NOW, and returns DOM
- * helpers shared by the screen specs.
+ * Opens a dashboard URL on the sample APIs (floor, pricing, sales, controllers) at NOW, and
+ * returns DOM helpers shared by the screen specs.
  */
 export async function startPage(
   path: string,
@@ -46,25 +49,32 @@ export async function startPage(
     floor: SampleFloorApi;
     pricing: SamplePricingApi;
     sales: SampleSalesApi;
+    controllers: SampleControllersApi;
+    arena: SampleArenaApi;
   }) => void = () => undefined,
 ) {
   const floor = new SampleFloorApi(NOW);
   const pricing = new SamplePricingApi();
   const sales = new SampleSalesApi(NOW);
   const floorOptions = new SampleFloorOptionsApi();
-  setup({ floor, pricing, sales });
+  const controllers = new SampleControllersApi();
+  const arena = new SampleArenaApi();
+  setup({ floor, pricing, sales, controllers, arena });
   TestBed.configureTestingModule({
     providers: [
       provideRouter(routes, withComponentInputBinding()),
       { provide: AuthApi, useValue: new SampleAuthApi() },
-      { provide: ArenaApi, useValue: new SampleArenaApi() },
+      { provide: ArenaApi, useValue: arena },
       { provide: FloorApi, useValue: floor },
+      { provide: ControllersApi, useValue: controllers },
       { provide: PricingApi, useValue: pricing },
       { provide: SalesApi, useValue: sales },
       { provide: FloorOptionsApi, useValue: floorOptions },
       { provide: Clock, useValue: { now: () => NOW } },
       { provide: BreakpointObserver, useValue: breakpoints(width) },
       { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
+      // The sample APIs stand in for a hosted project; a spec may override this in `setup`.
+      { provide: LOCAL_SERVER, useValue: null },
     ],
   });
   const harness = await RouterTestingHarness.create();
@@ -123,6 +133,7 @@ export async function startPage(
     pricing,
     sales,
     floorOptions,
+    controllers,
     settle,
     doc,
     text,

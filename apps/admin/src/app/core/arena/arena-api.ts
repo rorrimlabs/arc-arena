@@ -13,11 +13,40 @@ export interface Membership {
   readonly active: boolean;
 }
 
+/** my_arenas() rows → memberships (the same rows whichever login asks). */
+export function toMemberships(data: unknown): Membership[] {
+  return ((data as Record<string, unknown>[] | null) ?? []).map((r) => ({
+    arenaId: String(r['arena_id']),
+    arenaName: String(r['arena_name']),
+    name: String(r['name']),
+    role: r['role'] === 'owner' ? 'owner' : 'staff',
+    perms: (r['perms'] as string[] | null) ?? [],
+    active: r['active'] === true,
+  }));
+}
+
 /** Owner level, as the server decides it (app_is_owner): the owner, or money / reports. */
 export function isOwnerLevel(m: Membership): boolean {
   return (
     m.active && (m.role === 'owner' || m.perms.includes('money') || m.perms.includes('reports'))
   );
+}
+
+/**
+ * What the dashboard is for this login, decided only by its server-side memberships (never by
+ * its e-mail or metadata):
+ * - `owner`: an active owner-level membership somewhere — the dashboard;
+ * - `staff`: active memberships, none owner level — floor staff, who use the staff app;
+ * - `off`: memberships, none active — access turned off (an owner's too: the operator restores it);
+ * - `none`: no membership at all — a new owner, who may create an arena.
+ * Only `none` may ever see Create Arena.
+ */
+export type DashboardAccess = 'owner' | 'staff' | 'off' | 'none';
+
+export function accessOf(memberships: readonly Membership[]): DashboardAccess {
+  if (memberships.some(isOwnerLevel)) return 'owner';
+  if (memberships.some((m) => m.active)) return 'staff';
+  return memberships.length ? 'off' : 'none';
 }
 
 import { dbError } from '../supabase/db-error';
@@ -61,14 +90,7 @@ class SupabaseArenaApi extends ArenaApi {
   async myArenas(): Promise<Membership[]> {
     const { data, error } = await (await this.supabase.client()).rpc('my_arenas');
     if (error) throw dbError(error);
-    return (data as Record<string, unknown>[]).map((r) => ({
-      arenaId: String(r['arena_id']),
-      arenaName: String(r['arena_name']),
-      name: String(r['name']),
-      role: r['role'] === 'owner' ? 'owner' : 'staff',
-      perms: (r['perms'] as string[] | null) ?? [],
-      active: r['active'] === true,
-    }));
+    return toMemberships(data);
   }
 
   async createArena(arenaName: string, ownerName: string): Promise<string> {

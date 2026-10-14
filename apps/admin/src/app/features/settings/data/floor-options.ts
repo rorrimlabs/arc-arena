@@ -1,6 +1,7 @@
 import { Service, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { LoginScope } from '../../../core/auth/login-scope';
 import { dbError } from '../../../core/supabase/db-error';
 import { Supabase } from '../../../core/supabase/supabase';
 import { pushOps } from '../../../core/sync/push-ops';
@@ -111,22 +112,38 @@ export class FloorOptionsStore {
   readonly loading = signal(false);
   readonly loadError = signal('');
   private loadedArena: string | null = null;
+  /** Each load's number; only the newest one's answer lands (a switch of arena mid-load). */
+  private latest = 0;
+
+  constructor() {
+    // Sign-out or another login: the options leave memory; a read in flight does not land.
+    inject(LoginScope).onEnd(() => {
+      this.latest++;
+      this.loadedArena = null;
+      this.options.set(null);
+      this.saved.set(false);
+      this.loading.set(false);
+      this.loadError.set('');
+    });
+  }
 
   async load(force = false): Promise<void> {
     const arenaId = this.arena.current().id;
     if (!arenaId || (!force && this.loadedArena === arenaId)) return;
     if (this.loadedArena !== arenaId) this.options.set(null);
+    const call = ++this.latest;
     this.loading.set(true);
     this.loadError.set('');
     try {
       const found = await this.api.load(arenaId);
+      if (call !== this.latest) return;
       this.options.set(found ?? DEFAULT_FLOOR_OPTIONS);
       this.saved.set(!!found);
       this.loadedArena = arenaId;
     } catch (e) {
-      this.loadError.set(toAppError(e).message);
+      if (call === this.latest) this.loadError.set(toAppError(e).message);
     } finally {
-      this.loading.set(false);
+      if (call === this.latest) this.loading.set(false);
     }
   }
 

@@ -1,9 +1,13 @@
 import { TestBed } from '@angular/core/testing';
 import { describe, expect, it } from 'vitest';
-import { ArenaApi } from '../app/core/arena/arena-api';
+import { ArenaApi, accessOf } from '../app/core/arena/arena-api';
 import { AuthApi } from '../app/core/auth/auth-api';
+import { InviteeAuth } from '../app/core/auth/invitee-auth';
 import { FloorApi } from '../app/core/floor/floor-api';
-import { DEFAULT_FLOOR_OPTIONS, FloorOptionsApi } from '../app/features/settings/data/floor-options';
+import {
+  DEFAULT_FLOOR_OPTIONS,
+  FloorOptionsApi,
+} from '../app/features/settings/data/floor-options';
 import { UsersApi } from '../app/features/users/data/users-api';
 import { IT_RUN, handoff, latestAuthLink, need } from './it-env';
 
@@ -56,6 +60,40 @@ describe.skipIf(!IT_RUN)('integration · dashboard phase 1 (owner on the local b
     const compat = (await floor.gameResources(arenaId)).filter((c) => c.gameId === gameId);
     expect(compat).toEqual([{ gameId, resourceId: playable.id, status: 'playable' }]);
 
+    // The game lifecycle: one game archived (hidden from new sessions, kept), one deleted (never
+    // used, so it goes with its station status). The floor phase checks what its device sees.
+    const extra = (id: string, title: string) => ({
+      id,
+      name: title,
+      aliases: [],
+      categoryId: null,
+      platforms: ['PS5'],
+      playerMode: 'single' as const,
+      maxLocalPlayers: 1,
+      active: true,
+      ageRating: null,
+      media: null,
+    });
+    const archivedId = crypto.randomUUID();
+    const deletedId = crypto.randomUUID();
+    await floor.saveGame(arenaId, extra(archivedId, `IT Archived ${run}`), [playable.id]);
+    await floor.saveGame(arenaId, extra(deletedId, `IT Deleted ${run}`), [playable.id]);
+    await expect(
+      floor.saveGame(arenaId, extra(crypto.randomUUID(), `it archived ${run}`.toUpperCase())),
+    ).rejects.toMatchObject({ code: 'duplicate' });
+    await floor.setGameActive(arenaId, archivedId, false);
+    expect(await floor.gameUsage(arenaId, deletedId)).toEqual({ playingNow: 0, records: 0 });
+    await floor.deleteGame(arenaId, deletedId);
+    const after = await floor.games(arenaId);
+    expect(after.find((g) => g.id === archivedId)?.active).toBe(false);
+    expect(after.some((g) => g.id === deletedId)).toBe(false);
+    expect((await floor.gameResources(arenaId)).some((c) => c.gameId === deletedId)).toBe(false);
+    // A retried delete of a gone game is a no-op; an edit queued before it cannot bring it back.
+    await floor.deleteGame(arenaId, deletedId);
+    await expect(
+      floor.saveGame(arenaId, extra(deletedId, `IT Deleted ${run}`)),
+    ).rejects.toMatchObject({ code: 'not_found' });
+
     // Floor options the staff app reads.
     const before = (await options.load(arenaId)) ?? DEFAULT_FLOOR_OPTIONS;
     const warnMinutes = before.warnMinutes === 7 ? 8 : 7;
@@ -86,23 +124,34 @@ describe.skipIf(!IT_RUN)('integration · dashboard phase 1 (owner on the local b
     const fragment = new URLSearchParams(landing.hash.slice(1));
     expect(fragment.get('type')).toBe('invite');
 
-    // What the page does for a new login: session from the link, a password they choose, accept.
-    const account = await auth.signInFromLink(
+    // What the page does for a new login, in the browser where the owner is still signed in:
+    // the invitee's session from the link lives on the page's own client (InviteeAuth), a
+    // password they choose, accept. The dashboard's stored sign-in stays the owner's throughout.
+    const page = TestBed.inject(InviteeAuth);
+    page.begin();
+    const account = await page.fromLink(
       fragment.get('access_token')!,
       fragment.get('refresh_token')!,
     );
     expect(account.email).toBe(invitee);
-    await auth.setPassword(password);
-    await expect(auth.acceptInvite(inviteId, token)).resolves.toEqual({
+    expect((await auth.current())?.email).toBe(owner);
+    await page.setPassword(password);
+    await expect(page.accept(inviteId, token)).resolves.toEqual({
       arenaId,
       arenaName: `IT ${run}`,
       role: 'staff',
     });
-    await expect(auth.acceptInvite(inviteId, token)).rejects.toMatchObject({ code: 'invite_used' });
-    await auth.signOut();
+    // A retried accept (double click, a second tab) never makes a second membership.
+    await expect(page.accept(inviteId, token)).rejects.toMatchObject({ code: 'invite_used' });
+    // Floor staff: not owner level there, so the page sends them to the staff app.
+    await expect(page.canManage(arenaId)).resolves.toBe(false);
+    await page.end();
+    expect((await auth.current())?.email).toBe(owner);
 
-    // Back as the owner: they are on the list now, and no longer pending.
-    await auth.signIn(owner, password);
+    // The owner — never signed out — sees them on the list, no longer pending, and is still the
+    // owner of the arena (what the dashboard's guard reads: no detour to Create Arena).
+    const ownerView = await TestBed.inject(ArenaApi).myArenas();
+    expect(accessOf(ownerView)).toBe('owner');
     const joined = (await users.list(arenaId)).find((u) => u.email === invitee);
     expect(joined).toMatchObject({ role: 'staff', active: true, perms: ['start'] });
     expect((await users.listInvites(arenaId)).map((i) => i.email)).not.toContain(invitee);
@@ -112,6 +161,8 @@ describe.skipIf(!IT_RUN)('integration · dashboard phase 1 (owner on the local b
       arena_id: arenaId,
       game_id: gameId,
       game_name: name,
+      archived_game_id: archivedId,
+      deleted_game_id: deletedId,
       playable_station_id: playable.id,
       other_station_id: other.id,
       activity_code: 'PS5',

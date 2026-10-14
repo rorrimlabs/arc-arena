@@ -184,6 +184,7 @@ class EndGroupCommand {
     required this.charges,
     required this.billedAmountPaise,
     this.markWaived = false,
+    this.waiveReason,
   });
 
   final String groupId;
@@ -191,6 +192,10 @@ class EndGroupCommand {
   final List<GroupCharge> charges;
   final int billedAmountPaise;
   final bool markWaived;
+
+  /// Why it was waived (the action layer requires one); the server audits it
+  /// with the amount written off.
+  final String? waiveReason;
 }
 
 @immutable

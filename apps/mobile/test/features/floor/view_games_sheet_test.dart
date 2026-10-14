@@ -7,6 +7,7 @@ library;
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/local_catalog_repository.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
+import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/view_games_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -73,6 +74,34 @@ void main() {
     await tester.tap(find.byTooltip('Set status on HEX').first);
     await settle(tester);
     expect(find.text('Status on HEX only'), findsOneWidget);
+    await close(tester);
+  });
+
+  testWidgets('the editor starts from the stored note, so a status change '
+      'keeps it', (tester) async {
+    final first = (await tester.runAsync(
+      () => LocalCatalogRepository(db).gamesForResource('hex'),
+    ))!.first.game;
+    await tester.runAsync(() => LocalCatalogRepository(db).setCompatibility(
+          first.id,
+          'hex',
+          GameAvailability.maintenance,
+          notes: 'disc scratched',
+        ));
+    await open(tester, staff: false);
+    // The row (unavailable games sort last) says why it is unavailable here.
+    await tester.scrollUntilVisible(find.textContaining('disc scratched'), 200,
+        scrollable: find.byType(Scrollable).last);
+    expect(find.textContaining('disc scratched'), findsOneWidget);
+
+    final row = find.ancestor(of: find.text(first.name), matching: find.byType(ListTile));
+    await tester.tap(find.descendant(
+        of: row, matching: find.byTooltip('Set status on HEX')));
+    await settle(tester);
+    expect(
+      tester.widget<TextField>(find.byType(TextField).last).controller!.text,
+      'disc scratched',
+    );
     await close(tester);
   });
 

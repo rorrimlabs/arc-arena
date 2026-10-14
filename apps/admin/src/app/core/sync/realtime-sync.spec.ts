@@ -6,6 +6,7 @@ import { ArenaContext } from '../arena/arena-context';
 import { Account } from '../auth/auth-api';
 import { Session } from '../auth/session';
 import { FloorStore } from '../floor/floor-store';
+import { ControllersStore } from '../../features/controllers/data/controllers-store';
 import { FloorOptionsStore } from '../../features/settings/data/floor-options';
 import { OverviewStore } from '../../features/overview/data/overview-store';
 import { PricingStore } from '../../features/pricing/data/pricing-store';
@@ -22,6 +23,7 @@ describe('RealtimeSync', () => {
   let mockPricing: { load: ReturnType<typeof vi.fn> };
   let mockFloorOptions: { load: ReturnType<typeof vi.fn> };
   let mockUsers: { refresh: ReturnType<typeof vi.fn> };
+  let mockControllers: { refresh: ReturnType<typeof vi.fn> };
   let mockArenaContext: { current: ReturnType<typeof vi.fn>; load: ReturnType<typeof vi.fn> };
   let user: ReturnType<typeof signal<Account | null>>;
   let sessionToken: string | null;
@@ -86,6 +88,7 @@ describe('RealtimeSync', () => {
     mockPricing = { load: vi.fn().mockResolvedValue(undefined) };
     mockFloorOptions = { load: vi.fn().mockResolvedValue(undefined) };
     mockUsers = { refresh: vi.fn().mockResolvedValue(undefined) };
+    mockControllers = { refresh: vi.fn().mockResolvedValue(undefined) };
     user = signal<Account | null>({ id: 'u0', email: 'arjun@404arena.in', name: 'Arjun Mehra' });
 
     mockArenaContext = {
@@ -110,6 +113,7 @@ describe('RealtimeSync', () => {
         { provide: PricingStore, useValue: mockPricing },
         { provide: FloorOptionsStore, useValue: mockFloorOptions },
         { provide: UsersStore, useValue: mockUsers },
+        { provide: ControllersStore, useValue: mockControllers },
       ],
     });
 
@@ -161,6 +165,7 @@ describe('RealtimeSync', () => {
       [
         'activities',
         'billing_policies',
+        'controllers',
         'customers',
         'game_categories',
         'game_controls',
@@ -206,11 +211,11 @@ describe('RealtimeSync', () => {
     onSessions({ eventType: 'UPDATE' });
 
     vi.advanceTimersByTime(100);
-    expect(mockFloor.load).not.toHaveBeenCalled();
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
 
     vi.advanceTimersByTime(60);
-    expect(mockFloor.load).toHaveBeenCalledTimes(1);
-    expect(mockFloor.load).toHaveBeenCalledWith(['plays', 'visits'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledTimes(1);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['plays', 'visits']);
     expect(mockOverview.refresh).toHaveBeenCalledTimes(1);
     expect(mockSales.refresh).toHaveBeenCalledTimes(1);
   });
@@ -222,7 +227,7 @@ describe('RealtimeSync', () => {
     onGames({ eventType: 'UPDATE' });
 
     vi.advanceTimersByTime(160);
-    expect(mockFloor.load).toHaveBeenCalledWith(['games'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['games']);
     expect(mockSales.refresh).not.toHaveBeenCalled();
   });
 
@@ -233,7 +238,7 @@ describe('RealtimeSync', () => {
     onResources({ eventType: 'UPDATE' });
 
     vi.advanceTimersByTime(160);
-    expect(mockFloor.load).toHaveBeenCalledWith(['stations'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['stations']);
   });
 
   it('reloads floor options when settings table changes occur', async () => {
@@ -258,15 +263,17 @@ describe('RealtimeSync', () => {
 
     fire('game_resources');
     expect(mockFloor.refresh).toHaveBeenCalledWith(['gameResources']);
-    expect(mockFloor.load).not.toHaveBeenCalled();
+    expect(mockFloor.refresh).not.toHaveBeenCalledWith(['games']);
 
     fire('game_controls');
-    expect(mockFloor.load).toHaveBeenCalledWith(['games'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['games']);
     fire('game_categories');
-    expect(mockFloor.load).toHaveBeenCalledWith(['games'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['games']);
 
     fire('staff_profiles');
     expect(mockUsers.refresh).toHaveBeenCalledTimes(1);
+    // It may be the signed-in login's own row: its access is read again too.
+    expect(mockArenaContext.load).toHaveBeenCalledWith(true);
     expect(mockSales.refresh).not.toHaveBeenCalled();
 
     for (const table of [
@@ -276,7 +283,7 @@ describe('RealtimeSync', () => {
       'group_extensions',
     ]) {
       fire(table);
-      expect(mockFloor.load).toHaveBeenCalledWith(['plays', 'visits'], true);
+      expect(mockFloor.refresh).toHaveBeenCalledWith(['plays', 'visits']);
       expect(mockOverview.refresh).toHaveBeenCalledTimes(1);
       expect(mockSales.refresh).toHaveBeenCalledTimes(1);
     }
@@ -298,6 +305,12 @@ describe('RealtimeSync', () => {
       expect(mockFloorOptions.load).toHaveBeenCalledWith(true);
       expect(mockSales.refresh).not.toHaveBeenCalled();
     }
+
+    // A pad moved, lent or edited on the floor: the Controllers screen re-reads.
+    fire('controllers');
+    expect(mockControllers.refresh).toHaveBeenCalledTimes(1);
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
+    expect(mockPricing.load).not.toHaveBeenCalled();
   });
 
   it('handles peer broadcast sync messages for matching arena', async () => {
@@ -309,7 +322,7 @@ describe('RealtimeSync', () => {
     });
 
     vi.advanceTimersByTime(160);
-    expect(mockFloor.load).toHaveBeenCalledWith(['plays', 'visits'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['plays', 'visits']);
     expect(mockOverview.refresh).toHaveBeenCalledTimes(1);
   });
 
@@ -326,9 +339,35 @@ describe('RealtimeSync', () => {
 
     expect(mockFloor.refresh).toHaveBeenCalledWith(['gameResources']);
     expect(mockUsers.refresh).toHaveBeenCalledTimes(1);
-    expect(mockFloor.load).not.toHaveBeenCalled();
+    expect(mockControllers.refresh).toHaveBeenCalledTimes(1);
+    expect(mockFloor.refresh).not.toHaveBeenCalledWith(['games']);
     expect(mockSales.refresh).not.toHaveBeenCalled();
     expect(mockPricing.load).not.toHaveBeenCalled();
+  });
+
+  it('a staff change pushed elsewhere re-reads the login’s own access (deactivation arrives only so)', async () => {
+    await sync.setupArena('arena-123', true);
+    broadcast({
+      arena_id: 'arena-123',
+      kind: 'push',
+      kinds: ['staff.update'],
+      source: 'admin-web',
+    });
+    vi.advanceTimersByTime(160);
+    expect(mockArenaContext.load).toHaveBeenCalledWith(true);
+    expect(mockUsers.refresh).toHaveBeenCalledTimes(1);
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
+    expect(mockPricing.load).not.toHaveBeenCalled();
+  });
+
+  it('a refused or dropped channel re-reads the login’s own access, nothing else', async () => {
+    await sync.setupArena('arena-123', true);
+    channelSubscribeCallback!('CHANNEL_ERROR');
+    vi.advanceTimersByTime(160);
+    expect(mockArenaContext.load).toHaveBeenCalledWith(true);
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
+    expect(mockSales.refresh).not.toHaveBeenCalled();
+    expect(mockUsers.refresh).not.toHaveBeenCalled();
   });
 
   it('a push of settings or payments refreshes pricing or the bills', async () => {
@@ -360,7 +399,12 @@ describe('RealtimeSync', () => {
     expect(mockSales.refresh).toHaveBeenCalledTimes(1);
 
     vi.clearAllMocks();
-    broadcastHandlers.get('sync')!({ type: 'broadcast', event: 'sync', arena_id: 'other', kind: 'push' });
+    broadcastHandlers.get('sync')!({
+      type: 'broadcast',
+      event: 'sync',
+      arena_id: 'other',
+      kind: 'push',
+    });
     vi.advanceTimersByTime(160);
     expect(mockSales.refresh).not.toHaveBeenCalled();
   });
@@ -370,9 +414,9 @@ describe('RealtimeSync', () => {
     broadcast({ arena_id: 'arena-123', kind: 'push', source: 'mobile' });
     vi.advanceTimersByTime(160);
 
-    expect(mockFloor.load).toHaveBeenCalledWith(['plays', 'visits'], true);
-    expect(mockFloor.load).toHaveBeenCalledWith(['stations'], true);
-    expect(mockFloor.load).toHaveBeenCalledWith(['games'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['plays', 'visits']);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['stations']);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['games']);
     expect(mockSales.refresh).toHaveBeenCalled();
     expect(mockOverview.refresh).toHaveBeenCalled();
     expect(mockPricing.load).toHaveBeenCalledWith(true);
@@ -390,7 +434,7 @@ describe('RealtimeSync', () => {
     onBroadcast({ payload: { kind: 'push', kinds: ['session.start'] } });
 
     vi.advanceTimersByTime(160);
-    expect(mockFloor.load).not.toHaveBeenCalled();
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
     expect(mockSales.refresh).not.toHaveBeenCalled();
   });
 
@@ -420,15 +464,47 @@ describe('RealtimeSync', () => {
     postgresHandlers.get('sessions')!({ eventType: 'INSERT' });
     window.dispatchEvent(new Event('online'));
     vi.advanceTimersByTime(160);
-    expect(mockFloor.load).not.toHaveBeenCalled();
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
+  });
+
+  it('another login (signed in from another tab) does not keep the previous login’s channel', async () => {
+    TestBed.tick();
+    await sync.setupArena('arena-123', true);
+
+    // Same arena, different login: the old JWT's channel goes.
+    user.set({ id: 'u9', email: 'farah@404arena.in', name: 'Farah Khan' });
+    TestBed.tick();
+    await vi.waitFor(() => expect(mockClient.removeChannel).toHaveBeenCalledWith(mockChannel));
+    postgresHandlers.get('sessions')!({ eventType: 'INSERT' });
+    vi.advanceTimersByTime(160);
+    expect(mockFloor.refresh).not.toHaveBeenCalled();
   });
 
   it('catches up once subscribed', async () => {
     await sync.setupArena('arena-123', true);
     channelSubscribeCallback!('SUBSCRIBED');
     vi.advanceTimersByTime(160);
-    expect(mockFloor.load).toHaveBeenCalledWith(['plays', 'visits'], true);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['plays', 'visits']);
     expect(mockFloor.refresh).toHaveBeenCalledWith(['gameResources']);
+  });
+
+  it('a rejoin after a dropped socket refreshes every screen, not just the floor', async () => {
+    await sync.setupArena('arena-123', true);
+    channelSubscribeCallback!('SUBSCRIBED');
+    vi.advanceTimersByTime(160);
+    expect(mockSales.refresh).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    channelSubscribeCallback!('CHANNEL_ERROR');
+    channelSubscribeCallback!('SUBSCRIBED');
+    vi.advanceTimersByTime(160);
+    expect(mockFloor.refresh).toHaveBeenCalledWith(['plays', 'visits']);
+    expect(mockSales.refresh).toHaveBeenCalledTimes(1);
+    expect(mockOverview.refresh).toHaveBeenCalledTimes(1);
+    expect(mockPricing.load).toHaveBeenCalledWith(true);
+    expect(mockUsers.refresh).toHaveBeenCalledTimes(1);
+    // Access may have changed meanwhile too.
+    expect(mockArenaContext.load).toHaveBeenCalledWith(true);
   });
 
   it('broadcasts outgoing sync messages on active channel', async () => {

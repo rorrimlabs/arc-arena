@@ -2,9 +2,11 @@ import { Service, inject } from '@angular/core';
 import { dbError } from '../../../core/arena/arena-api';
 import { Supabase } from '../../../core/supabase/supabase';
 import { SyncOp, pushOps } from '../../../core/sync/push-ops';
+import { BillingPolicy, POLICY_COLUMNS, parsePolicy, policyJson } from './billing-policy';
 import {
   BusinessHours,
   DurationModel,
+  Holiday,
   PricingData,
   Rate,
   RateChange,
@@ -13,9 +15,10 @@ import {
 } from './pricing.models';
 
 /**
- * Station types, rates and happy hour: read through arena_pricing() (owner level), written as
- * activity.upsert / rate.upsert / rate.delete / settings.save ops through sync_push. Tests
- * provide SamplePricingApi.
+ * The price list: station types, rates and happy hour read through arena_pricing() (owner
+ * level), holidays and the billing policy from their tables (RLS); written as activity.* /
+ * rate.* / settings.save / holiday.* / policy.save ops through sync_push. Tests provide
+ * SamplePricingApi.
  */
 @Service({ factory: () => new SupabasePricingApi() })
 export abstract class PricingApi {
@@ -25,6 +28,13 @@ export abstract class PricingApi {
   abstract removeType(arenaId: string, id: string): Promise<'deleted' | 'retired'>;
   abstract saveRates(arenaId: string, changes: readonly RateChange[]): Promise<void>;
   abstract saveHours(arenaId: string, hours: BusinessHours): Promise<void>;
+  /**
+   * Adds or edits the holiday on `holiday.day`; `replacing` is the day it was on before when the
+   * edit moved it (that day is cleared in the same batch, after the new one is saved).
+   */
+  abstract saveHoliday(arenaId: string, holiday: Holiday, replacing?: string): Promise<void>;
+  abstract deleteHoliday(arenaId: string, day: string): Promise<void>;
+  abstract savePolicy(arenaId: string, policy: BillingPolicy): Promise<void>;
 }
 
 export const PRICING_MESSAGES: Readonly<Record<string, string>> = {
@@ -37,6 +47,24 @@ export const PRICING_MESSAGES: Readonly<Record<string, string>> = {
   activity_has_stations: 'Stations still offer this type · remove them first',
   setting_not_shared: 'That setting cannot be saved here',
 };
+
+/**
+ * holiday.upsert (keyed by day), then holiday.delete of the day it moved from, if it moved: the
+ * new day is saved before the old one is cleared, so a refusal never loses the holiday.
+ */
+export function holidayOps(h: Holiday, replacing?: string): SyncOp[] {
+  return [
+    { kind: 'holiday.upsert', payload: { day: h.day, name: h.name, closed: h.closed } },
+    ...(replacing && replacing !== h.day
+      ? [{ kind: 'holiday.delete', payload: { day: replacing } }]
+      : []),
+  ];
+}
+
+/** policy.save: the whole policy (group_billing_mode included) inside `policy`. */
+export function policyOps(policy: BillingPolicy): SyncOp[] {
+  return [{ kind: 'policy.save', payload: { policy: policyJson(policy) } }];
+}
 
 export function typeOps(type: TypeInput): SyncOp[] {
   return [
@@ -96,9 +124,21 @@ class SupabasePricingApi extends PricingApi {
 
   async load(arenaId: string): Promise<PricingData> {
     const client = await this.supabase.client();
-    const { data, error } = await client.rpc('arena_pricing', { p_arena: arenaId });
-    if (error) throw dbError(error);
-    const d = data as {
+    const [pricing, holidays, policy] = await Promise.all([
+      client.rpc('arena_pricing', { p_arena: arenaId }),
+      client.from('holidays').select('day, name, closed').eq('arena_id', arenaId).order('day'),
+      // The live policy is the oldest active row (as _pricing_snapshot reads it).
+      client
+        .from('billing_policies')
+        .select(POLICY_COLUMNS)
+        .eq('arena_id', arenaId)
+        .eq('active', true)
+        .order('created_at')
+        .limit(1)
+        .maybeSingle(),
+    ]);
+    for (const { error } of [pricing, holidays, policy]) if (error) throw dbError(error);
+    const d = pricing.data as {
       types: Record<string, unknown>[];
       rates: Record<string, unknown>[];
       hours: { open?: unknown; happy?: unknown };
@@ -124,7 +164,35 @@ class SupabasePricingApi extends PricingApi {
         pricePaise: Number(r['price_paise']),
       })),
       hours: { open: toWeek(d.hours?.open), happy: toWeek(d.hours?.happy) },
+      holidays: ((holidays.data as Record<string, unknown>[] | null) ?? []).map((h) => ({
+        day: String(h['day']),
+        name: String(h['name']),
+        closed: h['closed'] === true,
+      })),
+      policy: parsePolicy(policy.data as Record<string, unknown> | null),
     };
+  }
+
+  async saveHoliday(arenaId: string, holiday: Holiday, replacing?: string): Promise<void> {
+    await pushOps(
+      await this.supabase.client(),
+      arenaId,
+      holidayOps(holiday, replacing),
+      PRICING_MESSAGES,
+    );
+  }
+
+  async deleteHoliday(arenaId: string, day: string): Promise<void> {
+    await pushOps(
+      await this.supabase.client(),
+      arenaId,
+      [{ kind: 'holiday.delete', payload: { day } }],
+      PRICING_MESSAGES,
+    );
+  }
+
+  async savePolicy(arenaId: string, policy: BillingPolicy): Promise<void> {
+    await pushOps(await this.supabase.client(), arenaId, policyOps(policy), PRICING_MESSAGES);
   }
 
   async saveType(arenaId: string, type: TypeInput): Promise<void> {

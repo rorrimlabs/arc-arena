@@ -9,7 +9,7 @@ import { MatProgressBar } from '@angular/material/progress-bar';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
-import { FloorStore } from '../../core/floor/floor-store';
+import { FloorRead, FloorStore } from '../../core/floor/floor-store';
 import { Game } from '../../core/floor/floor.models';
 import { Layout } from '../../core/layout/layout';
 import { injectNow } from '../../core/time/ticker';
@@ -26,6 +26,7 @@ import {
   gameStations,
   gameStats,
   knownPlatforms,
+  libraryOrder,
   platformLabel,
   playableCount,
 } from './data/game-view';
@@ -57,7 +58,13 @@ import { GameDialog, GameDialogData, GameDialogResult } from './dialogs/game-dia
     <app-list-detail listLabel="Games" detailLabel="Game" [open]="!!selected()" (closed)="close()">
       <ng-container list>
         <app-list-pane-header title="Games">
-          <button actions mat-flat-button type="button" (click)="add()">
+          <button
+            actions
+            mat-flat-button
+            type="button"
+            [disabled]="!arena.canEdit()"
+            (click)="add()"
+          >
             <mat-icon aria-hidden="true">add</mat-icon>Add
           </button>
           <mat-form-field class="arena-search">
@@ -85,7 +92,7 @@ import { GameDialog, GameDialogData, GameDialogResult } from './dialogs/game-dia
           <mat-progress-bar mode="indeterminate" aria-label="Loading games" />
         }
         <div class="flex min-h-0 flex-1 flex-col overflow-y-auto p-2">
-          @if (floor.loadError(); as error) {
+          @if (floor.errorOf(reads); as error) {
             <div class="flex flex-col items-center gap-3 px-4 py-12 text-center">
               <p role="alert" class="text-sm text-danger">{{ error }}</p>
               <button mat-stroked-button type="button" (click)="load(true)">Try again</button>
@@ -133,6 +140,8 @@ import { GameDialog, GameDialogData, GameDialogResult } from './dialogs/game-dia
             [stats]="stats().get(g.id)"
             [now]="now()"
             (closed)="close()"
+            (edit)="edit(g)"
+            (deleted)="close()"
           />
         }
       </ng-container>
@@ -142,7 +151,7 @@ import { GameDialog, GameDialogData, GameDialogResult } from './dialogs/game-dia
 export class GamesPage {
   protected readonly floor = inject(FloorStore);
   private readonly pricing = inject(PricingStore);
-  private readonly arena = inject(ArenaContext);
+  protected readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
@@ -153,6 +162,14 @@ export class GamesPage {
   /** `?id=` — the selected game. */
   readonly id = input<string>();
 
+  /** What this screen reads (and reports errors for). */
+  protected readonly reads: readonly FloorRead[] = [
+    'games',
+    'customers',
+    'plays',
+    'stations',
+    'gameResources',
+  ];
   protected readonly now = injectNow(60_000);
   protected readonly loading = computed(() => this.floor.loading());
   protected readonly query = signal('');
@@ -170,13 +187,11 @@ export class GamesPage {
   protected readonly filtered = computed(() => {
     const p = this.platform();
     const q = this.query().trim().toLowerCase();
-    return this.floor
-      .games()
-      .filter(
-        (g) =>
-          (p === 'all' || g.platforms.includes(p)) &&
-          (!q || [g.name, ...g.aliases].some((x) => x.toLowerCase().includes(q))),
-      );
+    return libraryOrder(this.floor.games()).filter(
+      (g) =>
+        (p === 'all' || g.platforms.includes(p)) &&
+        (!q || [g.name, ...g.aliases].some((x) => x.toLowerCase().includes(q))),
+    );
   });
   /** Games staff could pick but no station lets them start (warned in the list). */
   protected readonly unplayable = computed(() => {
@@ -203,13 +218,13 @@ export class GamesPage {
   }
 
   protected load(force = false): void {
-    void this.floor.load(['games', 'customers', 'plays', 'stations', 'gameResources'], force);
+    void this.floor.load(this.reads, force);
     void this.pricing.load(force);
   }
 
   protected subtitle(g: Game): string {
     const minutes = this.stats().get(g.id)?.minutes30 ?? 0;
-    return [platformLabel(g), g.active ? '' : 'unavailable', formatMinutes(minutes)]
+    return [platformLabel(g), g.active ? '' : 'archived', formatMinutes(minutes)]
       .filter(Boolean)
       .join(' · ');
   }
@@ -233,18 +248,31 @@ export class GamesPage {
   }
 
   protected add(): void {
+    const platform = this.platform();
+    this.open({
+      platforms: this.platformChoices(),
+      platform: platform === 'all' ? undefined : platform,
+      stations: gameStations(this.floor.stations()).map((s) => ({ id: s.id, name: s.name })),
+    });
+  }
+
+  protected edit(game: Game): void {
+    this.open({ platforms: this.platformChoices(), stations: [], game });
+  }
+
+  /** Platforms in use plus the game-based station types (what a game can be marked for). */
+  private platformChoices(): string[] {
     const fromTypes = this.pricing
       .types()
       .filter((t) => t.usesGames && t.active)
       .map((t) => t.code);
-    const platform = this.platform();
+    return knownPlatforms(this.floor.games(), fromTypes);
+  }
+
+  private open(data: GameDialogData): void {
     this.dialog
       .open<GameDialog, GameDialogData, GameDialogResult>(GameDialog, {
-        data: {
-          platforms: knownPlatforms(this.floor.games(), fromTypes),
-          platform: platform === 'all' ? undefined : platform,
-          stations: gameStations(this.floor.stations()).map((s) => ({ id: s.id, name: s.name })),
-        },
+        data,
         width: '520px',
         maxWidth: 'calc(100vw - 32px)',
       })
@@ -252,6 +280,7 @@ export class GamesPage {
       .subscribe((result) => {
         if (!result) return;
         this.snack.open(result.snack, undefined, { duration: 3200 });
+        if (data.game) return;
         this.query.set('');
         void this.router.navigate([], { queryParams: { platform: null, id: result.id } });
       });

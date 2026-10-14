@@ -214,6 +214,26 @@ describe('Pricing', () => {
     expect(api.types.find((t) => t.id === 't-ps5')?.active).toBe(true);
   });
 
+  it('a type stations still offer explains instead of removing', async () => {
+    await start('/pricing?id=t-ps5');
+    button('Remove', detail()!)?.click();
+    await settle();
+    expect(dialog()?.textContent).toContain('4 stations offer it');
+    expect(button('Remove', dialog()!.querySelector('mat-dialog-actions')!)).toBeUndefined();
+    expect(api.types.find((t) => t.id === 't-ps5')).toBeDefined();
+  });
+
+  it('removes a type no station offers: never used → deleted', async () => {
+    await start('/pricing?id=t-pool');
+    button('Remove', detail()!)?.click();
+    await settle();
+    expect(dialog()?.textContent).toContain('Remove Pool?');
+    button('Remove', dialog()!.querySelector('mat-dialog-actions')!)?.click();
+    await settle();
+    expect(api.types.some((t) => t.id === 't-pool')).toBe(false);
+    expect(snack()).toBe('Pool deleted');
+  });
+
   it('happy hour previews each enabled type', async () => {
     await start('/pricing?id=happy');
     const preview = [...detail()!.querySelectorAll('app-detail-row')].map((r) =>

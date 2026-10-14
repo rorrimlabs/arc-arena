@@ -1,7 +1,9 @@
 import { AppError } from '../../../core/auth/auth-api';
-import { PRICING_MESSAGES, PricingApi } from './pricing-api';
+import { BillingPolicy, DEFAULT_POLICY } from './billing-policy';
+import { PRICING_MESSAGES, PricingApi, holidayOps, policyOps } from './pricing-api';
 import {
   BusinessHours,
+  Holiday,
   PricingData,
   Rate,
   RateChange,
@@ -41,6 +43,11 @@ export class SamplePricingApi extends PricingApi {
   types: StationType[];
   rates: Rate[];
   hours: BusinessHours = defaultHours();
+  /** Ordered by day; one past (Independence Day) and two to come, for a sample "now" in Oct 2026. */
+  holidays: Holiday[];
+  policy: BillingPolicy = DEFAULT_POLICY;
+  /** Every holiday / policy write, in order, as `kind` + payload (what sync_push would get). */
+  readonly ops: { kind: string; payload: unknown }[] = [];
   /** Set to make the next call fail with this code. */
   failNext: string | null = null;
 
@@ -79,6 +86,13 @@ export class SamplePricingApi extends PricingApi {
         pricePaise: happy,
       },
     ];
+    this.holidays = empty
+      ? []
+      : [
+          { day: '2026-08-15', name: 'Independence Day', closed: false },
+          { day: '2026-11-08', name: 'Diwali', closed: false },
+          { day: '2026-12-25', name: 'Christmas', closed: true },
+        ];
     this.rates = empty
       ? []
       : [
@@ -96,7 +110,13 @@ export class SamplePricingApi extends PricingApi {
 
   async load(): Promise<PricingData> {
     this.fail();
-    return { types: [...this.types], rates: [...this.rates], hours: this.hours };
+    return {
+      types: [...this.types],
+      rates: [...this.rates],
+      hours: this.hours,
+      holidays: [...this.holidays],
+      policy: this.policy,
+    };
   }
 
   async saveType(_arenaId: string, t: TypeInput): Promise<void> {
@@ -146,6 +166,30 @@ export class SamplePricingApi extends PricingApi {
   async saveHours(_arenaId: string, hours: BusinessHours): Promise<void> {
     this.fail();
     this.hours = hours;
+  }
+
+  /** Like the server: an upsert by day, then the old day's delete when the holiday moved. */
+  async saveHoliday(_arenaId: string, holiday: Holiday, replacing?: string): Promise<void> {
+    this.fail();
+    for (const op of holidayOps(holiday, replacing)) {
+      this.ops.push(op);
+      const day = String(op.payload['day']);
+      this.holidays = this.holidays.filter((h) => h.day !== day);
+      if (op.kind === 'holiday.upsert') this.holidays.push({ ...holiday });
+    }
+    this.holidays.sort((a, b) => a.day.localeCompare(b.day));
+  }
+
+  async deleteHoliday(_arenaId: string, day: string): Promise<void> {
+    this.fail();
+    this.ops.push({ kind: 'holiday.delete', payload: { day } });
+    this.holidays = this.holidays.filter((h) => h.day !== day);
+  }
+
+  async savePolicy(_arenaId: string, policy: BillingPolicy): Promise<void> {
+    this.fail();
+    this.ops.push(...policyOps(policy));
+    this.policy = { ...policy };
   }
 
   private error(code: string): AppError {

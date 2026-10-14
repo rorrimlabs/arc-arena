@@ -88,8 +88,71 @@ void main() {
       await tester.enterText(find.byKey(const Key('cloud-password')), 'wrong');
       await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
       await tester.pump();
-      expect(find.text('Invalid login credentials'), findsOneWidget);
+      // Plain words, with what an invited person must do first.
+      expect(
+        find.textContaining("don't match a login on this server"),
+        findsOneWidget,
+      );
+      expect(find.text('Invalid login credentials'), findsNothing);
       expect(continued, isFalse);
+      // Nothing typed is lost; the button works again for the next attempt.
+      expect(
+        tester
+            .widget<TextField>(find.byKey(const Key('cloud-email')))
+            .controller!
+            .text,
+        'x@y.example',
+      );
+      expect(
+        tester
+            .widget<FilledButton>(find.widgetWithText(FilledButton, 'Sign in'))
+            .onPressed,
+        isNotNull,
+      );
+    });
+
+    testWidgets('an empty e-mail or password is refused before the server', (
+      tester,
+    ) async {
+      var calls = 0;
+      await tester.pumpWidget(
+        _host(
+          CloudSignInScreen(
+            signIn: (_, _) async => calls++,
+            onSignedIn: () async {},
+          ),
+        ),
+      );
+      await tester.enterText(find.byKey(const Key('cloud-email')), 'a@b.example');
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.pump();
+      expect(find.text('Enter your e-mail and password.'), findsOneWidget);
+      expect(calls, 0);
+    });
+
+    testWidgets('no network: says so, never "wrong password"', (tester) async {
+      await tester.pumpWidget(
+        _host(
+          CloudSignInScreen(
+            signIn: (_, _) async => throw AuthRetryableFetchException(),
+            onSignedIn: () async {},
+          ),
+        ),
+      );
+      await tester.enterText(find.byKey(const Key('cloud-email')), 'a@b.example');
+      await tester.enterText(find.byKey(const Key('cloud-password')), 'pw');
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.pump();
+      expect(find.textContaining("Can't reach the server"), findsOneWidget);
+      expect(find.textContaining("don't match"), findsNothing);
+    });
+
+    testWidgets('shows no server address', (tester) async {
+      await tester.pumpWidget(
+        _host(CloudSignInScreen(signIn: (_, _) async {}, onSignedIn: () async {})),
+      );
+      expect(find.textContaining('Server'), findsNothing);
+      expect(find.textContaining('supabase'), findsNothing);
     });
 
     testWidgets('says why the device came back here', (tester) async {
@@ -124,11 +187,35 @@ void main() {
         ),
       );
       expect(
-        find.textContaining('Ask the owner to add new@arena.example'),
+        find.textContaining('Ask the owner to invite new@arena.example'),
         findsOneWidget,
       );
       expect(find.textContaining('Create'), findsNothing);
       expect(find.byType(TextField), findsNothing);
+      expect(find.widgetWithText(OutlinedButton, 'Refresh'), findsOneWidget);
+    });
+
+    testWidgets('every access turned off: says so, nothing can be opened', (
+      tester,
+    ) async {
+      Membership? opened;
+      await tester.pumpWidget(
+        _host(
+          CloudArenaPickScreen(
+            arenas: const [
+              (arenaId: 'a1', arenaName: '404 Arena', name: 'Al', active: false),
+            ],
+            email: 'al@arena.example',
+            onPick: (m) async => opened = m,
+            onRefresh: () async {},
+            onSignOut: () async {},
+          ),
+        ),
+      );
+      expect(find.textContaining('turned off everywhere'), findsOneWidget);
+      await tester.tap(find.text('404 Arena'));
+      await tester.pump();
+      expect(opened, isNull);
     });
 
     testWidgets('lists memberships; a turned-off one cannot be opened', (

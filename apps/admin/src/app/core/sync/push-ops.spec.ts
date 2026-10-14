@@ -145,6 +145,40 @@ describe('pushOps', () => {
     expect(channel.send).not.toHaveBeenCalled();
     expect(channel.httpSend).not.toHaveBeenCalled();
   });
+
+  /** The op ids of the n-th sync_push call. */
+  const opIds = (n: number) =>
+    (
+      (client.rpc as ReturnType<typeof vi.fn>).mock.calls[n][1] as { p_ops: { op_id: string }[] }
+    ).p_ops.map((o) => o.op_id);
+
+  it('a busy server (retry) gets the same ops again, so nothing applies twice', async () => {
+    (client.rpc as ReturnType<typeof vi.fn>)
+      .mockImplementationOnce(async () => ({
+        data: { results: [{ status: 'applied' }, { status: 'retry', error: '40001' }] },
+        error: null,
+      }))
+      .mockImplementationOnce(async () => ({
+        data: { results: [{ status: 'applied' }, { status: 'applied' }] },
+        error: null,
+      }));
+    const results = await pushOps(client, 'a1', [
+      { kind: 'game.upsert', payload: { id: 'g1' } },
+      { kind: 'game.set_compat', payload: { game_id: 'g1' } },
+    ]);
+    expect(results).toEqual([{}, {}]);
+    expect(client.rpc).toHaveBeenCalledTimes(2);
+    expect(opIds(1)).toEqual(opIds(0));
+  });
+
+  it('still busy after the retries: refused as retry, worded, not as a SQLSTATE', async () => {
+    reply = { data: { results: [{ status: 'retry', error: '40P01' }] }, error: null };
+    const error = await pushOps(client, 'a1', [{ kind: 'game.delete', payload: {} }]).catch(
+      (e: unknown) => e,
+    );
+    expect(client.rpc).toHaveBeenCalledTimes(3);
+    expect(error).toMatchObject({ code: 'retry', message: 'Busy right now. Try again' });
+  });
 });
 
 describe('writeThenReload', () => {

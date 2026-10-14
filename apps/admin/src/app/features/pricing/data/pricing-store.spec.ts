@@ -52,4 +52,29 @@ describe('PricingStore', () => {
     await expect(store.saveRates([change])).rejects.toMatchObject({ code: 'forbidden' });
     expect(load).not.toHaveBeenCalled();
   });
+
+  it('a slow answer for the arena left behind never replaces the current arena’s prices', async () => {
+    const api = new SamplePricingApi();
+    let arena = 'a1';
+    TestBed.configureTestingModule({
+      providers: [
+        { provide: PricingApi, useValue: api },
+        { provide: ArenaContext, useValue: { current: () => ({ id: arena, name: arena }) } },
+      ],
+    });
+    const store = TestBed.inject(PricingStore);
+    const real = await api.load();
+    let answerA1!: (d: typeof real) => void;
+    vi.spyOn(api, 'load')
+      .mockImplementationOnce(() => new Promise((resolve) => (answerA1 = resolve)))
+      .mockImplementationOnce(async () => ({ ...real, types: [] }));
+
+    const first = store.load();
+    arena = 'a2';
+    await store.load();
+    answerA1(real);
+    await first;
+    expect(store.types()).toEqual([]);
+    expect(store.loading()).toBe(false);
+  });
 });

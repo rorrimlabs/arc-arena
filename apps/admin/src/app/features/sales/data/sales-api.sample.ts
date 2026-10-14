@@ -1,7 +1,15 @@
 import { AppError } from '../../../core/auth/auth-api';
 import { istDayStart } from '../../../shared/time/ist';
-import { SalesApi } from './sales-api';
-import { Bill, BillDetail, BillKind, PayMethod, PaymentStatus, billRef } from './sale.models';
+import { MethodCorrection, PaymentEntry, RefundEntry, SALES_MESSAGES, SalesApi } from './sales-api';
+import {
+  Bill,
+  BillDetail,
+  BillKind,
+  BillPayment,
+  PayMethod,
+  PaymentStatus,
+  billRef,
+} from './sale.models';
 
 interface Spec {
   readonly id: string;
@@ -11,6 +19,7 @@ interface Spec {
   readonly close: string;
   readonly minutes: number;
   readonly customer: string;
+  readonly returning?: boolean;
   readonly station: string;
   readonly game?: string;
   readonly players?: number;
@@ -28,6 +37,7 @@ const SPECS: readonly Spec[] = [
     close: '18:40',
     minutes: 60,
     customer: 'Kiran Rao',
+    returning: true,
     station: 'HEX',
     game: 'EA SPORTS FC 25',
     players: 2,
@@ -41,6 +51,7 @@ const SPECS: readonly Spec[] = [
     close: '17:15',
     minutes: 90,
     customer: 'Aditya Shah',
+    returning: true,
     station: 'VOID',
     game: 'Tekken 8',
     players: 4,
@@ -78,6 +89,7 @@ const SPECS: readonly Spec[] = [
     close: '21:10',
     minutes: 60,
     customer: 'Kiran Rao',
+    returning: true,
     station: 'HEX',
     game: 'Mortal Kombat 1',
     billed: 120,
@@ -116,18 +128,49 @@ const SPECS: readonly Spec[] = [
     billed: 270,
     payments: [['card', 270]],
   },
+  {
+    id: '44d1a9e0-0000-4000-8000-000000000009',
+    day: 45,
+    close: '18:00',
+    minutes: 60,
+    customer: 'Nikhil Menon',
+    station: 'HEX',
+    game: 'EA SPORTS FC 25',
+    billed: 150,
+    payments: [['cash', 150]],
+  },
 ];
+
+/** Methods, collected and refunded from a ledger. */
+function totals(payments: readonly BillPayment[]) {
+  const methods: Partial<Record<PayMethod, number>> = {};
+  let paid = 0;
+  let refunded = 0;
+  for (const p of payments) {
+    methods[p.method] = (methods[p.method] ?? 0) + p.amountPaise;
+    paid += p.amountPaise;
+    if (p.amountPaise < 0 && !p.correction) refunded -= p.amountPaise;
+  }
+  return { methods, paidPaise: paid, refundedPaise: refunded };
+}
 
 function build(spec: Spec, now: Date, n: number): BillDetail {
   const [h, m] = spec.close.split(':').map(Number);
   const at = new Date(istDayStart(now, spec.day).getTime() + (h * 60 + m) * 60_000);
   const startedAt = new Date(at.getTime() - spec.minutes * 60_000);
   const kind = spec.kind ?? 'single';
-  const methods: Partial<Record<PayMethod, number>> = {};
-  for (const [method, rupees] of spec.payments) {
-    methods[method] = (methods[method] ?? 0) + rupees * 100;
-  }
-  const paid = spec.payments.reduce((sum, [, rupees]) => sum + rupees * 100, 0);
+  const payments: BillPayment[] = spec.payments.map(([method, rupees], i) => ({
+    id: `${spec.id}-p${i}`,
+    at: at.toISOString(),
+    amountPaise: rupees * 100,
+    method,
+    refund: false,
+    correction: false,
+    reason: null,
+    note: null,
+    by: n % 2 ? 'Rohan Das' : 'Priya Nair',
+  }));
+  const players = spec.players ?? 1;
   const bill: Bill = {
     kind,
     id: spec.id,
@@ -135,20 +178,24 @@ function build(spec: Spec, now: Date, n: number): BillDetail {
     at: at.toISOString(),
     startedAt: startedAt.toISOString(),
     endedAt: at.toISOString(),
+    recordedAt: startedAt.toISOString(),
     voided: !!spec.voidReason,
     paymentStatus: spec.status ?? 'paid',
     customer: spec.customer,
     guest: spec.customer === 'Guest',
+    returning: spec.returning ?? false,
     stations: [spec.station],
     activities: [spec.station.startsWith('Pool') ? 'Pool' : 'PlayStation 5'],
     games: spec.game ? [spec.game] : [],
-    players: spec.players ?? 1,
+    players,
+    playerMinutes: spec.minutes * players,
     billedPaise: spec.billed * 100,
-    paidPaise: paid,
-    refundedPaise: 0,
-    methods,
+    ...totals(payments),
+    payments,
     startedBy: 'Priya Nair',
     voidReason: spec.voidReason ?? null,
+    voidedAt: spec.voidReason ? at.toISOString() : null,
+    voidedBy: spec.voidReason ? 'Arjun Mehra' : null,
   };
   return {
     ...bill,
@@ -158,37 +205,52 @@ function build(spec: Spec, now: Date, n: number): BillDetail {
         station: spec.station,
         activity: bill.activities[0],
         band: 'standard',
-        controllers: spec.players ?? 1,
+        controllers: players,
+        start: startedAt.toISOString(),
+        end: at.toISOString(),
+        playedMinutes: spec.minutes,
         billedMinutes: spec.minutes,
         amountPaise: spec.billed * 100,
       },
     ],
-    payments: spec.payments.map(([method, rupees], i) => ({
-      id: `${spec.id}-p${i}`,
-      at: at.toISOString(),
-      amountPaise: rupees * 100,
-      method,
-      refund: false,
-      reason: null,
-      by: n % 2 ? 'Rohan Das' : 'Priya Nair',
-    })),
+    extensions: [],
+    history: spec.voidReason
+      ? [
+          {
+            at: at.toISOString(),
+            action: 'void',
+            by: 'Arjun Mehra',
+            reason: spec.voidReason,
+            before: null,
+            after: null,
+          },
+        ]
+      : [],
     voidRecord: spec.voidReason ? { at: at.toISOString(), by: 'Arjun Mehra' } : null,
   };
 }
 
-/** Deterministic bills for tests and offline previews; voids change them in memory. */
+/**
+ * Deterministic bills for tests and offline previews. Voids, late payments, refunds and method
+ * corrections change them in memory, with the server's limits (`refund_exceeds_paid`,
+ * `overpayment`, `voided`, `already_corrected` …) so screens show the same refusals.
+ */
 export class SampleSalesApi extends SalesApi {
   readonly bills: BillDetail[];
   /** Set to make the next call fail with this code. */
   failNext: string | null = null;
+  /** The signed-in name recorded on changes. */
+  by = 'Arjun Mehra';
 
-  constructor(now: Date) {
+  constructor(private readonly now: Date) {
     super();
     this.bills = SPECS.map((spec, i) => build(spec, now, i));
   }
 
   async list(_arenaId: string, from: Date, to: Date): Promise<Bill[]> {
     this.fail();
+    const days = (to.getTime() - from.getTime()) / 86_400_000;
+    if (!(days > 0) || days > 93) throw this.error('invalid_range');
     return this.bills
       .filter((b) => Date.parse(b.at) >= from.getTime() && Date.parse(b.at) < to.getTime())
       .sort((a, b) => Date.parse(b.at) - Date.parse(a.at));
@@ -196,22 +258,141 @@ export class SampleSalesApi extends SalesApi {
 
   async get(_arenaId: string, id: string): Promise<BillDetail> {
     this.fail();
-    const bill = this.bills.find((b) => b.id === id);
-    if (!bill) throw new AppError('not_found', 'That bill is not in the records. Refresh');
-    return bill;
+    return this.find(id);
   }
 
   async void(_arenaId: string, bill: Bill, reason: string): Promise<void> {
     this.fail();
-    const i = this.bills.findIndex((b) => b.id === bill.id);
-    if (i < 0) throw new AppError('not_found', 'That bill is not in the records. Refresh');
-    if (this.bills[i].voided) return;
-    this.bills[i] = {
-      ...this.bills[i],
+    if (!reason.trim()) throw this.error('void_reason_required');
+    const b = this.find(bill.id);
+    if (b.voided) return;
+    const at = this.now.toISOString();
+    this.put({
+      ...b,
       voided: true,
-      voidReason: reason,
-      voidRecord: { at: new Date().toISOString(), by: 'Arjun Mehra' },
+      voidReason: reason.trim(),
+      voidedAt: at,
+      voidedBy: this.by,
+      voidRecord: { at, by: this.by },
+      history: [
+        ...b.history,
+        { at, action: 'void', by: this.by, reason: reason.trim(), before: null, after: null },
+      ],
+    });
+  }
+
+  async recordPayment(_arenaId: string, bill: Bill, entry: PaymentEntry): Promise<void> {
+    this.fail();
+    const b = this.find(bill.id);
+    if (b.voided) throw this.error('voided');
+    if (b.paymentStatus !== 'waived' && b.paidPaise + entry.amountPaise > (b.billedPaise ?? 0)) {
+      throw this.error('overpayment');
+    }
+    this.addPayments(b, [
+      this.entry(entry.method, entry.amountPaise, false, false, null, entry.note),
+    ]);
+  }
+
+  async refund(_arenaId: string, bill: Bill, entry: RefundEntry): Promise<void> {
+    this.fail();
+    const b = this.find(bill.id);
+    if (!entry.reason.trim()) throw this.error('refund_reason_required');
+    if (entry.amountPaise > b.paidPaise) throw this.error('refund_exceeds_paid');
+    this.addPayments(b, [
+      this.entry(entry.method, -entry.amountPaise, true, false, entry.reason.trim(), null),
+    ]);
+  }
+
+  async correct(_arenaId: string, bill: Bill, c: MethodCorrection): Promise<void> {
+    this.fail();
+    const b = this.find(bill.id);
+    if (!c.reason.trim()) throw this.error('reason_required');
+    const original = b.payments.find((p) => p.id === c.paymentId);
+    if (!original) throw this.error('not_found');
+    if (original.refund) throw this.error('not_a_payment');
+    if (original.method === c.method) throw this.error('same_method');
+    const moved = b.history
+      .filter((h) => h.action === 'payment_correct' && h.before?.['payment_id'] === original.id)
+      .reduce((n, h) => n + Number(h.after?.['amount_paise'] ?? 0), 0);
+    const left = original.amountPaise - moved;
+    if (left <= 0) throw this.error('already_corrected');
+    const amount = c.amountPaise ?? left;
+    if (amount <= 0 || amount > left) throw this.error('amount_invalid');
+    const reason = c.reason.trim();
+    const out = this.entry(original.method, -amount, true, true, reason, 'Method correction');
+    const into = this.entry(c.method, amount, false, true, reason, 'Method correction');
+    const updated = this.addPayments(b, [out, into]);
+    this.put({
+      ...updated,
+      history: [
+        ...updated.history,
+        {
+          at: this.now.toISOString(),
+          action: 'payment_correct',
+          by: this.by,
+          reason,
+          before: {
+            payment_id: original.id,
+            method: original.method,
+            amount_paise: original.amountPaise,
+          },
+          after: { method: c.method, amount_paise: amount, refund_id: out.id, payment_id: into.id },
+        },
+      ],
+    });
+  }
+
+  private entry(
+    method: PayMethod,
+    amountPaise: number,
+    refund: boolean,
+    correction: boolean,
+    reason: string | null,
+    note: string | null,
+  ): BillPayment {
+    return {
+      id: crypto.randomUUID(),
+      at: this.now.toISOString(),
+      amountPaise,
+      method,
+      refund,
+      correction,
+      reason,
+      note,
+      by: this.by,
     };
+  }
+
+  /** Appends ledger rows; the status follows them unless the bill is waived or void. */
+  private addPayments(b: BillDetail, rows: readonly BillPayment[]): BillDetail {
+    const payments = [...b.payments, ...rows];
+    const t = totals(payments);
+    const billed = b.billedPaise ?? 0;
+    const paymentStatus: PaymentStatus =
+      b.voided || b.paymentStatus === 'waived'
+        ? b.paymentStatus
+        : t.paidPaise >= billed
+          ? 'paid'
+          : t.paidPaise > 0
+            ? 'partial'
+            : 'unpaid';
+    return this.put({ ...b, ...t, payments, paymentStatus });
+  }
+
+  private find(id: string): BillDetail {
+    const bill = this.bills.find((b) => b.id === id);
+    if (!bill) throw this.error('not_found');
+    return bill;
+  }
+
+  private put(bill: BillDetail): BillDetail {
+    const i = this.bills.findIndex((b) => b.id === bill.id);
+    this.bills[i] = bill;
+    return bill;
+  }
+
+  private error(code: string): AppError {
+    return new AppError(code, SALES_MESSAGES[code] ?? code);
   }
 
   private fail(): void {

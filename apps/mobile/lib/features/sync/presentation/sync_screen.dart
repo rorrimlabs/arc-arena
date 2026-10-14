@@ -50,9 +50,11 @@ class SyncScreen extends ConsumerWidget {
                     style: ArenaType.body.copyWith(color: arena.text)),
                 const SizedBox(height: AppSpacing.md),
                 FilledButton.icon(
+                  // start(), not one pass: if syncing had stopped (a token
+                  // problem), it resumes the background passes as well.
                   onPressed: status.state == SyncState.syncing
                       ? null
-                      : () => binding.engine.syncNow(),
+                      : binding.engine.start,
                   icon: const Icon(Icons.sync),
                   label: const Text('Sync now'),
                 ),
@@ -197,5 +199,52 @@ String reasonFor(String code) => switch (code) {
       'not_playable' => 'that game cannot run on that station',
       'mode_locked' => 'that station is locked to another mode',
       'last_settings_holder' => 'someone must keep access to Settings',
+      // Money and prices.
+      'price_mismatch' => 'the server priced the bill differently, so it stays '
+          'open — check its times and end it again',
+      'pricing_snapshot_mismatch' => 'the price list changed while this device '
+          'was offline — start it again with the current prices',
+      'no_rate' => 'there is no price for that station type and controller count',
+      'overpayment' => 'it would collect more than the bill — the money was taken '
+          'but not recorded: hand it back or record it on the right bill',
+      'refund_exceeds_paid' => 'the refund is more than was collected',
+      'refund_reason_required' => 'a refund needs a reason',
+      'amount_zero' || 'amount_negative' => 'the amount must be more than zero',
+      'invalid_method' => 'that payment method is not accepted here',
+      // Sessions and groups.
+      'invalid_time' => 'its times were out of order',
+      'no_open_segment' => 'the session had already moved or ended on another device',
+      'no_open_assignment' =>
+        'that player had already moved or ended on another device',
+      'no_assignments' => 'a group needs at least one player',
+      'player_busy' => 'that player was already playing elsewhere',
+      'game_conflict' => 'players sharing a station must play the same game',
+      'resource_unavailable' => 'that station is out of service',
+      'resource_missing' || 'missing_reference' =>
+        'a station, game or customer it names no longer exists',
+      'activity_missing' => 'that station type no longer exists',
+      'mode_switch_busy' => 'the station is in use, so its mode cannot change',
+      // Controllers.
+      'controllers_exceeded' => 'more controllers than that station takes',
+      'controller_count_mismatch' =>
+        'the controller count did not match the controllers picked',
+      'controller_unusable' => 'a controller is marked faulty or unavailable',
+      'controller_missing' => 'a controller no longer exists',
+      'controller_duplicate' => 'the same controller was picked twice',
+      'controller_in_use' => 'a controller was already in use',
+      'move_kind_invalid' => 'that controller move is not allowed',
+      // Customers and bookings.
+      'phone_taken' => 'another customer already has that phone number',
+      'invalid_birth_year' => 'the birth year is not valid',
+      'booking_missing' => 'the booking no longer exists',
+      'invalid_status' => 'that status change is not allowed',
+      // Settings and anything else.
+      'invalid_name' => 'the name is blank or too long',
+      'invalid' || 'invalid_payload' => 'a value was not accepted by the server',
+      'invalid_permission' => 'an unknown permission was sent',
+      'setting_not_shared' => 'that setting is not shared between devices',
+      'unknown_op' => 'this app version sent something the server does not '
+          'know — update the app',
+      'server_error' => 'the server hit an error — try again later',
       _ => 'refused ($code)',
     };

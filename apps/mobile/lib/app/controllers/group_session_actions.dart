@@ -35,6 +35,7 @@ import 'package:arena_ops/domain/services/availability_service.dart';
 import 'package:arena_ops/domain/services/group_availability_service.dart';
 import 'package:arena_ops/domain/services/group_billing.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
+import 'package:arena_ops/domain/services/payment_rules.dart';
 import 'package:arena_ops/domain/services/session_timer.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -1066,12 +1067,15 @@ class GroupSessionActions {
   Future<Result<GroupSession>> end(
     ActiveGroupSession g, {
     bool markWaived = false,
+    String? waiveReason,
     DateTime? at,
   }) async {
     final denied =
         guard.check(Permission.bill) ??
         (markWaived ? guard.check(Permission.discount) : null);
     if (denied != null) return Err(denied);
+    final reason = waiveReason?.trim() ?? '';
+    if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
     final actualEnd = at ?? clock.now();
     if (actualEnd.isBefore(g.group.startedAt)) {
       AppTelemetry.reportTimerAnomaly(
@@ -1090,6 +1094,7 @@ class GroupSessionActions {
         charges: bill.charges,
         billedAmountPaise: bill.total.value,
         markWaived: markWaived,
+        waiveReason: markWaived ? reason : null,
       ),
     );
     if (res.isOk) {

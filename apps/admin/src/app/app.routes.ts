@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { arenaGuard } from './core/arena/arena-context';
+import { arenaGuard, noArenaGuard } from './core/arena/arena-context';
 import { signedInGuard, signedOutGuard } from './core/auth/session';
 import { NAV_ITEMS } from './core/layout/nav';
 import { Shell } from './core/layout/shell';
@@ -12,6 +12,8 @@ const BUILT: Readonly<Record<string, () => Promise<Routes>>> = {
   pricing: () => import('./features/pricing/pricing.routes').then((m) => m.PRICING_ROUTES),
   users: () => import('./features/users/users.routes').then((m) => m.USERS_ROUTES),
   stations: () => import('./features/stations/stations.routes').then((m) => m.STATIONS_ROUTES),
+  controllers: () =>
+    import('./features/controllers/controllers.routes').then((m) => m.CONTROLLERS_ROUTES),
   games: () => import('./features/games/games.routes').then((m) => m.GAMES_ROUTES),
   members: () => import('./features/members/members.routes').then((m) => m.MEMBERS_ROUTES),
   settings: () => import('./features/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
@@ -23,6 +25,12 @@ const APP_ROUTES: Routes = [
     path: 'accept-invite',
     title: 'Accept invitation · ArenaOS',
     loadComponent: () => import('./features/auth/accept-invite').then((m) => m.AcceptInvite),
+  },
+  {
+    // Opened from the password-reset e-mail, signed in or not: the link signs the person in.
+    path: 'reset-password',
+    title: 'Choose a new password · ArenaOS',
+    loadComponent: () => import('./features/auth/reset-password').then((m) => m.ResetPassword),
   },
   {
     path: 'sign-in',
@@ -37,10 +45,19 @@ const APP_ROUTES: Routes = [
     loadComponent: () => import('./features/auth/register').then((m) => m.Register),
   },
   {
+    // Only a login with no membership at all (a new owner); everyone else is sent where they belong.
     path: 'create-arena',
     title: 'Create your arena · ArenaOS',
-    canMatch: [signedInGuard],
+    canMatch: [signedInGuard, noArenaGuard],
     loadComponent: () => import('./features/auth/create-arena').then((m) => m.CreateArena),
+  },
+  {
+    // A signed-in login the dashboard is not for (floor staff, access turned off), or whose access
+    // could not be read: says which, and what to do.
+    path: 'account',
+    title: 'Your access · ArenaOS',
+    canMatch: [signedInGuard],
+    loadComponent: () => import('./features/auth/account-access').then((m) => m.AccountAccess),
   },
   {
     path: '',

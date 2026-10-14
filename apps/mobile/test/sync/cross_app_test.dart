@@ -21,11 +21,13 @@ import 'dart:io';
 
 import 'package:arena_ops/data/sync/realtime_sync.dart';
 import 'package:arena_ops/data/sync/sync_transport.dart';
+import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/services/segment_billing.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:supabase_flutter/supabase_flutter.dart' hide Session;
+import 'package:uuid/uuid.dart';
 
 import '../support/sim_device.dart';
 
@@ -275,6 +277,16 @@ void main() {
           d['warn_minutes'],
           reason: 'the floor options the owner saved',
         );
+        // The game the owner archived is kept for history but offered nowhere;
+        // the one they deleted never reaches the device.
+        final archived = d['archived_game_id'] as String;
+        expect((await staff.catalog.gameById(archived))?.active, isFalse);
+        expect(
+          (await staff.catalog.gamesForResource(playableOn)).map((g) => g.game.id),
+          isNot(contains(archived)),
+          reason: 'an archived game is not offered for a new session',
+        );
+        expect(await staff.catalog.gameById(d['deleted_game_id'] as String), isNull);
 
         final guest = await staff.customers.createGuest();
         // Played yesterday 13:00–13:30 IST (07:30 UTC): inside opening hours
@@ -354,6 +366,54 @@ void main() {
             'billed_paise': bill.total.value,
             'paid_paise': bill.total.value,
           }),
+        );
+      },
+      skip: noDashboard,
+    );
+
+    test(
+      'a game deleted after the staff device has it disappears from that '
+      'device, with its station status, on the next pull',
+      () async {
+        final d =
+            jsonDecode(dashboard!.readAsStringSync()) as Map<String, dynamic>;
+        final station = d['playable_station_id'] as String;
+        final gameId = const Uuid().v4();
+        await owner.catalog.upsertGame(Game(
+          id: gameId,
+          name: 'IT Short-lived ${env['AO_IT_RUN']}',
+          platforms: const ['PS5'],
+          playerMode: PlayerMode.single,
+          maxLocalPlayers: 1,
+        ));
+        await owner.catalog
+            .setCompatibility(gameId, station, GameAvailability.playable);
+        expect((await owner.sync()).rejected, 0);
+        await staff.sync();
+        expect(await staff.catalog.availabilityOf(gameId, station),
+            GameAvailability.playable,
+            reason: 'the staff device has the game before the delete');
+
+        // The dashboard's delete: game.delete through sync_push, as the owner.
+        final res = await owner.client.rpc('sync_push', params: {
+          'p_arena': arenaId,
+          'p_ops': [
+            {
+              'op_id': const Uuid().v4(),
+              'kind': 'game.delete',
+              'payload': {'id': gameId},
+            },
+          ],
+          'p_device': 'it',
+        }) as Map<String, dynamic>;
+        expect((res['results'] as List).single['status'], 'applied');
+
+        await staff.sync();
+        expect(await staff.catalog.gameById(gameId), isNull);
+        expect(
+          (await staff.catalog.compatibility()).where((c) => c.gameId == gameId),
+          isEmpty,
+          reason: 'its station status went with it',
         );
       },
       skip: noDashboard,

@@ -24,19 +24,21 @@ void openAddGame(BuildContext context, {String? name}) {
 /// Shared empty state for the game pickers (new session + change game): instead
 /// of a dead end, offer to add the game (with the searched name) or open the
 /// library to set which systems run it and its player count (spec §3–§6).
+/// Without the Settings permission there is nothing to offer (the server would
+/// refuse the edit), so [onAdd] / [onLibrary] are null and it says who can.
 class NoGamesState extends StatelessWidget {
   const NoGamesState({
     super.key,
     required this.resourceName,
     this.query = '',
-    required this.onAdd,
-    required this.onLibrary,
+    this.onAdd,
+    this.onLibrary,
   });
 
   final String resourceName;
   final String query;
-  final VoidCallback onAdd;
-  final VoidCallback onLibrary;
+  final VoidCallback? onAdd;
+  final VoidCallback? onLibrary;
 
   @override
   Widget build(BuildContext context) {
@@ -59,23 +61,30 @@ class NoGamesState extends StatelessWidget {
             ),
             const SizedBox(height: AppSpacing.xs),
             Text(
-              'Add it to the library, or open a game to set which systems run '
-              'it and its player count.',
+              onAdd == null && onLibrary == null
+                  ? 'Ask the owner (or anyone with Settings access) to add it or '
+                      'mark it playable here.'
+                  : 'Add it to the library, or open a game to set which systems '
+                      'run it and its player count.',
               textAlign: TextAlign.center,
               style: ArenaType.caption.copyWith(color: arena.textMuted),
             ),
-            const SizedBox(height: AppSpacing.lg),
-            FilledButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add),
-              label: Text(query.isEmpty ? 'Add a game' : 'Add "$query"'),
-            ),
-            const SizedBox(height: AppSpacing.sm),
-            TextButton.icon(
-              onPressed: onLibrary,
-              icon: const Icon(Icons.tune, size: 18),
-              label: const Text('Open game library'),
-            ),
+            if (onAdd != null) ...[
+              const SizedBox(height: AppSpacing.lg),
+              FilledButton.icon(
+                onPressed: onAdd,
+                icon: const Icon(Icons.add),
+                label: Text(query.isEmpty ? 'Add a game' : 'Add "$query"'),
+              ),
+            ],
+            if (onLibrary != null) ...[
+              const SizedBox(height: AppSpacing.sm),
+              TextButton.icon(
+                onPressed: onLibrary,
+                icon: const Icon(Icons.tune, size: 18),
+                label: const Text('Open game library'),
+              ),
+            ],
           ],
         ),
       ),

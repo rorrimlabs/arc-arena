@@ -88,7 +88,9 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   `money`/`reports` needs owner level; inviting an owner needs an owner). `staff_invites` stores
   only the SHA-256 of a random one-time token; an invite expires in 7 days, and there is one open
   invite per (arena, address) — a newer one replaces the old link. The link opens the
-  dashboard's `/accept-invite`, which has a new login choose its own password, then calls
+  dashboard's `/accept-invite`, which signs the invitee in on a separate in-memory client (never
+  the browser's stored dashboard session, so an owner signed in in the same browser stays signed
+  in as themselves), has a new login choose its own password, then calls
   `accept_invite(p_invite, p_token)`: the token must match and be unused, unwithdrawn and
   unexpired; the caller's **confirmed** auth e-mail must equal the invited address
   (`invite_wrong_account`); the inviter must still hold the authority; an existing owner is never
@@ -100,11 +102,34 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   (`apps/mobile`) only signs in, with the person's own e-mail and password.
 - **Sales are read through owner-level RPCs.** The dashboard's Sales screen lists closed bills
   (completed or voided sessions and groups, by close time, at most 93 days) with
-  `arena_sales()` and opens one with `arena_sale()` (charge lines, payments, void record); both
-  share the server-only `_sales()`. A void is a `session.void` / `group.void` op through
-  `sync_push`; it keeps the bill and its payments (voiding never refunds).
+  `arena_sales()` (each bill with its payments ledger, returning-customer flag, player-minutes,
+  who/when of a void and the server's receipt time) and opens one with `arena_sale()` (charge
+  lines, extensions, audit history, void record); both share the server-only `_sales()`.
+- **Financial corrections append, never edit.** A void is a `session.void` / `group.void` op and
+  needs a reason (`void_reason_required`); it keeps the bill and its payments (voiding never
+  refunds). Money taken before a void can be refunded (`payment.record` with `is_refund`, reason
+  required, never more than collected); a voided bill takes no new payment (`voided`). A payment
+  keyed under the wrong method is moved by `payment.correct` (Money permission, reason
+  required): a refund row on the old method and a payment row on the new one, in one
+  transaction, never more than the payment (`already_corrected`, `amount_invalid`); those rows
+  are flagged `correction` in the ledger and are not counted as refunds. A waive at the end of a
+  session or group writes an audit entry with the amount written off and the staff reason. Every
+  void, waive and correction is in `audit_log` with who, when, why and the before/after amounts.
 - **History is append-only.** There are no delete policies; payments, moves, extensions and
   audit rows are only ever added.
+- **Catalog rows that history names are archived, not deleted.** A game is archived with
+  `game.set_active` (hidden from new sessions and bookings on every device; sessions already
+  playing it continue; bills keep showing it). `game.delete` removes only a game no session
+  segment, group player, pad allocation or booking ever named, with its station statuses and
+  control guide, after locking the row (a start racing it either commits first and the delete is
+  refused, or fails on the foreign key); `session_segments`, `group_assignments` and
+  `controller_allocations` reference `games` with no cascade, so even a direct delete of a used
+  game fails. A deleted id is never re-created by a queued `game.upsert` (`not_found`), and an
+  edit that saw a different active flag than the stored one is refused (`stale`) instead of
+  undoing an archive or restore made elsewhere. The server does not refuse a start on an archived
+  game: a device that was offline when it was archived may already have started one, and a
+  refused start would drop a real session from that device's floor. Station types follow the same
+  rule (`activity.remove`).
 
 ## Tables
 
@@ -131,7 +156,7 @@ cursor), stamped by the `sync_stamp` trigger; deletes leave a row in `sync_tombs
 | RLS helpers (`private`, not client API) | `private.app_arena_ids`, `private.app_has_perm`, `private.app_is_owner`, `private.app_arena_ids_with(perms)`, `private.can_use_arena_topic(topic)` — executable by `authenticated` because policies run as the caller; `private` is not an exposed schema |
 | Operator only | `bootstrap_owner` |
 | `service_role` only | `invite_delivery_target` (used by the `staff-admin` Edge Function to choose which e-mail to send) |
-| Sync ops (`op_*`, via `sync_push`) | sessions: `op_session_start/_reconfigure/_extend/_end/_void`; groups: `op_group_create/_add/_switch/_end_player/_extend/_end/_void`; money: `op_payment`; pads: `op_controller_move/_upsert/_set_status`; customers & bookings: `op_customer_*`, `op_booking_*`; settings: `op_game_*`, `op_resource_*`, `op_rate_*`, `op_policy_save`, `op_settings_save` (keys `business_hours`, `floor_options` — validated by `_floor_options`), `op_holiday_*`, `op_staff_update`, `op_arena_update` (arena name, area, phone) |
+| Sync ops (`op_*`, via `sync_push`) | sessions: `op_session_start/_reconfigure/_extend/_end/_void`; groups: `op_group_create/_add/_switch/_end_player/_extend/_end/_void`; money: `op_payment`, `op_payment_correct`; pads: `op_controller_move/_upsert/_set_status`; customers & bookings: `op_customer_*`, `op_booking_*`; settings: `op_game_*` (`game.delete` removes only a game nothing ever used — in play → `game_in_play`, with history → `game_has_history`, archive it with `game.set_active` instead), `op_resource_*`, `op_rate_*`, `op_policy_save`, `op_settings_save` (keys `business_hours`, `floor_options` — validated by `_floor_options`), `op_holiday_*`, `op_staff_update`, `op_arena_update` (arena name, area, phone) |
 | Sync plumbing | `_sync_apply` (op kind → `op_*`), `_sync_sources` |
 | Server pricing | `_pr_*` (port of the app's PricingService / SegmentBilling / GroupBilling), `_pricing_snapshot`, `_pricing_canon`, `_pricing_grace`, `_assert_snapshot`, `_price_mismatch` |
 | Floor rules | `_need`, `_lock_resources`, `_lock_pads`, `_station_*`, `_group_*`, `_pad_*`, `_single_supply`, `_game_*`, `_booking_free`, `_free_pads_at`, `_usable_pads_at`, `_untracked_busy`, … |
@@ -159,5 +184,9 @@ checks and which errors it raises; the same summary is stored as `comment on fun
 | `16_admin_catalog_details_test.sql` | A game's age rating and media (`game.upsert`), the arena's name/area/phone (`arena.update`); edits from builds that do not send the new fields keep them |
 | `17_staff_invites_test.sql` | `invite_member` → `accept_invite`: works once, only for the confirmed invited login, only for its arena, only while the inviter keeps the authority; `revoke_invite`, `arena_invites` |
 | `18_realtime_and_sensitive_reads_test.sql` | Direct reads of money, customer and audit rows; who may use an arena's private Realtime channel; which tables Realtime announces |
+| `19_game_lifecycle_test.sql` | Game names (trimmed, unique ignoring case); archive/restore while in play; `game.delete` only for a never-used game (in play, past sessions or bookings refused; FK backstop), tombstones, idempotent retries, no resurrection by a queued edit, edits over a newer archive refused (`base_active`), station notes kept, cross-arena and permission refusals |
+| `20_floor_and_config_ops_test.sql` | `booking.update` (stale, conflict, closed), `booking.set_status` (cancel, no-show), `controller.set_status`, `resource.set_mode`, `holiday.upsert` / `holiday.delete` |
+| `22_sales_corrections_test.sql` | A void needs a reason; refunds after a void (never more than collected, no new payments); waives audited with the amount written off; `payment.correct` (permission, reason, same method, part moves, no over-correction, replay, groups); `arena_sales` returning customer, player-minutes, ledger with correction rows, void who/when; every bill's methods = ledger = collected |
+| `21_policy_save_test.sql` | `policy.save`: settings permission (owner-level managers without it refused), a `Default` row created or the oldest active row overwritten, every field stored (group mode read from inside `policy`), new rules in the pricing snapshot and the old price list retired, refusals of missing or bad fields write nothing, replays, other arenas |
 
 Every file creates and isolates its own arena and rolls back.

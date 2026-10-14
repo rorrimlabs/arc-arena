@@ -8,9 +8,11 @@
 -- Checks / errors: forbidden; refund_exceeds_paid (refund larger than what was collected);
 --   overpayment (payment beyond a final, non-waived bill); amount_zero; refund_reason_required;
 --   amount_negative (negative amount that is not a refund); invalid_method; not_found (hint
---   session / group); voided; duplicate (payment_id reused).
+--   session / group); voided (a payment on a voided bill — a refund is allowed there, so money
+--   collected before the void can be given back and the till reconciles); duplicate
+--   (payment_id reused).
 -- Writes: payments or group_payments (a refund is stored negative); the parent's payment_status
---   unless it is 'waived'. Returns: {payment_status}.
+--   unless it is 'waived' or the bill is voided. Returns: {payment_status}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_payment (
   p_arena uuid,
@@ -36,19 +38,25 @@ begin
   -- Balance (0016). Lock the parent so two pushes for the same bill queue here
   -- and the second sees the first one's payment.
   if v_scope = 'group' then
-    select payment_status, billed_amount_paise into v_pay, v_billed
+    select status, payment_status, billed_amount_paise into v_status, v_pay, v_billed
       from group_sessions where id = v_parent and arena_id = p_arena for update;
     if found then
       select coalesce(sum(amount_paise), 0) into v_paid
         from group_payments where group_id = v_parent;
     end if;
   else
-    select payment_status, billed_amount_paise into v_pay, v_billed
+    select status, payment_status, billed_amount_paise into v_status, v_pay, v_billed
       from sessions where id = v_parent and arena_id = p_arena for update;
     if found then
       select coalesce(sum(amount_paise), 0) into v_paid
         from payments where session_id = v_parent;
     end if;
+  end if;
+
+  -- A payment on a voided bill is refused as such, ahead of the balance check (which
+  -- would otherwise call it an overpayment on a bill that was paid before the void).
+  if v_status = 'voided' and not v_refund then
+    raise exception 'voided' using hint = 'a voided bill takes no payments; a refund is allowed';
   end if;
 
   -- v_paid is null when the parent was not found; not_found is raised further down.
@@ -82,12 +90,14 @@ begin
     select status, payment_status, billed_amount_paise into v_status, v_pay, v_billed
       from group_sessions where id = v_parent and arena_id = p_arena for update;
     if not found then raise exception 'not_found' using hint = 'group'; end if;
-    if v_status = 'voided' then raise exception 'voided'; end if;
+    if v_status = 'voided' and not v_refund then
+      raise exception 'voided' using hint = 'a voided bill takes no payments; a refund is allowed';
+    end if;
     insert into group_payments(id, arena_id, group_id, amount_paise, method, is_refund, note,
         reason, created_by, created_at)
       values ((p->>'payment_id')::uuid, p_arena, v_parent, v_amount, p->>'method', v_refund,
         p->>'note', p->>'reason', auth.uid(), v_now);
-    if v_pay <> 'waived' then
+    if v_pay <> 'waived' and v_status <> 'voided' then
       select coalesce(sum(amount_paise), 0) into v_paid from group_payments where group_id = v_parent;
       v_pay := _payment_status(v_billed, v_paid);
       update group_sessions set payment_status = v_pay, updated_at = v_now where id = v_parent;
@@ -96,13 +106,15 @@ begin
     select status, payment_status, billed_amount_paise into v_status, v_pay, v_billed
       from sessions where id = v_parent and arena_id = p_arena for update;
     if not found then raise exception 'not_found' using hint = 'session'; end if;
-    if v_status = 'voided' then raise exception 'voided'; end if;
+    if v_status = 'voided' and not v_refund then
+      raise exception 'voided' using hint = 'a voided bill takes no payments; a refund is allowed';
+    end if;
     insert into payments(id, arena_id, session_id, amount_paise, method, kind, note, reason,
         created_by, created_at)
       values ((p->>'payment_id')::uuid, p_arena, v_parent, v_amount, p->>'method',
         case when v_refund then 'refund' else 'payment' end, p->>'note', p->>'reason',
         auth.uid(), v_now);
-    if v_pay <> 'waived' then
+    if v_pay <> 'waived' and v_status <> 'voided' then
       select coalesce(sum(amount_paise), 0) into v_paid from payments where session_id = v_parent;
       v_pay := _payment_status(v_billed, v_paid);
       update sessions set payment_status = v_pay, updated_at = v_now where id = v_parent;

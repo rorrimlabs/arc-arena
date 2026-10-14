@@ -3,9 +3,12 @@
 /// check-in, keeping the booking as the planned record.
 library;
 
+import 'dart:async';
+
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/controllers/pad_board_loader.dart';
 import 'package:arena_ops/app/notifications/booking_reminders.dart';
+import 'package:arena_ops/app/notifications/session_reminders.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
@@ -99,6 +102,7 @@ class BookingActions {
     required this.clock,
     this.guard = const PermissionGuard(null),
     this.reminders,
+    this.sessionReminders,
     this.availability = const BookingAvailabilityService(),
     this.groups,
     this.boards,
@@ -118,6 +122,9 @@ class BookingActions {
   /// Schedules/cancels offline booking reminders (spec §23). Optional so the
   /// controller can be built without notifications (e.g. in tests).
   final BookingReminders? reminders;
+
+  /// Timer alerts for the session a check-in starts (5 min, 1 min, time up).
+  final SessionReminders? sessionReminders;
   final BookingAvailabilityService availability;
 
   /// Open group assignments hold stations too; optional for older callers.
@@ -258,6 +265,11 @@ class BookingActions {
       playersRequired: d.playersRequired,
       controllerRequirement: d.controllerRequirement,
       status: existing?.status ?? BookingStatus.booked,
+      // The form does not edit these: an edit keeps the stored party name and
+      // phone instead of sending them as cleared (booking.update writes what
+      // the payload says).
+      partyName: existing?.partyName,
+      phone: existing?.phone,
       notes: d.notes,
       reminderStatus: existing?.reminderStatus ?? ReminderStatus.scheduled,
       createdAt: existing?.createdAt ?? clock.now(),
@@ -275,9 +287,8 @@ class BookingActions {
       return Err(e.failure);
     }
 
-    // Reschedule from scratch so an amended time never leaves the old
-    // reminder behind (spec §23).
-    if (existing != null) await reminders?.cancelFor(saved.id);
+    // Rescheduled from the saved row; an amended time never leaves the old
+    // reminder behind (spec §23): a slot the new time leaves out is cancelled.
     await reminders?.scheduleFor(saved);
     AppTelemetry.bookingOperation(
       bookingId: saved.id,
@@ -456,6 +467,8 @@ class BookingActions {
       // They arrived — the reminder is no longer needed.
       await reminders?.cancelFor(booking.id);
       await bookings.setReminderStatus(booking.id, ReminderStatus.done);
+      // The session's own timer alerts, as for a walk-in start.
+      unawaited(sessionReminders?.scheduleFor(started.valueOrNull!));
       AppTelemetry.bookingOperation(
         bookingId: booking.id,
         operation: 'checked_in',
@@ -478,11 +491,33 @@ class BookingActions {
     return const Ok(null);
   }
 
+  /// The customer never came (booking.set_status no_show). Frees the slot and
+  /// clears the reminder like a cancel, but keeps why in history. Only once
+  /// the booked start has passed: before that it is a cancel.
+  Future<Result<void>> markNoShow(Booking booking) async {
+    final denied = guard.check(Permission.start);
+    if (denied != null) return Err(denied);
+    if (booking.scheduledStart.isAfter(clock.now())) {
+      return const Err(Failure(
+        message: 'The booking has not started yet.',
+        fix: 'Cancel it instead if they are not coming.',
+        code: 'booking_not_started',
+      ));
+    }
+    await bookings.setStatus(booking.id, BookingStatus.noShow);
+    await reminders?.cancelFor(booking.id);
+    await bookings.setReminderStatus(booking.id, ReminderStatus.done);
+    AppTelemetry.bookingOperation(bookingId: booking.id, operation: 'no_show');
+    return const Ok(null);
+  }
+
   /// Turn the device reminder for a booking on or off.
   Future<void> setReminder(Booking booking, {required bool on}) async {
     if (on) {
-      await reminders?.scheduleFor(booking);
+      // Status first: scheduleFor reads the row and skips a reminder that is
+      // turned off.
       await bookings.setReminderStatus(booking.id, ReminderStatus.scheduled);
+      await reminders?.scheduleFor(booking);
     } else {
       await reminders?.cancelFor(booking.id);
       await bookings.setReminderStatus(booking.id, ReminderStatus.off);
@@ -498,6 +533,7 @@ final bookingActionsProvider = Provider<BookingActions>(
     clock: ref.watch(clockProvider),
     guard: PermissionGuard(ref.watch(authControllerProvider)),
     reminders: ref.watch(bookingRemindersProvider),
+    sessionReminders: ref.watch(sessionRemindersProvider),
     groups: ref.watch(groupSessionRepositoryProvider),
     boards: PadBoardLoader(
       catalog: ref.watch(catalogRepositoryProvider),

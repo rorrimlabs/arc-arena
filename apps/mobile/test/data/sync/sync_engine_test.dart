@@ -327,6 +327,45 @@ void main() {
       expect(server.pushed.single.kind, 'customer.create');
     });
 
+    test('going to the background sends a change made just before (its nudge '
+        'was still waiting), then stays stopped', () async {
+      engine.start();
+      await engine.statusStream
+          .firstWhere((s) => s.state == SyncState.synced)
+          .timeout(const Duration(seconds: 3));
+      final nudging = SyncRecorder(
+        db,
+        actor: () => 'u1',
+        clock: clock,
+        onRecorded: engine.nudge,
+      );
+      await LocalCustomerRepository(db, clock, nudging).createGuest();
+      // The phone is locked inside the nudge's 300 ms window.
+      await engine.pause();
+      expect(server.pushed.single.kind, 'customer.create');
+      expect((await outbox()).single.status, OutboxStatus.applied);
+
+      await customers.createGuest();
+      await engine.syncIfRunning();
+      expect(server.pushed, hasLength(1), reason: 'paused: nothing more runs');
+    });
+
+    test('going to the background offline keeps the change for the resume',
+        () async {
+      await customers.createGuest();
+      server.pushThrows = SyncOfflineException('no route');
+      await engine.pause();
+      expect(engine.status.state, SyncState.offline);
+      expect((await outbox()).single.status, OutboxStatus.pending);
+
+      server.pushThrows = null;
+      engine.start(); // resumed
+      await engine.statusStream
+          .firstWhere((s) => s.state == SyncState.synced)
+          .timeout(const Duration(seconds: 3));
+      expect((await outbox()).single.status, OutboxStatus.applied);
+    });
+
     test('ops written before a restart are sent by the next engine', () async {
       await customers.createGuest();
       await engine.dispose();

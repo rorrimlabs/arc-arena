@@ -17,6 +17,7 @@ import 'package:arena_ops/data/local/local_controller_allocation_repository.dart
 import 'package:arena_ops/data/local/local_customer_repository.dart';
 import 'package:arena_ops/data/local/local_group_session_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
+import 'package:arena_ops/data/local/local_user_repository.dart';
 import 'package:arena_ops/data/local/seed_data.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
@@ -363,6 +364,51 @@ void main() {
         'A controller is already labelled hex-2.',
       );
       expect(await configState(), before);
+    });
+  });
+
+  group('staff profiles (Settings → Staff & roles)', () {
+    // The seeded owner u1 (Prashanth) and staff u2 (Alan Benny).
+    CatalogActions staffActions(AppUser actor) => CatalogActions(
+          catalog: catalog,
+          inventory: LocalControllerAllocationRepository(db, clock),
+          sessions: sessions,
+          groups: LocalGroupSessionRepository(db, clock),
+          clock: clock,
+          guard: PermissionGuard(actor),
+          users: LocalUserRepository(db, clock),
+        );
+    final ownerU1 = AppUser(id: 'u1', name: 'Prashanth', perms: Permission.all);
+
+    test('a settings holder edits someone else\'s permissions', () async {
+      final alan = (await LocalUserRepository(db, clock).getById('u2'))!;
+      final r = await staffActions(ownerU1).saveStaff(
+          alan.copyWith(perms: {...alan.perms, Permission.settings}));
+      expect(r.isOk, isTrue, reason: r.failureOrNull?.display);
+      expect((await LocalUserRepository(db, clock).getById('u2'))!.perms,
+          contains(Permission.settings));
+    });
+
+    test('nobody changes their own access (the server refuses it too)', () async {
+      final me = (await LocalUserRepository(db, clock).getById('u1'))!;
+      final r = await staffActions(ownerU1).saveStaff(me.copyWith(
+          perms: me.perms.where((p) => p != Permission.money).toSet()));
+      expect(r.failureOrNull?.code, 'own_access');
+      expect((await LocalUserRepository(db, clock).getById('u1'))!.perms,
+          contains(Permission.money));
+    });
+
+    test('renaming yourself is fine', () async {
+      final me = (await LocalUserRepository(db, clock).getById('u1'))!;
+      final r = await staffActions(ownerU1).saveStaff(me.copyWith(name: 'Prashanth K'));
+      expect(r.isOk, isTrue, reason: r.failureOrNull?.display);
+    });
+
+    test('without settings it is refused and nothing is written', () async {
+      final alan = (await LocalUserRepository(db, clock).getById('u2'))!;
+      final r = await staffActions(staff).saveStaff(alan.copyWith(active: false));
+      expect(r.failureOrNull?.code, 'not_permitted');
+      expect((await LocalUserRepository(db, clock).getById('u2'))!.active, isTrue);
     });
   });
 

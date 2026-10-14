@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/notifications/device_time.dart';
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/notifications/notification_service.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
@@ -34,34 +35,133 @@ class SessionReminders {
   final NotificationSettingsRepository settingsRepo;
   final Clock clock;
 
-  /// Schedule (or reschedule) timer alerts for one single session.
-  Future<void> scheduleFor(Session session) async {
-    if (session.status != SessionStatus.active) {
-      await cancelFor(session.id);
+  /// Session and group ids this run has alerts scheduled for, so [reconcile]
+  /// can cancel those whose session ended, was voided or rolled back elsewhere.
+  final Set<String> _scheduled = {};
+
+  /// When (app clock) each alert this run set is due, by notification id.
+  final Map<int, DateTime> _ringsAt = {};
+
+  /// Notification ids of everything this run has scheduled (start-up sweep).
+  Set<int> get scheduledIds => {
+        for (final id in _scheduled)
+          for (var slot = 0; slot < 3; slot++) sessionAlertId(id, slot),
+      };
+
+  /// Every change to the OS alerts runs one at a time, in call order, and
+  /// reads the session from the database when it runs (never a copy taken
+  /// earlier). So an action's reschedule — an extension on this device — can
+  /// never be overwritten by a refresh that read the session before it changed:
+  /// the action's turn comes after the refresh and sees the new end.
+  Future<void> _last = Future.value();
+
+  /// Runs [work] in turn; true when it finished without an error.
+  Future<bool> _serial(String what, Future<void> Function() work) {
+    final done = _last.then((_) => work()).then((_) => true, onError: (
+      Object e,
+    ) {
+      debugPrint('SessionReminders.$what failed: $e');
+      return false;
+    });
+    _last = done;
+    return done;
+  }
+
+  /// Runs [work] with no alert change in between (the start-up sweep).
+  Future<bool> exclusive(Future<void> Function() work) =>
+      _serial('exclusive', work);
+
+  /// Schedule (or reschedule) timer alerts for one single session, as it is
+  /// in the database now; a session no longer running has its alerts removed.
+  Future<void> scheduleFor(Session session) =>
+      _serial('scheduleFor(${session.id})', () async {
+        await _scheduleSession(session.id, await sessions.active());
+      });
+
+  /// Schedule (or reschedule) timer alerts for one group session.
+  Future<void> scheduleForGroup(GroupSession group) =>
+      _serial('scheduleForGroup(${group.id})', () async {
+        await _scheduleGroup(group.id, await groups.activeGroups());
+      });
+
+  /// Cancel all 3 alert slots for a session (on session end or void).
+  Future<void> cancelFor(String sessionId) =>
+      _serial('cancelFor($sessionId)', () => _cancel(sessionId));
+
+  /// Bring every alert in line with the sessions this device knows now: those
+  /// that stopped running (ended, voided, or a start the server refused) are
+  /// cancelled; every running one is (re)scheduled — the same ids replace the
+  /// old alerts, so an extension or a station switch made on ANY device moves
+  /// them. Run after sync brings changes, on resume and on startup.
+  Future<bool> reconcile() => _serial('reconcile', () async {
+        final active = await sessions.active();
+        final activeGroups = await groups.activeGroups();
+        final running = {
+          for (final a in active)
+            if (a.session.isActive) a.session.id,
+          for (final g in activeGroups)
+            if (g.group.isActive) g.group.id,
+        };
+        for (final id in _scheduled.difference(running).toList()) {
+          await _cancel(id);
+        }
+        await _scheduleAll(active, activeGroups);
+      });
+
+  /// Schedule alerts for all currently active single & group sessions.
+  /// [reconcile] does this too; on its own it never cancels anything.
+  Future<void> syncActive() => _serial('syncActive', () async {
+        await _scheduleAll(await sessions.active(), await groups.activeGroups());
+      });
+
+  Future<void> _scheduleAll(
+    List<ActiveSession> active,
+    List<ActiveGroupSession> activeGroups,
+  ) async {
+    // Latest end first: iOS keeps only the 64 most recently set
+    // notifications, so the alerts due soonest are set last.
+    final ends = <(DateTime, Future<void> Function())>[
+      for (final a in active)
+        if (a.session.isActive)
+          (
+            a.session.scheduledEndAt,
+            () => _scheduleSession(a.session.id, active),
+          ),
+      for (final g in activeGroups)
+        if (g.group.isActive)
+          (
+            g.group.scheduledEndAt,
+            () => _scheduleGroup(g.group.id, activeGroups),
+          ),
+    ]..sort((x, y) => y.$1.compareTo(x.$1));
+    for (final (_, schedule) in ends) {
+      await schedule();
+    }
+  }
+
+  Future<void> _scheduleSession(
+    String id,
+    List<ActiveSession> active,
+  ) async {
+    final running = active.firstWhereOrNull((a) => a.session.id == id);
+    final session = running?.session;
+    if (running == null || session == null || !session.isActive) {
+      await _cancel(id);
       return;
     }
+    _scheduled.add(id); // before the reads, so the start-up sweep keeps it
     try {
       final settings = await settingsRepo.getSettings();
       final customer = await customers.getById(session.customerId);
       final customerName = customer?.name ?? 'Guest';
+      final stationName = (await catalog.resources())
+              .firstWhereOrNull((r) => r.id == running.current.resourceId)
+              ?.name ??
+          'Station';
 
-      final active = await sessions.active();
-      final currentSeg = active
-          .firstWhereOrNull((a) => a.session.id == session.id)
-          ?.current;
-      String stationName = 'Station';
-      if (currentSeg != null) {
-        final resources = await catalog.resources();
-        stationName = resources
-                .firstWhereOrNull((r) => r.id == currentSeg.resourceId)
-                ?.name ??
-            'Station';
-      }
-
-      final label = '$stationName ($customerName)';
       final plans = buildSessionAlerts(
         sessionId: session.id,
-        titleName: label,
+        titleName: '$stationName ($customerName)',
         scheduledEndAt: session.scheduledEndAt,
         now: clock.now(),
         vibrationEnabled: settings.vibrationEnabled,
@@ -70,30 +170,31 @@ class SessionReminders {
         alert1Min: settings.alert1Min,
         alertAtEnd: settings.alertAtEnd,
       );
-
-      for (final plan in plans) {
-        await service.schedule(plan);
-      }
+      await _schedule(session.id, plans);
     } catch (e) {
-      debugPrint('SessionReminders.scheduleFor(${session.id}) failed: $e');
+      debugPrint('SessionReminders.scheduleFor($id) failed: $e');
     }
   }
 
-  /// Schedule (or reschedule) timer alerts for one group session.
-  Future<void> scheduleForGroup(GroupSession group) async {
-    if (group.status != GroupSessionStatus.active) {
-      await cancelFor(group.id);
+  Future<void> _scheduleGroup(
+    String id,
+    List<ActiveGroupSession> activeGroups,
+  ) async {
+    final group =
+        activeGroups.firstWhereOrNull((g) => g.group.id == id)?.group;
+    if (group == null || group.status != GroupSessionStatus.active) {
+      await _cancel(id);
       return;
     }
+    _scheduled.add(id); // before the reads, so the start-up sweep keeps it
     try {
       final settings = await settingsRepo.getSettings();
       final customer = await customers.getById(group.primaryCustomerId);
       final customerName = customer?.name ?? 'Group';
-      final label = 'Group (${group.playerCount}p) — $customerName';
 
       final plans = buildSessionAlerts(
         sessionId: group.id,
-        titleName: label,
+        titleName: 'Group (${group.playerCount}p) — $customerName',
         scheduledEndAt: group.scheduledEndAt,
         now: clock.now(),
         vibrationEnabled: settings.vibrationEnabled,
@@ -102,45 +203,45 @@ class SessionReminders {
         alert1Min: settings.alert1Min,
         alertAtEnd: settings.alertAtEnd,
       );
-
-      for (final plan in plans) {
-        await service.schedule(plan);
-      }
+      await _schedule(group.id, plans);
     } catch (e) {
-      debugPrint('SessionReminders.scheduleForGroup(${group.id}) failed: $e');
+      debugPrint('SessionReminders.scheduleForGroup($id) failed: $e');
     }
   }
 
-  /// Cancel all 3 alert slots for a session (on session end or void).
-  Future<void> cancelFor(String sessionId) async {
+  /// A slot the new plans leave out (its new time already past — e.g. an
+  /// extension the server refused moved the end back — or turned off) is
+  /// cancelled only if this run set it to ring later than now: one due or
+  /// already rung is left alone, so it still rings and stays in the tray.
+  Future<void> _schedule(String id, List<ReminderPlan> plans) async {
+    _scheduled.add(id);
+    final kept = {for (final p in plans) p.id};
+    final now = clock.now();
+    for (var slot = 0; slot < 3; slot++) {
+      final slotId = sessionAlertId(id, slot);
+      final setFor = _ringsAt[slotId];
+      if (!kept.contains(slotId) && setFor != null && setFor.isAfter(now)) {
+        await service.cancel(slotId);
+        _ringsAt.remove(slotId);
+      }
+    }
+    for (final plan in plans) {
+      await service.schedule(onDeviceClock(plan, clock));
+      _ringsAt[plan.id] = plan.fireAtUtc;
+    }
+  }
+
+  Future<void> _cancel(String sessionId) async {
+    _scheduled.remove(sessionId);
+    for (var slot = 0; slot < 3; slot++) {
+      _ringsAt.remove(sessionAlertId(sessionId, slot));
+    }
     try {
       await service.cancel(sessionAlertId(sessionId, 0));
       await service.cancel(sessionAlertId(sessionId, 1));
       await service.cancel(sessionAlertId(sessionId, 2));
     } catch (e) {
       debugPrint('SessionReminders.cancelFor($sessionId) failed: $e');
-    }
-  }
-
-  /// Reconcile alerts for all currently active single & group sessions.
-  /// Called on startup and whenever settings change.
-  Future<void> syncActive() async {
-    try {
-      final activeSessions = await sessions.active();
-      for (final a in activeSessions) {
-        if (a.session.isActive) {
-          await scheduleFor(a.session);
-        }
-      }
-
-      final activeGroups = await groups.activeGroups();
-      for (final g in activeGroups) {
-        if (g.group.isActive) {
-          await scheduleForGroup(g.group);
-        }
-      }
-    } catch (e) {
-      debugPrint('SessionReminders.syncActive failed: $e');
     }
   }
 }

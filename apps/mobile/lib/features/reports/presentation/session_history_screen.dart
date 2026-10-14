@@ -27,9 +27,17 @@ class SessionHistoryScreen extends StatelessWidget {
 /// The searchable list itself, so the Reports tab and the floor's Session log
 /// show exactly the same rows.
 class SessionHistoryBody extends StatefulWidget {
-  const SessionHistoryBody({super.key, required this.report});
+  const SessionHistoryBody({
+    super.key,
+    required this.report,
+    this.showMoney = true,
+  });
 
   final ArenaReport report;
+
+  /// Billed / collected / pending per bill. Off for someone without bill, money
+  /// or reports access (the server keeps payment rows from them the same way).
+  final bool showMoney;
 
   @override
   State<SessionHistoryBody> createState() => _SessionHistoryBodyState();
@@ -87,7 +95,8 @@ class _SessionHistoryBodyState extends State<SessionHistoryBody> {
                   itemCount: rows.length,
                   separatorBuilder: (_, _) =>
                       const SizedBox(height: AppSpacing.sm),
-                  itemBuilder: (_, i) => _HistoryTile(row: rows[i]),
+                  itemBuilder: (_, i) =>
+                      _HistoryTile(row: rows[i], showMoney: widget.showMoney),
                 ),
         ),
       ],
@@ -96,8 +105,9 @@ class _SessionHistoryBodyState extends State<SessionHistoryBody> {
 }
 
 class _HistoryTile extends StatelessWidget {
-  const _HistoryTile({required this.row});
+  const _HistoryTile({required this.row, required this.showMoney});
   final SessionHistoryRow row;
+  final bool showMoney;
 
   @override
   Widget build(BuildContext context) {
@@ -137,7 +147,7 @@ class _HistoryTile extends StatelessWidget {
                 ),
                 const SizedBox(width: AppSpacing.sm),
               ],
-              StatusDotLabel(label: label, color: color),
+              if (showMoney) StatusDotLabel(label: label, color: color),
             ],
           ),
           const SizedBox(height: 4),
@@ -159,18 +169,20 @@ class _HistoryTile extends StatelessWidget {
               style: ArenaType.caption.copyWith(color: arena.textSubtle),
             ),
           ],
-          const SizedBox(height: AppSpacing.sm),
-          Row(
-            children: [
-              _money(arena, 'Billed', row.billedPaise, arena.text),
-              const SizedBox(width: AppSpacing.lg),
-              _money(arena, 'Collected', row.collectedPaise, arena.primary),
-              if (row.pendingPaise > 0) ...[
+          if (showMoney) ...[
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                _money(arena, 'Billed', row.billedPaise, arena.text),
                 const SizedBox(width: AppSpacing.lg),
-                _money(arena, 'Pending', row.pendingPaise, arena.warning),
+                _money(arena, 'Collected', row.collectedPaise, arena.primary),
+                if (row.pendingPaise > 0) ...[
+                  const SizedBox(width: AppSpacing.lg),
+                  _money(arena, 'Pending', row.pendingPaise, arena.warning),
+                ],
               ],
-            ],
-          ),
+            ),
+          ],
         ],
       ),
     );

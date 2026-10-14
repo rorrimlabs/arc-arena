@@ -22,6 +22,7 @@ import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
@@ -33,6 +34,7 @@ import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:arena_ops/domain/repositories/controller_inventory_writer.dart';
 import 'package:arena_ops/domain/repositories/group_session_repository.dart';
 import 'package:arena_ops/domain/repositories/session_repository.dart';
+import 'package:arena_ops/domain/repositories/user_repository.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:uuid/uuid.dart';
@@ -45,9 +47,13 @@ class CatalogActions {
     required this.groups,
     required this.clock,
     this.guard = const PermissionGuard(null),
+    this.users,
   });
 
   final CatalogRepository catalog;
+
+  /// Staff profiles (Settings → Staff & roles); null where not wired.
+  final UserRepository? users;
 
   /// Pad moves and the RIFT mode lock.
   final ControllerInventoryWriter inventory;
@@ -113,6 +119,45 @@ class CatalogActions {
   Future<Result<Resource>> saveStation(Resource resource) =>
       _settings(() => catalog.upsertResource(resource));
 
+  /// Save a staff profile: name, permissions, active, and (local mode) a new
+  /// device PIN. Needs `settings`. Nobody changes their own permissions or
+  /// active flag — the server refuses that too (staff.update), since a
+  /// Settings holder could otherwise grant themselves owner-level access. In
+  /// cloud mode people join only by invitation from the dashboard, so only
+  /// existing members can be edited here.
+  Future<Result<AppUser>> saveStaff(AppUser user, {String? newPin}) async {
+    final denied = guard.check(Permission.settings);
+    if (denied != null) return Err(denied);
+    final repo = users;
+    if (repo == null) {
+      return const Err(Failure(
+        message: 'Staff cannot be changed on this device.',
+        code: 'not_available',
+      ));
+    }
+    if (guard.actor?.id == user.id) {
+      final before = await repo.getById(user.id);
+      if (before != null &&
+          (before.active != user.active ||
+              !before.perms.containsAll(user.perms) ||
+              !user.perms.containsAll(before.perms))) {
+        return const Err(Failure(
+          message: 'You cannot change your own access.',
+          fix: 'Ask another person with Settings access to do it.',
+          code: 'own_access',
+        ));
+      }
+    }
+    try {
+      return Ok(await repo.upsert(user, newPin: newPin));
+    } on UnsupportedError catch (e) {
+      return Err(Failure(
+        message: e.message ?? 'That cannot be done here.',
+        code: 'invite_only',
+      ));
+    }
+  }
+
   /// Take a station in or out of service. Refused while someone is on it:
   /// taking it away would strand a live session or group.
   Future<Result<void>> setStationStatus(
@@ -152,14 +197,24 @@ class CatalogActions {
   // --- game library ----------------------------------------------------------
 
   /// Save a game and, with it, its status on each station in
-  /// [compatibility] (resource id → availability).
+  /// [compatibility] (resource id → availability). Only stations whose status
+  /// actually changed are written, each keeping its note, so saving the form
+  /// never undoes a newer change made elsewhere to a station left as it was,
+  /// nor wipes the note that explains a status.
   Future<Result<Game>> saveGame(
     Game game, {
     Map<String, GameAvailability> compatibility = const {},
   }) => _settings(() async {
+    final stored = {
+      for (final c in await catalog.compatibility())
+        if (c.gameId == game.id) c.resourceId: c,
+    };
     final saved = await catalog.upsertGame(game);
     for (final e in compatibility.entries) {
-      await catalog.setCompatibility(game.id, e.key, e.value);
+      final was = stored[e.key];
+      // No row means not installed (a game is never globally available).
+      if ((was?.status ?? GameAvailability.notInstalled) == e.value) continue;
+      await catalog.setCompatibility(game.id, e.key, e.value, notes: was?.notes);
     }
     return saved;
   });
@@ -324,5 +379,6 @@ final catalogActionsProvider = Provider<CatalogActions>(
     groups: ref.watch(groupSessionRepositoryProvider),
     clock: ref.watch(clockProvider),
     guard: PermissionGuard(ref.watch(authControllerProvider)),
+    users: ref.watch(userRepositoryProvider),
   ),
 );

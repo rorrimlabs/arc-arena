@@ -6,9 +6,11 @@ import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/core/widgets/arena_segmented.dart';
 import 'package:arena_ops/core/widgets/custom_duration_sheet.dart';
+import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
+import 'package:arena_ops/domain/services/group_activity.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_choice_field.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_detail_screen.dart';
@@ -21,8 +23,9 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 enum _Alloc { oneSystem, separate }
 
 /// Create a group session: one primary customer, several players and
-/// controllers, one shared duration, allocated either to one shared PS5 or to
-/// separate PS5 systems (group feature §1–§2). Pushed from the Floor FAB.
+/// controllers, one shared duration, allocated either to one shared console or
+/// to separate consoles (group feature §1–§2) of the arena's console station
+/// type (groupActivityCode). Pushed from the Floor FAB.
 class GroupSessionScreen extends ConsumerStatefulWidget {
   const GroupSessionScreen({super.key, this.initialResource});
 
@@ -34,7 +37,13 @@ class GroupSessionScreen extends ConsumerStatefulWidget {
 }
 
 class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
-  static const _activity = 'PS5';
+  /// The station type this group plays on (groupActivityCode): null until the
+  /// catalog is read, or when the arena has no type with controllers and games.
+  String? _activity;
+
+  /// The tapped station was considered for one-system mode (once, after the
+  /// catalog arrived).
+  bool _preselected = false;
 
   Customer? _customer;
   int _playerCount = 3;
@@ -61,10 +70,13 @@ class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
   bool _starting = false;
   int _token = 0;
 
-  @override
-  void initState() {
-    super.initState();
+  /// Resolves the group's station type from the catalog, and on the first
+  /// pass preselects the tapped station when it offers that type.
+  void _resolveActivity(List<Activity> activities) {
     final r = widget.initialResource;
+    _activity = groupActivityCode(activities, prefer: r?.activityCodes ?? const []);
+    if (_preselected || _activity == null) return;
+    _preselected = true;
     if (r != null && r.activityCodes.contains(_activity)) {
       _alloc = _Alloc.oneSystem;
       _sharedResId = r.id;
@@ -191,6 +203,27 @@ class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final activities = ref.watch(activitiesProvider).value;
+    if (activities == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('New Group Session')),
+        body: const Center(child: CircularProgressIndicator()),
+      );
+    }
+    _resolveActivity(activities);
+    if (_activity == null) {
+      return Scaffold(
+        appBar: AppBar(title: const Text('New Group Session')),
+        body: const Padding(
+          padding: EdgeInsets.all(AppSpacing.xl),
+          child: Text(
+            'Group sessions need a station type that uses controllers and '
+            'games. The owner adds one on the admin dashboard (Pricing), with '
+            'stations that offer it.',
+          ),
+        ),
+      );
+    }
     // Watched so [_tracked] (read in helpers) is live and the screen rebuilds
     // when the inventory loads or changes.
     ref.watch(controllersProvider);

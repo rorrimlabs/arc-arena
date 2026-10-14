@@ -1,7 +1,8 @@
 -- op_game_set_compat — sync op 'game.set_compat': set how a game runs on one station.
 --
 -- Permission: settings.
--- Payload: game_id, resource_id, status, notes.
+-- Payload: game_id, resource_id, status, notes? (absent keeps the stored note, so the dashboard,
+--   which does not show notes, never wipes one staff wrote on the floor app; null clears it).
 -- Checks / errors: forbidden; constraint failures map to invalid (status outside
 --   game_resources_status_check) and missing_reference (game or station outside this arena,
 --   same-arena trigger).
@@ -21,7 +22,9 @@ begin
   insert into game_resources(arena_id, game_id, resource_id, status, notes)
     values (p_arena, (p->>'game_id')::uuid, (p->>'resource_id')::uuid, p->>'status', p->>'notes')
   on conflict (game_id, resource_id) do update
-    set status = excluded.status, notes = excluded.notes, updated_at = statement_timestamp()
+    set status = excluded.status,
+        notes = case when p ? 'notes' then excluded.notes else game_resources.notes end,
+        updated_at = statement_timestamp()
     where game_resources.arena_id = p_arena;
   return '{}'::jsonb;
 end;

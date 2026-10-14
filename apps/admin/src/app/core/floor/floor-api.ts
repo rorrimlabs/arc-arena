@@ -13,6 +13,7 @@ import {
   Game,
   GameCompat,
   GameInput,
+  GameUsage,
   Play,
   Station,
   StationInput,
@@ -44,13 +45,26 @@ export abstract class FloorApi {
 
   abstract saveStation(arenaId: string, station: StationInput): Promise<void>;
   abstract setStationStatus(arenaId: string, id: string, status: StationStatus): Promise<void>;
-  /** Saves the game, then marks it playable on `playableOn` (station ids), in one batch. */
+  /**
+   * Saves the game, then marks it playable on `playableOn` (station ids), in one batch.
+   * `baseActive` is the active flag the editor showed: the server refuses the edit (stale) if the
+   * game was archived or restored elsewhere meanwhile, instead of flipping it back.
+   */
   abstract saveGame(
     arenaId: string,
     game: GameInput,
     playableOn?: readonly string[],
+    baseActive?: boolean,
   ): Promise<void>;
+  /** Archives (false) or restores (true) a game (game.set_active). */
   abstract setGameActive(arenaId: string, id: string, active: boolean): Promise<void>;
+  /** What still refers to the game (read before offering a delete). */
+  abstract gameUsage(arenaId: string, gameId: string): Promise<GameUsage>;
+  /**
+   * Deletes a game nothing ever used (game.delete). Refused with game_in_play or
+   * game_has_history otherwise: archive it instead.
+   */
+  abstract deleteGame(arenaId: string, id: string): Promise<void>;
   /** How the game runs on one station (game.set_compat, an upsert per game and station). */
   abstract setGameCompat(
     arenaId: string,
@@ -65,8 +79,15 @@ export const FLOOR_MESSAGES: Readonly<Record<string, string>> = {
   duplicate: 'That name is already in use',
   not_found: 'That is no longer there. Refresh',
   mode_switch_busy: 'The station has a live session · end it on the floor first',
+  resource_busy: 'The station has a live session · end it on the floor first',
   missing_reference: 'That game or station is no longer there. Refresh',
-  cross_arena_reference: 'That game or station is no longer there. Refresh',
+  invalid_name: 'Enter a title of up to 80 characters',
+  invalid: 'Check the values and try again',
+  stale: 'It was archived or restored elsewhere meanwhile. Check it and save again',
+  game_in_play:
+    'A station is playing it right now, so it cannot be deleted. Archive it instead, or wait until those sessions end',
+  game_has_history:
+    'Sessions or bookings already use it, so it cannot be deleted. Archive it instead: past bills keep it',
 };
 
 type Row = Record<string, unknown>;
@@ -85,7 +106,8 @@ export function stationOps(s: StationInput): SyncOp[] {
         id: s.id,
         name: s.name,
         kind: s.kind,
-        status: s.status,
+        // Absent on an edit: the server keeps the stored status.
+        ...(s.status === undefined ? {} : { status: s.status }),
         sort_order: s.sortOrder,
         activity_codes: s.activityCodes,
       },
@@ -93,7 +115,8 @@ export function stationOps(s: StationInput): SyncOp[] {
   ];
 }
 
-export function gameOps(g: GameInput): SyncOp[] {
+/** game.upsert; `baseActive` (an edit) lets the server refuse it over a newer archive/restore. */
+export function gameOps(g: GameInput, baseActive?: boolean): SyncOp[] {
   return [
     {
       kind: 'game.upsert',
@@ -106,6 +129,7 @@ export function gameOps(g: GameInput): SyncOp[] {
         player_mode: g.playerMode,
         max_local_players: g.maxLocalPlayers,
         active: g.active,
+        ...(baseActive === undefined ? {} : { base_active: baseActive }),
         age_rating: g.ageRating,
         media: g.media,
       },
@@ -113,12 +137,15 @@ export function gameOps(g: GameInput): SyncOp[] {
   ];
 }
 
-/** game.set_compat: how one game runs on one station (the server upserts the pair). */
+/**
+ * game.set_compat: how one game runs on one station (the server upserts the pair). No notes key:
+ * the dashboard does not show station notes, so it keeps the one staff wrote on the floor app.
+ */
 export function compatOps(gameId: string, resourceId: string, status: CompatStatus): SyncOp[] {
   return [
     {
       kind: 'game.set_compat',
-      payload: { game_id: gameId, resource_id: resourceId, status, notes: null },
+      payload: { game_id: gameId, resource_id: resourceId, status },
     },
   ];
 }
@@ -322,13 +349,46 @@ class SupabaseFloorApi extends FloorApi {
     arenaId: string,
     game: GameInput,
     playableOn: readonly string[] = [],
+    baseActive?: boolean,
   ): Promise<void> {
     // Ops apply in order: the game exists before its stations are marked.
     const ops = [
-      ...gameOps(game),
+      ...gameOps(game, baseActive),
       ...playableOn.flatMap((resourceId) => compatOps(game.id, resourceId, 'playable')),
     ];
     await pushOps(await this.supabase.client(), arenaId, ops, FLOOR_MESSAGES);
+  }
+
+  async gameUsage(arenaId: string, gameId: string): Promise<GameUsage> {
+    const client = await this.supabase.client();
+    const count = async (table: string, openOnly: boolean): Promise<number> => {
+      let q = client
+        .from(table)
+        .select('id', { count: 'exact', head: true })
+        .eq('arena_id', arenaId)
+        .eq('game_id', gameId);
+      if (openOnly) q = q.is('ended_at', null);
+      const { count: n, error } = await q;
+      if (error) throw dbError(error);
+      return n ?? 0;
+    };
+    const [segments, openSegments, players, openPlayers, bookings] = await Promise.all([
+      count('session_segments', false),
+      count('session_segments', true),
+      count('group_assignments', false),
+      count('group_assignments', true),
+      count('bookings', false),
+    ]);
+    return { playingNow: openSegments + openPlayers, records: segments + players + bookings };
+  }
+
+  async deleteGame(arenaId: string, id: string): Promise<void> {
+    await pushOps(
+      await this.supabase.client(),
+      arenaId,
+      [{ kind: 'game.delete', payload: { id } }],
+      FLOOR_MESSAGES,
+    );
   }
 
   async setGameCompat(

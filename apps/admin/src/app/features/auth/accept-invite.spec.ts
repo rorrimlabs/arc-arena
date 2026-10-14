@@ -6,8 +6,10 @@ import { RouterTestingHarness } from '@angular/router/testing';
 import { routes } from '../../app.routes';
 import { ArenaApi } from '../../core/arena/arena-api';
 import { SampleArenaApi } from '../../core/arena/arena-api.sample';
-import { AuthApi } from '../../core/auth/auth-api';
+import { AppError, AuthApi } from '../../core/auth/auth-api';
+import { InviteeAuth } from '../../core/auth/invitee-auth';
 import { SampleAuthApi, SampleInvite } from '../../core/auth/auth-api.sample';
+import { LOCAL_SERVER, LocalServer } from '../../core/supabase/local-server';
 import { UsersApi } from '../users/data/users-api';
 import { SampleUsersApi } from '../users/data/users-api.sample';
 
@@ -24,7 +26,10 @@ describe('Accept invitation', () => {
   let arenas: SampleArenaApi;
   let invite: SampleInvite;
 
-  async function start(url: string, o: { signedIn?: boolean; role?: 'owner' | 'staff' } = {}) {
+  async function start(
+    url: string,
+    o: { signedIn?: boolean; role?: 'owner' | 'staff'; local?: LocalServer } = {},
+  ) {
     auth = new SampleAuthApi(o.signedIn ?? false);
     arenas = new SampleArenaApi(false);
     invite = {
@@ -51,9 +56,11 @@ describe('Accept invitation', () => {
       providers: [
         provideRouter(routes, withComponentInputBinding()),
         { provide: AuthApi, useValue: auth },
+        { provide: InviteeAuth, useValue: auth.invitee },
         { provide: ArenaApi, useValue: arenas },
         { provide: UsersApi, useValue: new SampleUsersApi() },
         { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
+        { provide: LOCAL_SERVER, useValue: o.local ?? null },
       ],
     });
     harness = await RouterTestingHarness.create();
@@ -94,6 +101,29 @@ describe('Accept invitation', () => {
     await settle();
   }
 
+  it('an owner signed in on this browser stays themselves while someone accepts here', async () => {
+    // The owner's dashboard and the invitee's link share one browser (one stored session).
+    await start(LINK + session('invite'), { signedIn: true });
+    arenas.memberships.push({
+      arenaId: 'a1',
+      arenaName: '404 Arena Koramangala',
+      name: 'Arjun Mehra',
+      role: 'owner',
+      perms: ['settings', 'money', 'reports'],
+      active: true,
+    });
+    type('Password', 'floor-pass-42');
+    type('Type it again', 'floor-pass-42');
+    await press('Save password and join');
+    // The dashboard's login was never replaced by the invitee's.
+    expect(auth.account?.email).toBe('arjun@404arena.in');
+    expect(heading()).toBe('You have joined 404 Arena Koramangala');
+    // Done ends only the invitee's sign-in; the owner is back on their dashboard.
+    await press('Done');
+    expect(auth.account?.email).toBe('arjun@404arena.in');
+    expect(TestBed.inject(Router).url).toBe('/overview');
+  });
+
   it('takes the token out of the address straight away', async () => {
     await start(LINK + session('invite'));
     expect(address()).toBe('/accept-invite');
@@ -132,6 +162,28 @@ describe('Accept invitation', () => {
     expect(TestBed.inject(Router).url).toBe('/sign-in');
   });
 
+  it('on the local test server, choosing a password and joining both say the login is only there', async () => {
+    await start(LINK + session('invite'), {
+      local: { address: '127.0.0.1:54431', mailUrl: null },
+    });
+    const note = () => body().querySelector('app-local-server-note [role="note"]')?.textContent;
+    expect(heading()).toBe('Choose your password');
+    expect(note()).toContain('Local test server (127.0.0.1:54431).');
+    expect(note()).toContain('exist only on this computer');
+    expect(note()).not.toContain('local mailbox');
+
+    type('Password', 'floor-pass-42');
+    type('Type it again', 'floor-pass-42');
+    await press('Save password and join');
+    expect(heading()).toBe('You have joined 404 Arena Koramangala');
+    expect(note()).toContain('dart_define.prod.json');
+  });
+
+  it('on a hosted project the invitation page has no local server note', async () => {
+    await start(LINK + session('invite'));
+    expect(body().querySelector('app-local-server-note [role="note"]')).toBeNull();
+  });
+
   it('an existing login opens the magic link and accepts, password optional', async () => {
     await start(LINK + session('magiclink'), { role: 'owner' });
     expect(heading()).toBe('Accept your invitation');
@@ -156,19 +208,57 @@ describe('Accept invitation', () => {
     expect(heading()).toBe('You have joined 404 Arena Koramangala');
   });
 
-  it('signed in as someone else: says who, and offers to sign out', async () => {
+  it('an owner signed in on this browser is never taken for the invitee', async () => {
+    // No link session: the invitee signs in on the page, whoever the dashboard is signed in as.
     await start(LINK, { signedIn: true });
-    expect(heading()).toBe('Accept your invitation');
-    await press('Accept invitation');
+    expect(heading()).toBe('Sign in to accept');
+    expect(auth.calls).not.toContain(`accept:${INVITE}`);
+  });
+
+  it('signing in with a different login than invited: says who, nothing changes', async () => {
+    await start(LINK, { signedIn: true });
+    type('Email', 'arjun@404arena.in');
+    type('Password', 'arena-pass-42');
+    await press('Sign in and accept');
     expect(heading()).toBe('Could not accept the invitation');
     expect(alert()).toBe(
       'You are signed in as arjun@404arena.in, but this invitation was sent to a different e-mail address. Sign out, then open the link from the e-mail again.',
     );
     expect(invite.state).toBe('open');
 
-    await press('Sign out');
-    expect(auth.account).toBeNull();
+    await press('Sign in as someone else');
     expect(heading()).toBe('Sign in to accept');
+    // The dashboard's own login was not signed out by any of this.
+    expect(auth.account?.email).toBe('arjun@404arena.in');
+  });
+
+  it('the account was made but accepting failed: try again joins once, password kept', async () => {
+    await start(LINK + session('invite'));
+    type('Password', 'floor-pass-42');
+    type('Type it again', 'floor-pass-42');
+    auth.invitee.failNext = new AppError(
+      'network',
+      'No connection. Check the internet and try again.',
+    );
+    await press('Save password and join');
+    expect(heading()).toBe('Could not accept the invitation');
+    expect(invite.state).toBe('open');
+    await press('Try again');
+    expect(heading()).toBe('You have joined 404 Arena Koramangala');
+    // The password was saved once; the retry only accepted.
+    expect(auth.calls.filter((c) => c === 'setPassword')).toHaveLength(1);
+    expect(arenas.memberships.filter((m) => m.name === 'Farah Khan')).toHaveLength(1);
+  });
+
+  it('a co-owner takes over this browser’s dashboard only when they choose to', async () => {
+    await start(LINK + session('magiclink'), { signedIn: true, role: 'owner' });
+    await press('Accept invitation');
+    expect(heading()).toBe('Welcome to 404 Arena Koramangala');
+    expect(body().textContent).toContain('arjun@404arena.in is signed in to the dashboard');
+    expect(auth.account?.email).toBe('arjun@404arena.in');
+    await press('Open dashboard');
+    expect(auth.account?.email).toBe('farah@404arena.in');
+    expect(TestBed.inject(Router).url).toBe('/overview');
   });
 
   it('without a link session, an existing login signs in to accept', async () => {

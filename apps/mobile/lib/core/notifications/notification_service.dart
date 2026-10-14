@@ -12,12 +12,10 @@ import 'package:arena_ops/domain/notifications/reminder_plan.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
-import 'package:timezone/data/latest_all.dart' as tzdata;
 import 'package:timezone/timezone.dart' as tz;
 
 abstract interface class NotificationService {
-  /// Initialise the platform plugin and the timezone database. Safe to call
-  /// more than once.
+  /// Initialise the platform plugin. Safe to call more than once.
   Future<void> init();
 
   /// Ask the OS for permission to post notifications. Returns whether granted.
@@ -33,8 +31,14 @@ abstract interface class NotificationService {
   /// Cancel a single scheduled notification by id.
   Future<void> cancel(int id);
 
-  /// Cancel every scheduled notification (used to reconcile on startup).
+  /// Cancel every scheduled (not yet shown) notification (leaving an arena).
+  /// Notifications already delivered stay in the tray: a time-up alert that
+  /// fired while the app was closed must still be there when it opens.
   Future<void> cancelAll();
+
+  /// Ids of the notifications scheduled and not yet shown — what an earlier
+  /// run left behind, for the start-up sweep.
+  Future<List<int>> pendingIds();
 }
 
 /// A no-op service for tests and platforms without notification support. Never
@@ -54,6 +58,8 @@ class NoopNotificationService implements NotificationService {
   Future<void> cancel(int id) async {}
   @override
   Future<void> cancelAll() async {}
+  @override
+  Future<List<int>> pendingIds() async => const [];
 }
 
 /// Real implementation backed by `flutter_local_notifications`.
@@ -82,7 +88,9 @@ class LocalNotificationService implements NotificationService {
   @override
   Future<void> init() async {
     if (_ready) return;
-    tzdata.initializeTimeZones();
+    // No timezone database: alerts are scheduled in tz.UTC, which the package
+    // has built in. Decoding the full IANA database here ran synchronously on
+    // the UI isolate — on iOS the main thread — at every start.
     const settings = InitializationSettings(
       android: AndroidInitializationSettings('@mipmap/ic_launcher'),
       iOS: DarwinInitializationSettings(
@@ -198,16 +206,29 @@ class LocalNotificationService implements NotificationService {
   Future<void> schedule(ReminderPlan plan) async {
     await init();
     final when = tz.TZDateTime.from(plan.fireAtUtc.toUtc(), tz.UTC);
+    Future<void> zoned(AndroidScheduleMode mode) => _plugin.zonedSchedule(
+          plan.id,
+          plan.title,
+          plan.body,
+          when,
+          _detailsFor(plan),
+          androidScheduleMode: mode,
+          payload: plan.bookingId.isNotEmpty ? plan.bookingId : plan.sessionId,
+        );
     try {
-      await _plugin.zonedSchedule(
-        plan.id,
-        plan.title,
-        plan.body,
-        when,
-        _detailsFor(plan),
-        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
-        payload: plan.bookingId.isNotEmpty ? plan.bookingId : plan.sessionId,
-      );
+      await zoned(AndroidScheduleMode.exactAllowWhileIdle);
+    } on PlatformException catch (e) {
+      if (e.code != 'exact_alarms_not_permitted') {
+        debugPrint('notification schedule failed: $e');
+        return;
+      }
+      // Android 12+ can refuse exact alarms ("Alarms & reminders" off): an
+      // alert that may come a little late beats no alert at all.
+      try {
+        await zoned(AndroidScheduleMode.inexactAllowWhileIdle);
+      } catch (e2) {
+        debugPrint('notification schedule failed: $e2');
+      }
     } catch (e) {
       debugPrint('notification schedule failed: $e');
     }
@@ -246,9 +267,21 @@ class LocalNotificationService implements NotificationService {
   Future<void> cancelAll() async {
     await init();
     try {
-      await _plugin.cancelAll();
+      // Scheduled ones only: delivered alerts stay in the tray.
+      await _plugin.cancelAllPendingNotifications();
     } catch (e) {
       debugPrint('notification cancelAll failed: $e');
+    }
+  }
+
+  @override
+  Future<List<int>> pendingIds() async {
+    await init();
+    try {
+      return [for (final p in await _plugin.pendingNotificationRequests()) p.id];
+    } catch (e) {
+      debugPrint('notification pending list failed: $e');
+      return const [];
     }
   }
 }

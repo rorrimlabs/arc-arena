@@ -1,6 +1,7 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { LoginScope } from '../../../core/auth/login-scope';
 import { FloorApi } from '../../../core/floor/floor-api';
 import { Charge } from '../../../core/floor/floor.models';
 import { Clock } from '../../../core/time/clock';
@@ -31,6 +32,20 @@ export class OverviewStore {
   private loadedKey: string | null = null;
   private currentPeriod: Period = 'today';
   private latest = 0;
+
+  constructor() {
+    // Sign-out or another login: the figures leave memory; a read in flight does not land.
+    inject(LoginScope).onEnd(() => {
+      this.latest++;
+      this.loadedKey = null;
+      this.range.set(null);
+      this.bills.set([]);
+      this.previous.set([]);
+      this.charges.set([]);
+      this.loading.set(false);
+      this.loadError.set('');
+    });
+  }
 
   async load(period: Period, force = false): Promise<void> {
     this.currentPeriod = period;

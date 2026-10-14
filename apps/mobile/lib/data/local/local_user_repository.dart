@@ -63,7 +63,8 @@ class LocalUserRepository implements UserRepository {
       // A cloud member is a real account the owner adds by email; a row made
       // up on this device would have no account behind it.
       throw UnsupportedError(
-          'In cloud mode, add staff by email from Settings → Staff.');
+          'In cloud mode, people join by invitation: the owner invites them '
+          'from the admin dashboard (Users → Invite).');
     }
     final credential = newPin == null ? null : PinCredential.create(newPin);
     final row = UsersCompanion(

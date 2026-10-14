@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
@@ -99,7 +100,11 @@ class FloorScreen extends ConsumerWidget {
         ref.watch(upcomingBookingsProvider).value ?? const <Booking>[];
     final nextBookingByResource = <String, Booking>{};
     for (final b in bookings) {
-      if (b.resourceId == null || !b.isOpen) continue;
+      // A booking whose whole slot has passed no longer holds the station
+      // (it is listed as missed until someone marks it no-show or cancels it).
+      if (b.resourceId == null || !b.isOpen || !b.scheduledEnd.isAfter(now)) {
+        continue;
+      }
       final existing = nextBookingByResource[b.resourceId!];
       if (existing == null ||
           b.scheduledStart.isBefore(existing.scheduledStart)) {
@@ -212,7 +217,8 @@ class FloorScreen extends ConsumerWidget {
           children: [
             const ClockBanner(),
             ArenaScreenHeader(
-              overline: '404 Arena · Koratty',
+              // The signed-in arena in cloud mode; the demo arena's label locally.
+              overline: ref.watch(cloudBindingProvider)?.arenaName ?? '404 Arena · Koratty',
               title: 'Floor',
               trailing: IconButton(
                 tooltip: 'Bookings',

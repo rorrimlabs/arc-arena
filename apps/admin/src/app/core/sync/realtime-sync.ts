@@ -3,6 +3,7 @@ import type { RealtimeChannel, SupabaseClient } from '@supabase/supabase-js';
 import { ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
 import { FloorStore } from '../floor/floor-store';
+import { ControllersStore } from '../../features/controllers/data/controllers-store';
 import { FloorOptionsStore } from '../../features/settings/data/floor-options';
 import { OverviewStore } from '../../features/overview/data/overview-store';
 import { PricingStore } from '../../features/pricing/data/pricing-store';
@@ -23,14 +24,23 @@ export type RefreshTarget =
   | 'pricing'
   | 'settings'
   | 'users'
+  | 'controllers'
   | 'arena';
 
 const BILLS: readonly RefreshTarget[] = ['floor_plays', 'overview', 'sales'];
 const PRICES: readonly RefreshTarget[] = ['pricing', 'settings'];
+/**
+ * A staff change may be the signed-in login's own (deactivated, permissions changed): the
+ * memberships reload too (ArenaContext), so lost access applies without a page reload. The
+ * login's own deactivation never arrives as a row change (RLS hides the row from it by then): it
+ * comes as the writer's broadcast nudge, or shows as the channel being refused.
+ */
+const STAFF: readonly RefreshTarget[] = ['users', 'arena'];
 
 /**
- * The published tables the dashboard shows, and what each one's changes refresh. Bookings and
- * controllers are published for the floor app but not shown here, so they are not subscribed.
+ * The published tables the dashboard shows, and what each one's changes refresh. Bookings are
+ * published for the floor app but not shown here, so they are not subscribed. A pad moved or lent
+ * on the floor (controller.move, a session's borrow) updates its controllers row.
  */
 export const TABLE_TARGETS: Readonly<Record<string, readonly RefreshTarget[]>> = {
   sessions: BILLS,
@@ -51,7 +61,7 @@ export const TABLE_TARGETS: Readonly<Record<string, readonly RefreshTarget[]>> =
   game_categories: ['games'],
   game_resources: ['game_resources'],
   customers: ['customers'],
-  staff_profiles: ['users'],
+  staff_profiles: STAFF,
   // Business and happy hours live in settings rows: a settings change refreshes pricing too.
   settings: PRICES,
   rates: PRICES,
@@ -59,6 +69,7 @@ export const TABLE_TARGETS: Readonly<Record<string, readonly RefreshTarget[]>> =
   rate_bands: PRICES,
   holidays: PRICES,
   billing_policies: PRICES,
+  controllers: ['controllers'],
 };
 
 const ALL_TARGETS: readonly RefreshTarget[] = [
@@ -73,6 +84,8 @@ const ALL_TARGETS: readonly RefreshTarget[] = [
   'pricing',
   'settings',
   'users',
+  'controllers',
+  'arena',
 ];
 
 /** What a committed op kind (`session.start`, `game.set_compat`…) refreshes, by its prefix. */
@@ -81,6 +94,8 @@ const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
   ['group.', BILLS],
   ['payment.', ['sales', 'overview', 'floor_plays']],
   ['game.set_compat', ['game_resources']],
+  // A deleted game takes its station statuses with it.
+  ['game.delete', ['games', 'game_resources']],
   ['game.', ['games']],
   ['resource.', ['stations', 'game_resources']],
   ['activity.', ['pricing', 'stations']],
@@ -90,11 +105,11 @@ const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
   ['settings.', PRICES],
   ['hours.', PRICES],
   ['customer.', ['customers']],
-  ['staff.', ['users']],
+  ['staff.', STAFF],
   ['arena.', ['arena', 'settings']],
+  ['controller.', ['controllers']],
   // Floor-only records the dashboard does not show.
   ['booking.', []],
-  ['controller.', []],
 ];
 
 export function targetsForKind(kind: string): readonly RefreshTarget[] {
@@ -123,10 +138,13 @@ export class RealtimeSync {
   private readonly overview = inject(OverviewStore);
   private readonly pricing = inject(PricingStore);
   private readonly floorOptions = inject(FloorOptionsStore);
+  private readonly controllers = inject(ControllersStore);
   private readonly users = inject(UsersStore);
 
   private activeChannel: RealtimeChannel | null = null;
   private subscribedArenaId: string | null = null;
+  /** The login the channel was opened for (its JWT authorized the join). */
+  private subscribedUserId: string | null = null;
   /** Bumped by every setup and teardown: callbacks of an older channel do nothing. */
   private generation = 0;
   private debounceTimer: ReturnType<typeof setTimeout> | null = null;
@@ -138,15 +156,18 @@ export class RealtimeSync {
       window.addEventListener('online', this.onlineHandler);
     }
 
-    // Follow the signed-in user and the selected arena; nobody signed in → no channel.
+    // Follow the signed-in user and the selected arena; nobody signed in → no channel. Another
+    // login (signed in from another tab) joins again with its own JWT, even for the same arena.
     effect(() => {
-      const signedIn = this.session.user() !== null;
+      const userId = this.session.user()?.id ?? null;
       const arenaId = this.arena.current().id;
-      if (!signedIn) {
+      if (!userId) {
         if (this.subscribedArenaId !== null || this.activeChannel) void this.teardownCurrent();
         return;
       }
-      if (arenaId !== this.subscribedArenaId) void this.setupArena(arenaId);
+      if (arenaId !== this.subscribedArenaId || userId !== this.subscribedUserId) {
+        void this.setupArena(arenaId);
+      }
     });
   }
 
@@ -192,6 +213,7 @@ export class RealtimeSync {
     const run = ++this.generation;
     const live = () => run === this.generation;
     this.subscribedArenaId = arenaId;
+    this.subscribedUserId = this.session.user()?.id ?? null;
 
     try {
       const client = await this.supabase.client();
@@ -223,10 +245,20 @@ export class RealtimeSync {
         if (live()) this.onBroadcast(arenaId, m.payload ?? message);
       });
 
+      let joined = false;
       channel.subscribe((status) => {
         if (status === 'SUBSCRIBED' && live()) {
-          // Catch up on anything missed while (re)connecting.
-          this.schedule(['floor_plays', 'stations', 'games', 'game_resources']);
+          // Catch up on anything missed while connecting: the first join, the floor (screens
+          // load the rest themselves); a rejoin after a dropped socket, everything, since any
+          // change may have been missed meanwhile.
+          this.schedule(
+            joined ? ALL_TARGETS : ['floor_plays', 'stations', 'games', 'game_resources'],
+          );
+          joined = true;
+        } else if (status === 'CHANNEL_ERROR' && live()) {
+          // Refused (Realtime Authorization admits only active members) or dropped: check this
+          // login's own access again.
+          this.schedule(['arena']);
         }
       });
 
@@ -309,23 +341,25 @@ export class RealtimeSync {
 
     const jobs: Promise<void>[] = [];
 
+    // Floor reads refresh only when a screen has loaded them: a nudge never downloads a list
+    // (90 days of plays) no open screen shows; a screen opened later loads it fresh.
     if (targets.has('floor_plays')) {
-      jobs.push(this.floor.load(['plays', 'visits'], true));
+      jobs.push(this.floor.refresh(['plays', 'visits']));
     }
     if (targets.has('floor_charges')) {
       jobs.push(this.floor.refresh(['charges']));
     }
     if (targets.has('stations')) {
-      jobs.push(this.floor.load(['stations'], true));
+      jobs.push(this.floor.refresh(['stations']));
     }
     if (targets.has('games')) {
-      jobs.push(this.floor.load(['games'], true));
+      jobs.push(this.floor.refresh(['games']));
     }
     if (targets.has('game_resources')) {
       jobs.push(this.floor.refresh(['gameResources']));
     }
     if (targets.has('customers')) {
-      jobs.push(this.floor.load(['customers'], true));
+      jobs.push(this.floor.refresh(['customers']));
     }
     if (targets.has('sales')) {
       jobs.push(this.sales.refresh());
@@ -341,6 +375,9 @@ export class RealtimeSync {
     }
     if (targets.has('users')) {
       jobs.push(this.users.refresh());
+    }
+    if (targets.has('controllers')) {
+      jobs.push(this.controllers.refresh());
     }
     if (targets.has('arena')) {
       jobs.push(this.arena.load(true));

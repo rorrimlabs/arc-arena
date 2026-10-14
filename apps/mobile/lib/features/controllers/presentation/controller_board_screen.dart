@@ -41,6 +41,12 @@ class ControllerBoardScreen extends ConsumerWidget {
 
     return Scaffold(
       backgroundColor: arena.bg,
+      // Opened from More (pushed): the back arrow takes the person back. No
+      // title here — the large header below carries it.
+      appBar: AppBar(
+        backgroundColor: arena.bg,
+        surfaceTintColor: Colors.transparent,
+      ),
       body: SafeArea(
         child: board.when(
           loading: () => const Center(child: CircularProgressIndicator()),

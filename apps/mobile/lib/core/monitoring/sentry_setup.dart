@@ -1,18 +1,32 @@
 import 'package:arena_ops/core/config/app_config.dart';
 import 'package:arena_ops/data/sync/sync_transport.dart';
+import 'package:flutter/foundation.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
 /// The Sentry options for this build (called from `SentryFlutter.init` in
 /// main). Kept here so the configuration is unit-tested.
 ///
 /// An empty DSN leaves Sentry — and so Session Replay — inactive.
-void configureSentry(SentryFlutterOptions options, AppConfig config) {
+///
+/// [debugBuild] is `kDebugMode`, given explicitly by the tests.
+void configureSentry(
+  SentryFlutterOptions options,
+  AppConfig config, {
+  bool debugBuild = kDebugMode,
+}) {
   options.dsn = config.sentryDsn ?? '';
   options.environment = config.environment;
   // Tracing sample rate: conservative in production (10%), full in dev (100%).
   options.tracesSampleRate = config.isProduction ? 0.1 : 1.0;
   options.sendDefaultPii = false;
   options.debug = config.sentryDebug;
+
+  // App Hangs (iOS) only from profile and release builds. In a debug build
+  // Dart is unoptimised (JIT) and runs on the iOS main thread (Flutter merges
+  // the UI and platform threads), so a debug start — or any breakpoint — is
+  // reported as a hang. The native SDK skips hangs while Xcode's debugger is
+  // attached, but it cannot see the Dart debugger.
+  options.enableAppHangTracking = !debugBuild;
 
   // Session Replay (Android / iOS). Rates come from AppConfig: 1.0 of sessions
   // outside production, 0.1 in production, 1.0 of errors; AO_SENTRY_REPLAY=off

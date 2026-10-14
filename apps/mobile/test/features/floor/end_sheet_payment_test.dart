@@ -88,6 +88,66 @@ void main() {
     await tester.pump(const Duration(milliseconds: 100));
   });
 
+  testWidgets('waiving asks why before the session can end', (tester) async {
+    tester.view.physicalSize = const Size(1179, 5200);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    final who = await LocalCustomerRepository(db).create(name: 'Sana');
+    final sessions = LocalSessionRepository(db);
+    final started = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: now.subtract(const Duration(hours: 1)),
+      scheduledEndAt: now,
+      snapshot: await LocalCatalogRepository(db).currentSnapshot(),
+      resourceId: 'hex',
+      resourceName: 'HEX',
+      activityCode: 'PS5',
+      controllerCount: 1,
+    ));
+    final id = started.valueOrNull!.id;
+    final active = (await sessions.active()).single;
+
+    await tester.pumpWidget(ProviderScope(
+      overrides: testOverrides(db, clock: FakeClock(now)),
+      child: MaterialApp(
+        home: Scaffold(
+          body: Builder(
+            builder: (context) => TextButton(
+              onPressed: () => showEndSessionSheet(context, active),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    ));
+    await tester.tap(find.text('open'));
+    await settle(tester);
+    ButtonStyleButton end() => tester.widget(find.ancestor(
+        of: find.text('End & record'),
+        matching: find.byWidgetPredicate((w) => w is ButtonStyleButton)));
+
+    expect(find.byKey(const ValueKey('waive-reason')), findsNothing);
+    await tester.tap(find.text('Waive (complimentary)'));
+    await settle(tester);
+    expect(find.text('Reason for waiving'), findsOneWidget);
+    expect(end().onPressed, isNull, reason: 'no reason, no write-off');
+
+    await tester.enterText(find.byKey(const ValueKey('waive-reason')), 'Birthday treat');
+    await settle(tester);
+    expect(end().onPressed, isNotNull);
+    await tester.tap(find.text('End & record'));
+    await settle(tester);
+
+    final ended = (await sessions.getById(id))!;
+    expect(ended.status, SessionStatus.completed);
+    expect(ended.paymentStatus, PaymentStatus.waived);
+    expect(await sessions.paymentsFor(id), isEmpty);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 100));
+  });
+
   testWidgets('only the methods the arena offers are shown, and the bill is taken by one',
       (tester) async {
     tester.view.physicalSize = const Size(1179, 5200);

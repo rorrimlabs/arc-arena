@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/monitoring/replay_privacy.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -184,12 +185,17 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
       return;
     }
 
-    await ref.read(userRepositoryProvider).upsert(saved, newPin: result.newPin);
-    ref.invalidate(usersProvider);
-    await _load();
+    final r = await ref
+        .read(catalogActionsProvider)
+        .saveStaff(saved, newPin: result.newPin);
+    if (r.isOk) {
+      ref.invalidate(usersProvider);
+      await _load();
+    }
     if (mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('${saved.name} saved.')));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(r.failureOrNull?.display ?? '${saved.name} saved.'),
+      ));
     }
   }
 }

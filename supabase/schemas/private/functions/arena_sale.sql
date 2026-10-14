@@ -10,9 +10,12 @@
 --                  billed_minutes, unit_minutes, unit_price_paise,
 --                  amount_paise} (player is null for a single session);
 --   extensions[] — {at, added_minutes, added_amount_paise, reason, by};
---   payments[]   — the ledger in time order: {id, at, amount_paise (refunds
---                  negative), method, refund, reason, note, by};
---   voided       — {at, by, reason} from the audit log, or null.
+--   history[]    — every audit_log entry of the bill in time order: {at,
+--                  action (void | waive | payment_correct), by, reason, before,
+--                  after};
+--   voided       — {at, by, reason} from the first void in the audit log, or
+--                  null.
+-- The payments ledger (payments[]) comes with the _sales summary.
 -- `by` is the staff name of the login that did it. 'not_found' when p_id is not
 -- a closed bill of p_arena. SECURITY DEFINER. Caller must be owner level in
 -- p_arena (app_is_owner), else 'forbidden'.
@@ -56,15 +59,7 @@ begin
           order by e.created_at)
           from session_extensions e
           left join staff_profiles sp on sp.arena_id = e.arena_id and sp.user_id = e.created_by
-         where e.session_id = p_id), '[]'::jsonb),
-      'payments', coalesce((
-        select jsonb_agg(jsonb_build_object('id', p.id, 'at', p.created_at,
-            'amount_paise', p.amount_paise, 'method', p.method, 'refund', p.kind = 'refund',
-            'reason', p.reason, 'note', p.note, 'by', sp.name)
-          order by p.created_at, p.id)
-          from payments p
-          left join staff_profiles sp on sp.arena_id = p.arena_id and sp.user_id = p.created_by
-         where p.session_id = p_id), '[]'::jsonb));
+         where e.session_id = p_id), '[]'::jsonb));
   else
     v_bill := v_bill || jsonb_build_object(
       'lines', coalesce((
@@ -86,27 +81,29 @@ begin
           order by e.created_at)
           from group_extensions e
           left join staff_profiles sp on sp.arena_id = e.arena_id and sp.user_id = e.created_by
-         where e.group_id = p_id), '[]'::jsonb),
-      'payments', coalesce((
-        select jsonb_agg(jsonb_build_object('id', p.id, 'at', p.created_at,
-            'amount_paise', p.amount_paise, 'method', p.method, 'refund', p.is_refund,
-            'reason', p.reason, 'note', p.note, 'by', sp.name)
-          order by p.created_at, p.id)
-          from group_payments p
-          left join staff_profiles sp on sp.arena_id = p.arena_id and sp.user_id = p.created_by
-         where p.group_id = p_id), '[]'::jsonb));
+         where e.group_id = p_id), '[]'::jsonb));
   end if;
 
-  return v_bill || jsonb_build_object('voided', (
-    select jsonb_build_object('at', l.created_at, 'by', sp.name, 'reason', l.reason)
-      from audit_log l
-      left join staff_profiles sp on sp.arena_id = l.arena_id and sp.user_id = l.created_by
-     where l.arena_id = p_arena and l.entity_id = p_id and l.action = 'void'
-     order by l.created_at limit 1));
+  return v_bill || jsonb_build_object(
+    'history', coalesce((
+      select jsonb_agg(jsonb_build_object('at', l.created_at, 'action', l.action, 'by', sp.name,
+          'reason', l.reason, 'before', l.before, 'after', l.after)
+        order by l.created_at, l.id)
+        from audit_log l
+        left join staff_profiles sp on sp.arena_id = l.arena_id and sp.user_id = l.created_by
+       where l.arena_id = p_arena and l.entity_id = p_id
+         and l.entity_type = case when v_bill->>'kind' = 'group' then 'group_session' else 'session' end),
+      '[]'::jsonb),
+    'voided', (
+      select jsonb_build_object('at', l.created_at, 'by', sp.name, 'reason', l.reason)
+        from audit_log l
+        left join staff_profiles sp on sp.arena_id = l.arena_id and sp.user_id = l.created_by
+       where l.arena_id = p_arena and l.entity_id = p_id and l.action = 'void'
+       order by l.created_at limit 1));
 end;
 $function$;
 
-comment on function private.arena_sale(uuid, uuid) is 'Client API (owner level): one closed bill with its charge lines, extensions, payments ledger and void record, for the admin dashboard''s Sales detail.';
+comment on function private.arena_sale(uuid, uuid) is 'Client API (owner level): one closed bill with its charge lines, extensions, payments ledger, audit history and void record, for the admin dashboard''s Sales detail.';
 
 grant execute on function "private"."arena_sale"(uuid, uuid) to "authenticated", "postgres", "service_role";
 

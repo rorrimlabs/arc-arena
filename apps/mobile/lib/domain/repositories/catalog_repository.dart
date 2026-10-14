@@ -10,8 +10,9 @@ import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/value/floor_options.dart';
 
-/// A game paired with its availability on a particular resource (spec §4–§5).
-typedef GameOnResource = ({Game game, GameAvailability status});
+/// A game paired with its availability on a particular resource (spec §4–§5),
+/// and the note explaining it ("disc scratched"), if any.
+typedef GameOnResource = ({Game game, GameAvailability status, String? notes});
 
 /// A resource paired with a game's availability on it (spec §19–§20).
 typedef ResourceForGame = ({Resource resource, GameAvailability status});

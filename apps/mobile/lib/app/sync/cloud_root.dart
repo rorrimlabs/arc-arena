@@ -12,13 +12,16 @@ import 'dart:io';
 
 import 'package:arena_ops/app/arena_ops_app.dart';
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/notifications/reminder_startup.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
-import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
+import 'package:arena_ops/app/sync/staff_access.dart';
 import 'package:arena_ops/app/sync/stored_session.dart';
 import 'package:arena_ops/core/clock/clock.dart';
+import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/core/monitoring/replay_privacy.dart';
+import 'package:arena_ops/core/notifications/notification_service.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
@@ -27,23 +30,17 @@ import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
 import 'package:arena_ops/data/sync/sync_transport.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
-import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/features/more/presentation/database_locked_screen.dart';
 import 'package:drift_flutter/drift_flutter.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-/// One membership as my_arenas() reports it.
-typedef Membership = ({
-  String arenaId,
-  String arenaName,
-  String name,
-  bool active,
-});
+export 'package:arena_ops/app/sync/staff_access.dart' show Membership;
 
 /// Staff-only app: there is no sign-up or arena creation here. Owners register
-/// and add staff logins on the admin dashboard (apps/admin).
+/// and invite staff on the admin dashboard (apps/admin); an invited person
+/// accepts there, then signs in here with their own e-mail and password.
 enum _Phase { checking, signIn, pickArena, opening, ready, failed }
 
 class CloudRoot extends StatefulWidget {
@@ -66,6 +63,18 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   DbProtectReport? _locked;
   StreamSubscription<SyncStatus>? _statusSub;
   StreamSubscription<AuthState>? _authSub;
+  StreamSubscription<void>? _dataSub;
+  Timer? _reminderDebounce;
+  Future<void> _reminderWork = Future.value();
+
+  /// The clock offset the device's alerts were last scheduled with.
+  Duration _alertsOffset = Duration.zero;
+
+  /// The phone's notification scheduler outside an open arena (one per run).
+  NotificationService? _alerts;
+
+  /// What "Try again" on the failure screen repeats.
+  late Future<void> Function() _retry = _loadArenas;
 
   static const _expiredNotice =
       'Your sign-in has expired. Sign in again to continue.';
@@ -98,18 +107,43 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
   /// Start-up with a stored sign-in: check it before the first call, so a
   /// refresh the server refused lands on Sign in instead of calling as `anon`.
   Future<void> _restore() async {
-    if (await checkStoredSession(_client.auth) == StoredSession.signInNeeded) {
-      _go(_Phase.signIn, message: _expiredNotice);
-      return;
+    switch (await checkStoredSession(_client.auth)) {
+      case StoredSession.signInNeeded:
+        _go(_Phase.signIn, message: _expiredNotice);
+        return;
+      case StoredSession.offline:
+        // Auth is out of reach, so my_arenas would be too: open the last arena
+        // from disk now instead of waiting for that call to time out as well.
+        final last = await _lastArenaOnDisk();
+        if (last != null) {
+          await _open(last, confirmedOnline: false);
+          return;
+        }
+      case StoredSession.valid:
+        break;
     }
     await _loadArenas(); // offline: its fallback opens the last arena from disk
   }
 
-  /// The server ended the sign-in mid-shift (its refresh was refused): stop
-  /// and ask for a sign-in, as when access is turned off.
   void _onAuthChange(AuthState state) {
+    // The server ended the sign-in mid-shift (its refresh was refused): stop
+    // and ask for a sign-in, as when access is turned off.
     if (state.event == AuthChangeEvent.signedOut && _phase == _Phase.ready) {
       unawaited(_signOut(reason: _expiredNotice));
+    }
+    // A fresh token after sync stopped on a token problem: carry on syncing
+    // (never after access was turned off, and not while in the background).
+    if (state.event == AuthChangeEvent.tokenRefreshed &&
+        _phase == _Phase.ready &&
+        WidgetsBinding.instance.lifecycleState == AppLifecycleState.resumed) {
+      final engine = _binding?.engine;
+      final status = engine?.status;
+      if (engine != null &&
+          status != null &&
+          status.state == SyncState.authProblem &&
+          !status.accessRevoked) {
+        engine.start();
+      }
     }
   }
 
@@ -121,10 +155,35 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     if (state == AppLifecycleState.resumed) {
       engine.start(); // also syncs at once: catch up after the pause
       if (realtime != null) unawaited(realtime.start());
+      // Alerts may have rung, sessions may have moved on other devices while
+      // this one slept: rebuild them from the database.
+      _refreshRemindersSoon();
     } else if (state == AppLifecycleState.paused) {
-      engine.stop();
+      // Sends what is waiting before it stops (a session started just before
+      // the phone was locked); session timers keep counting from their stored
+      // times and their alerts are with the OS, so nothing else must run.
+      unawaited(engine.pause());
       realtime?.stop();
     }
+  }
+
+  /// Rebuilds the device's alerts from the database, coalescing bursts (a
+  /// sync that pulls many rows) and never running two rebuilds at once.
+  void _refreshRemindersSoon() {
+    final container = _container;
+    if (container == null) return;
+    _reminderDebounce?.cancel();
+    _reminderDebounce = Timer(const Duration(milliseconds: 800), () {
+      if (_container != container) return; // signed out or switched meanwhile
+      // In the background (the pass pause() sends can pull rows) the alerts
+      // already with the OS stand; resuming rebuilds them anyway.
+      final state = WidgetsBinding.instance.lifecycleState;
+      if (state == AppLifecycleState.paused ||
+          state == AppLifecycleState.hidden) {
+        return;
+      }
+      _reminderWork = _reminderWork.then((_) => refreshReminders(container));
+    });
   }
 
   void _go(_Phase phase, {String? message}) {
@@ -135,25 +194,13 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     });
   }
 
-  Future<void> _loadArenas() async {
+  /// [reopenLast]: with several arenas, go straight back to the one this
+  /// person last worked in here (false when they asked for the list).
+  Future<void> _loadArenas({bool reopenLast = true}) async {
     _go(_Phase.checking);
+    final List<Membership> fetched;
     try {
-      final rows = await _client.rpc('my_arenas') as List;
-      _arenas = [
-        for (final r in rows)
-          (
-            arenaId: (r as Map)['arena_id'] as String,
-            arenaName: r['arena_name'] as String,
-            name: r['name'] as String,
-            active: r['active'] as bool,
-          ),
-      ];
-      final active = _arenas.where((a) => a.active).toList();
-      if (active.length == 1) {
-        await _open(active.single);
-      } else {
-        _go(_Phase.pickArena);
-      }
+      fetched = await fetchMemberships(_client);
     } on Object catch (e) {
       switch (classifyStartupFailure(
         e,
@@ -165,24 +212,41 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
           try {
             await _client.auth.signOut(scope: SignOutScope.local);
           } on Object catch (_) {}
+          _arenas = const [];
+          await _dropDeviceAlerts();
           _go(_Phase.signIn, message: _expiredNotice);
         case StartupFailure.serverRefused:
           // Reachable and signed in, but refused: keep the sign-in.
-          _go(
-            _Phase.failed,
-            message: 'The server refused to list your arenas ($e).',
-          );
+          debugPrint('my_arenas refused: ${e.runtimeType}');
+          _retry = () => _loadArenas(reopenLast: reopenLast);
+          _go(_Phase.failed, message: arenaListFailureMessage(e));
         case StartupFailure.offline:
           // Offline (even if the access token needed refreshing): keep the
-          // sign-in and open the last arena from disk.
+          // sign-in and open the last arena from disk. (Also when the list
+          // was asked for: it cannot be had offline, and the floor must go
+          // on.) The list last fetched for this login is kept.
           final last = await _lastArenaOnDisk();
           if (last != null) {
-            await _open(last);
+            await _open(last, confirmedOnline: false);
           } else {
-            _go(_Phase.failed, message: 'Could not reach the server ($e).');
+            _retry = () => _loadArenas(reopenLast: reopenLast);
+            _go(_Phase.failed, message: offlineMessage);
           }
       }
+      return;
     }
+    _arenas = fetched;
+    final lastId = reopenLast ? (await _lastArenaOnDisk())?.arenaId : null;
+    final arena = arenaToOpen(_arenas, lastId);
+    if (arena != null) {
+      await _open(arena);
+      return;
+    }
+    // None (not invited yet, or every access turned off) or several: the list
+    // says which, and only an active one can be opened. With none, this phone
+    // follows no floor: alerts left from an earlier run go.
+    if (!_arenas.any((a) => a.active)) await _dropDeviceAlerts();
+    _go(_Phase.pickArena);
   }
 
   /// The arena this person last opened on this device, for offline starts.
@@ -198,7 +262,50 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     return (arenaId: parts[0], arenaName: parts[1], name: '', active: true);
   }
 
-  Future<void> _open(Membership arena) async {
+  /// Opens [arena]'s database on this device. [confirmedOnline]: my_arenas
+  /// just reported this membership active (false for an offline start from
+  /// the last arena on disk).
+  Future<void> _open(Membership arena, {bool confirmedOnline = true}) async {
+    final cleanUp = <Future<void> Function()>[];
+    try {
+      await _openArena(arena, confirmedOnline, cleanUp);
+    } on Object catch (e, st) {
+      // Never a dead "Opening…" spinner: close what was opened, offer a retry.
+      debugPrint('opening ${arena.arenaName} failed: ${e.runtimeType}');
+      unawaited(
+        AppTelemetry.captureException(
+          e,
+          stackTrace: st,
+          operation: 'cloud_open_arena',
+        ),
+      );
+      for (final close in cleanUp.reversed) {
+        try {
+          await close().timeout(const Duration(seconds: 2));
+        } on Object catch (_) {}
+      }
+      _retry = _retryOpen(arena, confirmedOnline);
+      _go(
+        _Phase.failed,
+        message: "${arena.arenaName} couldn't be opened on this device. Try "
+            'again; if it keeps happening, tell the maintainer.',
+      );
+    }
+  }
+
+  /// "Try again" after [arena] failed to open: that arena again if the server
+  /// just listed it; after an offline start, the whole start (which fetches
+  /// the list once online and still falls back to the disk offline).
+  Future<void> Function() _retryOpen(Membership arena, bool confirmedOnline) =>
+      confirmedOnline ? () => _open(arena) : _loadArenas;
+
+  /// [cleanUp] collects how to close what has been opened so far; emptied once
+  /// the arena is handed to the app.
+  Future<void> _openArena(
+    Membership arena,
+    bool confirmedOnline,
+    List<Future<void> Function()> cleanUp,
+  ) async {
     _go(_Phase.opening, message: 'Opening ${arena.arenaName}…');
     final user = _client.auth.currentUser;
     if (user == null) {
@@ -206,8 +313,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       _go(_Phase.signIn, message: _expiredNotice);
       return;
     }
-    final dbPath =
-        '${widget.documentsPath}/arena_ops_cloud_${arena.arenaId}_${user.id}.sqlite';
+    final dbPath = cloudDbPath(widget.documentsPath, arena.arenaId, user.id);
     final safety = await DbSafety.protect(
       dbFile: File(dbPath),
       appSchemaVersion: AppDatabase.expectedSchemaVersion,
@@ -215,6 +321,17 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       label: 'arena_ops_cloud_${arena.arenaId}',
     );
     if (!safety.safeToOpen) {
+      if (_arenas.any((a) => a.active && a.arenaId != arena.arenaId)) {
+        // Its data is kept as it is (backup + locked file); another arena can
+        // still be worked in. Opening this one again shows the same.
+        _go(
+          _Phase.pickArena,
+          message: "${arena.arenaName}'s data on this device needs the app's "
+              'maintainer before it can open (nothing was changed or lost). '
+              'You can open another arena.',
+        );
+        return;
+      }
       setState(() => _locked = safety);
       return;
     }
@@ -224,6 +341,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
         native: DriftNativeOptions(databasePath: () async => dbPath),
       ),
     );
+    cleanUp.add(db.close);
     final clock = OffsetClock(const SystemClock(), Duration.zero);
     late final RealtimeSync realtime;
     final engine = SyncEngine(
@@ -240,6 +358,9 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       clock: clock,
       onSyncNeeded: engine.syncIfRunning,
     );
+    cleanUp
+      ..add(engine.dispose)
+      ..add(realtime.dispose);
     final recorder = SyncRecorder(
       db,
       actor: () => user.id,
@@ -259,27 +380,47 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
         await realtime.dispose();
         await engine.dispose();
         await db.close();
+        debugPrint('first download ended in ${first.endedIn}');
+        _retry = _retryOpen(arena, confirmedOnline);
         _go(
           _Phase.failed,
-          message:
-              engine.status.message ??
-              'The first download needs a connection. Try again when online.',
+          message: firstDownloadFailureMessage(engine.status, arena.arenaName),
         );
         return;
       }
     }
-    final me = await (db.select(
-      db.users,
-    )..where((t) => t.id.equals(user.id))).getSingleOrNull();
-    if (me == null || !me.active) {
-      await realtime.dispose();
-      await engine.dispose();
-      await db.close();
-      _go(
-        _Phase.pickArena,
-        message: 'Your access to ${arena.arenaName} is turned off.',
-      );
-      return;
+    final access = await confirmAccess(
+      db: db,
+      userId: user.id,
+      confirmedOnline: confirmedOnline,
+      sync: () => engine.syncNow(),
+    );
+    final AppUser me;
+    switch (access) {
+      case AccessGranted(user: final granted):
+        me = granted;
+      case AccessTurnedOff():
+        await realtime.dispose();
+        await engine.dispose();
+        await db.close();
+        await _dropDeviceAlerts();
+        _go(
+          _Phase.pickArena,
+          message: 'Your access to ${arena.arenaName} is turned off. Ask the '
+              'owner.',
+        );
+        return;
+      case AccessNotOnDevice():
+        await realtime.dispose();
+        await engine.dispose();
+        await db.close();
+        _retry = _retryOpen(arena, confirmedOnline);
+        _go(
+          _Phase.failed,
+          message: "Your profile in ${arena.arenaName} hasn't reached this "
+              'device yet. Check the connection, then try again.',
+        );
+        return;
     }
     File('${widget.documentsPath}/arena_ops_cloud_last_${user.id}')
         .writeAsStringSync('${arena.arenaId}\n${arena.arenaName}');
@@ -296,21 +437,19 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       changePassword: (password) =>
           _client.auth.updateUser(UserAttributes(password: password)),
       realtime: realtime,
+      // After an offline start the list is unknown: offer it, as the only way
+      // to another arena until the next online start.
+      switchArena:
+          !confirmedOnline || _arenas.where((a) => a.active).length > 1
+          ? _switchArena
+          : null,
     );
     final container = ProviderContainer(
       overrides: [
         databaseProvider.overrideWithValue(db),
         cloudBindingProvider.overrideWithValue(binding),
         clockProvider.overrideWithValue(clock),
-        authControllerProvider.overrideWith(
-          () => CloudAuthController(
-            AppUser(
-              id: me.id,
-              name: me.name,
-              perms: Permission.parse(me.perms),
-            ),
-          ),
-        ),
+        authControllerProvider.overrideWith(() => CloudAuthController(me)),
         clockOffsetProvider.overrideWith((ref) {
           final offset =
               ref.watch(_serverOffsetProvider).value ?? Duration.zero;
@@ -329,11 +468,22 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     await _applyClockOffset(db, clock);
     engine.start();
     unawaited(realtime.start());
-    unawaited(_initReminders(container));
     _db = db;
     _binding = binding;
     _container = container;
+    cleanUp.clear(); // from here, _teardown closes them
+    // Alerts follow the floor: another device ending, extending or moving a
+    // session reaches this one through sync, and its alerts move with it.
+    _dataSub = engine.dataChanged.listen((_) => _refreshRemindersSoon());
+    _alertsOffset = clock.offset;
+    _reminderWork = _reminderWork.then((_) => startReminders(container));
     _go(_Phase.ready);
+    // The sign-in may have ended while this opened (a refresh the server
+    // refused after an offline start): its signedOut event came before ready
+    // and was not acted on.
+    if (_client.auth.currentSession?.user.id != user.id) {
+      unawaited(_signOut(reason: _expiredNotice));
+    }
   }
 
   Future<void> _applyClockOffset(AppDatabase db, OffsetClock clock) async {
@@ -346,30 +496,38 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
     clock.offset = ClockOffset(measured).isSignificant
         ? measured
         : Duration.zero;
-  }
-
-  Future<void> _initReminders(ProviderContainer container) async {
-    try {
-      final service = container.read(notificationServiceProvider);
-      await service.init();
-      await container.read(bookingRemindersProvider).syncUpcoming();
-    } catch (e) {
-      debugPrint('reminder init skipped: $e');
+    // Alert times are converted to the device clock with the offset. Each
+    // measurement carries network latency, so only a real move (the clock was
+    // corrected, or drifted) reschedules them — not every sync pass.
+    if ((clock.offset - _alertsOffset).abs() >= const Duration(seconds: 5)) {
+      _alertsOffset = clock.offset;
+      _refreshRemindersSoon();
     }
   }
 
   Future<void> _teardown() async {
     await _statusSub?.cancel();
     _statusSub = null;
+    await _dataSub?.cancel();
+    _dataSub = null;
+    _reminderDebounce?.cancel();
     final realtime = _binding?.realtime;
     final engine = _binding?.engine;
     _binding = null;
     final container = _container;
     _container = null;
+    final db = _db;
+    _db = null;
     try {
       await realtime?.dispose().timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint('realtime dispose warning: $e');
+    }
+    try {
+      // Last chance to send what is waiting before this database closes.
+      await engine?.pause().timeout(const Duration(seconds: 5));
+    } catch (e) {
+      debugPrint('engine flush warning: $e');
     }
     try {
       await engine?.dispose().timeout(const Duration(seconds: 2));
@@ -377,30 +535,71 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       debugPrint('engine dispose warning: $e');
     }
     try {
+      // A rebuild still reading this container must finish before it goes.
+      await _reminderWork.timeout(const Duration(seconds: 2));
+    } catch (e) {
+      debugPrint('reminder work warning: $e');
+    }
+    try {
       container?.dispose();
     } catch (e) {
       debugPrint('container dispose warning: $e');
     }
     try {
-      await _db?.close().timeout(const Duration(seconds: 2));
+      await db?.close().timeout(const Duration(seconds: 2));
     } catch (e) {
       debugPrint('db close warning: $e');
     }
-    _db = null;
   }
 
   Future<void> _signOut({String? reason}) async {
-    if (_phase != _Phase.ready && _phase != _Phase.pickArena) return;
+    if (_phase != _Phase.ready &&
+        _phase != _Phase.pickArena &&
+        _phase != _Phase.failed) {
+      return;
+    }
+    // Sign in shows only once the old arena is closed and signed out: a
+    // quick next sign-in must not be caught by this sign-out.
+    _go(_Phase.checking, message: 'Signing out…');
+    await _leaveArena();
+    try {
+      await _client.auth.signOut().timeout(const Duration(seconds: 3));
+    } catch (e) {
+      debugPrint('SignOut auth warning: $e');
+    }
+    _arenas = const [];
     _go(_Phase.signIn, message: reason);
+  }
+
+  /// Back to the arena list, still signed in (only offered with 2+ arenas).
+  Future<void> _switchArena() async {
+    if (_phase != _Phase.ready) return;
+    _go(_Phase.checking, message: 'Closing ${_binding?.arenaName ?? ''}…');
+    await _leaveArena();
+    await _loadArenas(reopenLast: false);
+  }
+
+  /// Closes the open arena. Its alerts are cancelled too: this device stops
+  /// following that floor, so it could no longer move or stop them when a
+  /// session is extended or ended elsewhere. Opening an arena (after signing
+  /// in again) schedules them afresh from its database.
+  Future<void> _leaveArena() async {
     try {
       await _teardown();
     } catch (e) {
       debugPrint('SignOut teardown warning: $e');
     }
+    await _dropDeviceAlerts();
+  }
+
+  /// Cancels every scheduled alert on this phone (delivered ones stay in the
+  /// tray): used when it no longer follows any floor — signed out, access
+  /// turned off, no arena — so nothing stale rings later.
+  Future<void> _dropDeviceAlerts() async {
     try {
-      await _client.auth.signOut().timeout(const Duration(seconds: 3));
+      await (_alerts ??= LocalNotificationService()).cancelAll();
     } catch (e) {
-      debugPrint('SignOut auth warning: $e');
+      debugPrint('alert clean-up warning: $e');
     }
   }
 
@@ -433,27 +632,17 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
           message: _message,
           email: _client.auth.currentUser?.email ?? '',
           onPick: _open,
-          onRefresh: _loadArenas,
-          onSignOut: () async {
-            try {
-              await _client.auth.signOut();
-            } on Object catch (_) {
-              // Offline: gotrue has already cleared the local session.
-            }
-            _go(_Phase.signIn);
-          },
+          onRefresh: () => _loadArenas(reopenLast: false),
+          onSignOut: () => _signOut(),
         ),
         _Phase.failed => _Message(
           text: _message ?? 'Something went wrong.',
           action: 'Try again',
-          onAction: _loadArenas,
+          // The step that failed, again: the arena list, or the arena that
+          // was being opened (not the last one used, if that is another).
+          onAction: () => _retry(),
           secondaryAction: 'Sign in again',
-          onSecondaryAction: () async {
-            try {
-              await _client.auth.signOut();
-            } catch (_) {}
-            _go(_Phase.signIn);
-          },
+          onSecondaryAction: () => _signOut(),
         ),
         _ => _Message(text: _message ?? 'Checking your account…'),
       },
@@ -473,8 +662,9 @@ final _serverOffsetProvider = StreamProvider<Duration>((ref) async* {
 
 // ------------------------------------------------------------------ screens
 
-/// The cloud-mode entry screen: sign in, nothing else. Staff use the login
-/// their owner created for them on the admin dashboard (Staff → Add).
+/// The cloud-mode entry screen: sign in, nothing else. Staff use the e-mail
+/// they were invited with and the password they chose when accepting the
+/// invitation (admin dashboard → Users → Invite user).
 class CloudSignInScreen extends StatefulWidget {
   const CloudSignInScreen({
     required this.signIn,
@@ -509,17 +699,27 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
   }
 
   Future<void> _submit() async {
+    final email = _email.text.trim();
+    if (email.isEmpty || _password.text.isEmpty) {
+      setState(() => _error = 'Enter your e-mail and password.');
+      return;
+    }
     setState(() {
       _busy = true;
       _error = null;
     });
     try {
-      await widget.signIn(_email.text.trim(), _password.text);
-      await widget.onSignedIn();
-    } on AuthException catch (e) {
-      if (mounted) setState(() => _error = e.message);
+      await widget.signIn(email, _password.text);
     } on Object catch (e) {
-      if (mounted) setState(() => _error = 'Could not reach the server ($e).');
+      // A refused sign-in is never retried on its own; the typed e-mail stays.
+      if (mounted) setState(() => _error = signInFailureMessage(e));
+      if (mounted) setState(() => _busy = false);
+      return;
+    }
+    try {
+      await widget.onSignedIn();
+    } on Object catch (_) {
+      if (mounted) setState(() => _error = "Couldn't load your arenas. Try again.");
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -546,7 +746,8 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
                 ),
                 const SizedBox(height: AppSpacing.sm),
                 Text(
-                  'Use the login the owner created for you. No account yet? '
+                  'Use the e-mail you were invited with and the password you '
+                  'chose when you accepted the invitation. Not invited yet? '
                   'Ask the owner.',
                   style: ArenaType.body.copyWith(color: arena.textMuted),
                 ),
@@ -651,8 +852,15 @@ class CloudArenaPickScreen extends StatelessWidget {
               ),
             if (arenas.isEmpty)
               Text(
-                'This login has no arena access yet. Ask the owner to add '
-                '$email on the owner dashboard (Staff), then refresh.',
+                'This login has no arena yet. Ask the owner to invite $email '
+                'from the owner dashboard (Users → Invite user), open the '
+                'invitation e-mail and accept it, then tap Refresh.',
+                style: ArenaType.body.copyWith(color: arena.textMuted),
+              )
+            else if (!arenas.any((a) => a.active))
+              Text(
+                'Your access is turned off everywhere. Ask the owner to turn '
+                'it back on, then tap Refresh.',
                 style: ArenaType.body.copyWith(color: arena.textMuted),
               ),
             const SizedBox(height: AppSpacing.md),

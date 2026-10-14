@@ -8,6 +8,7 @@ import {
   Game,
   GameCompat,
   GameInput,
+  GameUsage,
   Play,
   Station,
   StationInput,
@@ -67,6 +68,10 @@ export class SampleFloorApi extends FloorApi {
   readonly ops: { kind: string; payload: unknown }[] = [];
   /** Set to make the next call fail with this code. */
   failNext: string | null = null;
+  /** Bookings that name a game (the sample floor has none unless a test adds them). */
+  readonly bookingsByGame = new Map<string, number>();
+  /** Ids game.delete removed; the server never lets game.upsert bring them back. */
+  private readonly deletedGames = new Set<string>();
 
   constructor(now: Date) {
     super();
@@ -280,8 +285,10 @@ export class SampleFloorApi extends FloorApi {
     );
     if (clash) throw new AppError('duplicate', FLOOR_MESSAGES['duplicate']);
     this.ops.push({ kind: 'resource.upsert', payload: s });
-    const next: Station = { ...s, activityCodes: [...s.activityCodes] };
     const i = this.stationList.findIndex((x) => x.id === s.id);
+    // Like the server: an edit without a status keeps the stored one; a new station is available.
+    const status = s.status ?? (i < 0 ? 'available' : this.stationList[i].status);
+    const next: Station = { ...s, status, activityCodes: [...s.activityCodes] };
     if (i < 0) this.stationList.push(next);
     else this.stationList[i] = next;
   }
@@ -298,12 +305,26 @@ export class SampleFloorApi extends FloorApi {
     _arenaId: string,
     g: GameInput,
     playableOn: readonly string[] = [],
+    baseActive?: boolean,
   ): Promise<void> {
     this.fail();
+    if (this.deletedGames.has(g.id)) throw new AppError('not_found', FLOOR_MESSAGES['not_found']);
     if (this.gameList.some((x) => x.id !== g.id && x.name.toLowerCase() === g.name.toLowerCase())) {
       throw new AppError('duplicate', FLOOR_MESSAGES['duplicate']);
     }
-    this.ops.push({ kind: 'game.upsert', payload: g });
+    const stored = this.gameList.find((x) => x.id === g.id);
+    if (
+      stored &&
+      baseActive !== undefined &&
+      baseActive !== stored.active &&
+      g.active !== stored.active
+    ) {
+      throw new AppError('stale', FLOOR_MESSAGES['stale']);
+    }
+    this.ops.push({
+      kind: 'game.upsert',
+      payload: baseActive === undefined ? g : { ...g, baseActive },
+    });
     const next: Game = { ...g, aliases: [...g.aliases], platforms: [...g.platforms] };
     const i = this.gameList.findIndex((x) => x.id === g.id);
     if (i < 0) this.gameList.push(next);
@@ -339,6 +360,29 @@ export class SampleFloorApi extends FloorApi {
     if (i < 0) throw new AppError('not_found', FLOOR_MESSAGES['not_found']);
     this.ops.push({ kind: 'game.set_active', payload: { id, active } });
     this.gameList[i] = { ...this.gameList[i], active };
+  }
+
+  async gameUsage(_arenaId: string, gameId: string): Promise<GameUsage> {
+    this.fail();
+    const plays = this.playList.filter((p) => p.gameId === gameId);
+    return {
+      playingNow: plays.filter((p) => !p.endedAt).length,
+      records: plays.length + (this.bookingsByGame.get(gameId) ?? 0),
+    };
+  }
+
+  /** Like game.delete: only a game no play or booking names; a gone id is a no-op. */
+  async deleteGame(arenaId: string, id: string): Promise<void> {
+    this.fail();
+    const i = this.gameList.findIndex((x) => x.id === id);
+    if (i < 0) return;
+    const usage = await this.gameUsage(arenaId, id);
+    if (usage.playingNow) throw new AppError('game_in_play', FLOOR_MESSAGES['game_in_play']);
+    if (usage.records) throw new AppError('game_has_history', FLOOR_MESSAGES['game_has_history']);
+    this.ops.push({ kind: 'game.delete', payload: { id } });
+    this.gameList.splice(i, 1);
+    this.compatList = this.compatList.filter((c) => c.gameId !== id);
+    this.deletedGames.add(id);
   }
 
   private fail(): void {

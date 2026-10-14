@@ -7,6 +7,7 @@ import { MatInput } from '@angular/material/input';
 import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSlideToggleChange } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
 import { FLOOR_STATE_LABEL, LiveStation, minutesLeft } from '../../../core/floor/floor.models';
@@ -69,7 +70,7 @@ import {
           mat-button
           type="button"
           class="danger-action"
-          [disabled]="busy()"
+          [disabled]="busy() || !canEdit()"
           (click)="remove()"
         >
           <mat-icon aria-hidden="true">delete</mat-icon>Remove
@@ -144,7 +145,7 @@ import {
               : 'Hidden from staff on the floor'
           "
           [checked]="s.status === 'available'"
-          [disabled]="busy()"
+          [disabled]="busy() || !canEdit()"
           (changed)="setInService($event)"
         />
         @if (error()) {
@@ -173,6 +174,8 @@ import {
   `,
 })
 export class StationDetail {
+  /** Without the Settings permission the server refuses every change here. */
+  protected readonly canEdit = inject(ArenaContext).canEdit;
   private readonly floor = inject(FloorStore);
   protected readonly pricing = inject(PricingStore);
   private readonly dialog = inject(MatDialog);
@@ -262,7 +265,14 @@ export class StationDetail {
       return;
     }
     await this.run(async () => {
-      await this.floor.saveStation({ ...s, name, activityCodes: [...this.codes()] });
+      // No status: an edit never changes it (Out of service / Remove do, on their own).
+      await this.floor.saveStation({
+        id: s.id,
+        name,
+        kind: s.kind,
+        sortOrder: s.sortOrder,
+        activityCodes: [...this.codes()],
+      });
       this.say('Station saved');
     });
   }
@@ -292,7 +302,7 @@ export class StationDetail {
         data: {
           title: `Remove ${s.name}?`,
           message:
-            'It leaves the floor app and this list. Past bills keep its name. Add it again any time.',
+            'It leaves the floor app and moves to Removed below the station list. Past bills keep its name. Restore it from there any time.',
           confirm: 'Remove',
           danger: true,
         },

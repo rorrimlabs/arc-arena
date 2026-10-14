@@ -9,6 +9,8 @@
 /// asks first, and sends the person to sign in rather than calling as `anon`.
 library;
 
+import 'dart:async';
+
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 enum StoredSession {
@@ -24,12 +26,22 @@ enum StoredSession {
   signInNeeded,
 }
 
-Future<StoredSession> checkStoredSession(GoTrueClient auth) async {
+Future<StoredSession> checkStoredSession(
+  GoTrueClient auth, {
+  Duration timeout = const Duration(seconds: 8),
+}) async {
   if (auth.currentSession == null) return StoredSession.signInNeeded;
   try {
     // Refreshes an expired session, sharing any refresh already in flight.
-    final session = await auth.getSession();
+    final session = await auth.getSession().timeout(timeout);
     return session == null ? StoredSession.signInNeeded : StoredSession.valid;
+  } on TimeoutException {
+    // Auth did not answer in time (a weak or captive network). The sign-in is
+    // kept and the refresh carries on in the background: start offline rather
+    // than leave the person on a spinner.
+    return auth.currentSession == null
+        ? StoredSession.signInNeeded
+        : StoredSession.offline;
   } on AuthRetryableFetchException {
     return auth.currentSession == null
         ? StoredSession.signInNeeded

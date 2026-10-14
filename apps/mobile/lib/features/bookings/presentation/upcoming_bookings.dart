@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/controllers/booking_actions.dart';
+import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
@@ -72,6 +73,11 @@ class _BookingTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final arena = context.arena;
+    final now = ref.watch(nowProvider).value ?? ref.watch(clockProvider).now();
+    // Started without a check-in: they may be late (no-show offered); once the
+    // whole slot has passed it is missed and no longer holds the station.
+    final started = !booking.scheduledStart.isAfter(now);
+    final missed = !booking.scheduledEnd.isAfter(now);
     final customer =
         ref.watch(customerByIdProvider(booking.customerId ?? '')).value;
     final name = customer?.displayName ?? 'Guest';
@@ -113,6 +119,11 @@ class _BookingTile extends ConsumerWidget {
                       style:
                           ArenaType.caption.copyWith(color: arena.textSubtle)),
                 ],
+                if (missed) ...[
+                  const SizedBox(height: 2),
+                  Text('Missed · mark no-show or cancel it',
+                      style: ArenaType.caption.copyWith(color: arena.warning)),
+                ],
                 if (booking.reminderStatus != ReminderStatus.scheduled) ...[
                   const SizedBox(height: 2),
                   Text(booking.reminderStatus.label,
@@ -142,6 +153,7 @@ class _BookingTile extends ConsumerWidget {
                     on: booking.reminderStatus != ReminderStatus.scheduled,
                   ),
               'cancel' => _cancel(context, ref),
+              'no_show' => _noShow(context, ref),
               _ => null,
             },
             itemBuilder: (_) => [
@@ -152,6 +164,11 @@ class _BookingTile extends ConsumerWidget {
                     ? 'Turn reminder off'
                     : 'Turn reminder on'),
               ),
+              if (started)
+                const PopupMenuItem(
+                  value: 'no_show',
+                  child: Text('Mark no-show'),
+                ),
               const PopupMenuItem(
                 value: 'cancel',
                 child: Text('Cancel booking'),
@@ -189,6 +206,36 @@ class _BookingTile extends ConsumerWidget {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
         content: Text(r.failureOrNull?.display ?? 'Booking cancelled'),
+      ));
+    }
+  }
+
+  Future<void> _noShow(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Mark as no-show?'),
+        content: const Text(
+          'The customer did not come. The slot is freed and the reminder is '
+          'cleared. The booking stays in history as a no-show.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(false),
+            child: const Text('Keep it'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(ctx).pop(true),
+            child: const Text('Mark no-show'),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    final r = await ref.read(bookingActionsProvider).markNoShow(booking);
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(r.failureOrNull?.display ?? 'Marked as no-show'),
       ));
     }
   }

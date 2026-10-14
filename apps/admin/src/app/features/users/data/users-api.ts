@@ -50,8 +50,30 @@ export const USER_MESSAGES: Readonly<Record<string, string>> = {
   email_rate_limited: 'Too many e-mails right now. Wait a while, then try again',
   email_failed: 'The invitation e-mail could not be sent, so nothing was saved. Try again',
   misconfigured: 'Invitations are not set up on the server yet. Ask the operator',
+  service_unavailable:
+    'The invitation service is not running, so nothing was sent. Try again shortly, or ask the operator',
   server_error: 'Could not create the invitation. Try again',
 };
+
+/**
+ * A failed staff-admin call → the error to show. The function always answers { error, message };
+ * a 502/503/504 without that code came from the gateway (the function was never reached — e.g. a
+ * local stack whose edge runtime is not running: `{"message":"name resolution failed"}`), so it
+ * must not read as a refused invitation. A 404 without it is the gateway's "Requested function was
+ * not found": the function is not deployed on that project.
+ */
+export function inviteFailure(status: number, body: { error?: string; message?: string }): AppError {
+  const code =
+    body.error ??
+    ([502, 503, 504].includes(status)
+      ? 'service_unavailable'
+      : status === 404
+        ? 'misconfigured'
+        : 'server_error');
+  // `forbidden` carries the server's reason ("only an owner can grant money or reports").
+  if (code === 'forbidden' && body.message) return new AppError(code, sentence(body.message));
+  return new AppError(code, USER_MESSAGES[code] ?? USER_MESSAGES['server_error']);
+}
 
 /** Refusals of revoke_invite / arena_invites. */
 export const INVITE_MESSAGES: Readonly<Record<string, string>> = {
@@ -118,16 +140,12 @@ class SupabaseUsersApi extends UsersApi {
     });
     if (error) {
       if (error.name === 'FunctionsHttpError') {
-        const body = (await (error.context as Response).json().catch(() => ({}))) as {
+        const response = error.context as Response;
+        const body = (await response.json().catch(() => ({}))) as {
           error?: string;
           message?: string;
         };
-        const code = body.error ?? 'server_error';
-        // `forbidden` carries the server's reason ("only an owner can grant money or reports").
-        if (code === 'forbidden' && body.message) {
-          throw new AppError(code, sentence(body.message));
-        }
-        throw new AppError(code, USER_MESSAGES[code] ?? USER_MESSAGES['server_error']);
+        throw inviteFailure(response.status, body);
       }
       throw new AppError('network', NETWORK);
     }

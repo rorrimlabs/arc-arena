@@ -113,6 +113,34 @@ abstract interface class SyncTransport {
 /// [SyncTransport] over the Supabase RPCs (sync_push / sync_pull /
 /// sync_fetch_entity). Only the anon key and the signed-in user's own JWT are
 /// ever used — the service-role key never exists in the app.
+/// Whether the API refused the access token itself (expired or invalid JWT).
+bool isTokenRejected(PostgrestException e) =>
+    e.code == 'PGRST301' ||
+    e.code == 'PGRST303' ||
+    e.message.toLowerCase().contains('jwt');
+
+/// Calls [fn]; if the API refuses the access token, refreshes the sign-in once
+/// and calls again. Auth decides "expired" by THIS device's clock, so a phone
+/// running a few minutes slow keeps sending a token the server already counts
+/// as expired — refreshing gets one that is valid by the server's clock. A
+/// refused refresh surfaces as an [AuthException]; no network as
+/// [AuthRetryableFetchException]; a second token refusal as the
+/// [PostgrestException] — the callers classify those.
+Future<Object?> rpcWithFreshToken(
+  SupabaseClient client,
+  String fn,
+  Map<String, dynamic>? params, {
+  required Duration timeout,
+}) async {
+  try {
+    return await client.rpc(fn, params: params).timeout(timeout);
+  } on PostgrestException catch (e) {
+    if (!isTokenRejected(e)) rethrow;
+    await client.auth.refreshSession().timeout(timeout);
+    return await client.rpc(fn, params: params).timeout(timeout);
+  }
+}
+
 class SupabaseSyncTransport implements SyncTransport {
   SupabaseSyncTransport(
     this._client, {
@@ -128,7 +156,7 @@ class SupabaseSyncTransport implements SyncTransport {
       throw SyncAuthException('Signed out');
     }
     try {
-      return await _client.rpc(fn, params: params).timeout(timeout);
+      return await rpcWithFreshToken(_client, fn, params, timeout: timeout);
     } on PostgrestException catch (e) {
       if (e.code == '42501') {
         // Revoked only if we really called as the signed-in person; if the
@@ -138,11 +166,7 @@ class SupabaseSyncTransport implements SyncTransport {
           revoked: _client.auth.currentSession != null,
         );
       }
-      if (e.code == 'PGRST301' ||
-          e.code == 'PGRST303' ||
-          e.message.toLowerCase().contains('jwt')) {
-        throw SyncAuthException(e.message);
-      }
+      if (isTokenRejected(e)) throw SyncAuthException(e.message);
       rethrow;
     } on AuthRetryableFetchException catch (e) {
       // The access token needed refreshing and Auth could not be reached: the

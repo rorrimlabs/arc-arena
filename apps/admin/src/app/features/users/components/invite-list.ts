@@ -2,6 +2,7 @@ import { Component, inject } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
+import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
@@ -46,7 +47,7 @@ import { PendingInvite } from '../data/user.models';
                 mat-button
                 type="button"
                 class="danger-action"
-                [disabled]="store.saving() === i.inviteId"
+                [disabled]="store.saving() === i.inviteId || !canEdit()"
                 [attr.aria-label]="'Withdraw the invitation to ' + i.email"
                 (click)="withdraw(i)"
               >
@@ -60,6 +61,8 @@ import { PendingInvite } from '../data/user.models';
   `,
 })
 export class InviteList {
+  /** Without the Settings permission the server refuses every change here. */
+  protected readonly canEdit = inject(ArenaContext).canEdit;
   protected readonly store = inject(UsersStore);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);

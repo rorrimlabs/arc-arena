@@ -689,6 +689,8 @@ class LocalGroupSessionRepository implements GroupSessionRepository {
           'ended_at': Wire.at(actualEnd),
           'billed_amount_paise': cmd.billedAmountPaise,
           'mark_waived': cmd.markWaived,
+          if (cmd.markWaived && cmd.waiveReason != null)
+            'waive_reason': cmd.waiveReason,
           'expected_assignment_ids': pricedFrom,
           'expected_scheduled_end_at': Wire.at(existing.scheduledEndAt),
           'charges': [

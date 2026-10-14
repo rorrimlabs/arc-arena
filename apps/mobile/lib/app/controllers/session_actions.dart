@@ -31,6 +31,7 @@ import 'package:arena_ops/domain/repositories/group_session_repository.dart';
 import 'package:arena_ops/domain/repositories/session_repository.dart';
 import 'package:arena_ops/domain/services/availability_service.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
+import 'package:arena_ops/domain/services/payment_rules.dart';
 import 'package:arena_ops/domain/services/segment_billing.dart';
 import 'package:arena_ops/domain/services/session_planner.dart';
 import 'package:collection/collection.dart';
@@ -440,6 +441,8 @@ class SessionActions {
       ),
     );
     if (res.isOk) {
+      // The alerts name the station: reschedule them under the new one.
+      unawaited(reminders?.scheduleFor(session));
       AppTelemetry.sessionSwitched(
         sessionId: session.id,
         operation: 'switch_station',
@@ -637,12 +640,15 @@ class SessionActions {
     Session session,
     List<SessionSegment> segments, {
     bool markWaived = false,
+    String? waiveReason,
     DateTime? at,
   }) async {
     final denied =
         guard.check(Permission.bill) ??
         (markWaived ? guard.check(Permission.discount) : null);
     if (denied != null) return Err(denied);
+    final reason = waiveReason?.trim() ?? '';
+    if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
     final actualEnd = at ?? clock.now();
     if (actualEnd.isBefore(session.startedAt)) {
       AppTelemetry.reportTimerAnomaly(
@@ -661,6 +667,7 @@ class SessionActions {
         charges: bill.charges,
         billedAmountPaise: bill.total.value,
         markWaived: markWaived,
+        waiveReason: markWaived ? reason : null,
       ),
     );
     if (res.isOk) {

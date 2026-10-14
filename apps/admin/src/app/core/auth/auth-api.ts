@@ -1,4 +1,4 @@
-import { Service, inject } from '@angular/core';
+import { DOCUMENT, Service, inject } from '@angular/core';
 import type { PostgrestError, User } from '@supabase/supabase-js';
 import { Supabase } from '../supabase/supabase';
 
@@ -97,7 +97,7 @@ export const INVITE_ACCEPT_MESSAGES: Readonly<Record<string, string>> = {
   forbidden: 'Sign in first, then accept the invitation.',
 };
 
-function acceptError(e: PostgrestError | Error): AppError {
+export function acceptError(e: PostgrestError | Error): AppError {
   if (e instanceof TypeError || /fetch/i.test(e.message)) {
     return new AppError('network', NETWORK_MESSAGE);
   }
@@ -111,8 +111,8 @@ function acceptError(e: PostgrestError | Error): AppError {
 
 /**
  * Sign-in, owner sign-up (email + password, confirmed with the 6-digit code from the email),
- * accepting an e-mailed invitation, and sign-out. The Supabase implementation is the default;
- * tests provide a sample one.
+ * accepting an e-mailed invitation, resetting a forgotten password, and sign-out. The Supabase
+ * implementation is the default; tests provide a sample one.
  */
 @Service({ factory: () => new SupabaseAuthApi() })
 export abstract class AuthApi {
@@ -132,14 +132,21 @@ export abstract class AuthApi {
    * not read URLs itself: detectSessionInUrl is off).
    */
   abstract signInFromLink(accessToken: string, refreshToken: string): Promise<Account>;
-  /** Sets the signed-in login's password (an invited person choosing their own). */
+  /**
+   * Sets the signed-in login's password (an invited person choosing their own, or a reset link's
+   * login choosing a new one).
+   */
   abstract setPassword(password: string): Promise<void>;
-  /** accept_invite: the signed-in, invited login joins the arena with the one-time token. */
-  abstract acceptInvite(inviteId: string, token: string): Promise<AcceptedInvite>;
+  /**
+   * E-mails a link to choose a new password; it opens the dashboard's /reset-password page. The
+   * server answers the same whether or not the address has a login.
+   */
+  abstract requestPasswordReset(email: string): Promise<void>;
+  /** Ends this browser's session, on the server too when it can be reached. Never throws. */
   abstract signOut(): Promise<void>;
 }
 
-function toAccount(user: User | null | undefined): Account | null {
+export function toAccount(user: User | null | undefined): Account | null {
   if (!user) return null;
   const email = user.email ?? '';
   const name = typeof user.user_metadata?.['name'] === 'string' ? user.user_metadata['name'] : '';
@@ -148,6 +155,7 @@ function toAccount(user: User | null | undefined): Account | null {
 
 class SupabaseAuthApi extends AuthApi {
   private readonly supabase = inject(Supabase);
+  private readonly document = inject(DOCUMENT);
 
   private async auth() {
     return (await this.supabase.client()).auth;
@@ -215,23 +223,28 @@ class SupabaseAuthApi extends AuthApi {
     if (error) throw toAppError(error);
   }
 
-  async acceptInvite(inviteId: string, token: string): Promise<AcceptedInvite> {
-    const client = await this.supabase.client();
-    const { data, error } = await client.rpc('accept_invite', {
-      p_invite: inviteId,
-      p_token: token,
+  async requestPasswordReset(email: string): Promise<void> {
+    const { error } = await (
+      await this.auth()
+    ).resetPasswordForEmail(email, {
+      redirectTo: new URL('/reset-password', this.document.location.origin).href,
     });
-    if (error) throw acceptError(error);
-    const r = data as { arena_id: string; arena_name: string; role: string };
-    return {
-      arenaId: String(r.arena_id),
-      arenaName: String(r.arena_name ?? ''),
-      role: r.role === 'owner' ? 'owner' : 'staff',
-    };
+    if (error) throw toAppError(error);
   }
 
   async signOut(): Promise<void> {
-    // Offline sign-out still clears the local session.
-    await (await this.auth()).signOut({ scope: 'local' });
+    // Scope 'local' ends this browser's session on the server as well (POST /logout?scope=local
+    // deletes the session, so its refresh token stops working at once). 'global' would also end
+    // the login's other sessions, such as the counter tablet's floor app mid-shift. An access
+    // token already issued lasts until it expires (jwt_expiry), as any JWT does.
+    let failed: boolean;
+    try {
+      failed = (await (await this.auth()).signOut({ scope: 'local' })).error !== null;
+    } catch {
+      failed = true;
+    }
+    // supabase-js keeps the stored session when it cannot refresh an expired access token first
+    // (offline), and the next visit would restore it: forget it here anyway.
+    if (failed) this.supabase.forgetStoredSession();
   }
 }

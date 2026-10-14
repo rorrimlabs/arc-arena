@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -29,6 +30,8 @@ class _ChangeGameSheet extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final current = active.current;
     final theme = Theme.of(context);
+    // The library edits the catalog: only for those the server lets do it.
+    final canEdit = ref.watch(catalogActionsProvider).canChangeSettings;
     final resName = {
           for (final r in ref.watch(resourcesProvider).value ?? []) r.id: r.name,
         }[current.resourceId] ??
@@ -56,11 +59,12 @@ class _ChangeGameSheet extends ConsumerWidget {
                   ],
                 ),
               ),
-              TextButton.icon(
-                onPressed: () => openGameLibrary(context),
-                icon: const Icon(Icons.tune, size: 18),
-                label: const Text('Manage'),
-              ),
+              if (canEdit)
+                TextButton.icon(
+                  onPressed: () => openGameLibrary(context),
+                  icon: const Icon(Icons.tune, size: 18),
+                  label: const Text('Manage'),
+                ),
             ],
           ),
           const SizedBox(height: AppSpacing.sm),
@@ -68,8 +72,8 @@ class _ChangeGameSheet extends ConsumerWidget {
             child: playable.isEmpty
                 ? NoGamesState(
                     resourceName: resName,
-                    onAdd: () => openAddGame(context),
-                    onLibrary: () => openGameLibrary(context),
+                    onAdd: canEdit ? () => openAddGame(context) : null,
+                    onLibrary: canEdit ? () => openGameLibrary(context) : null,
                   )
                 : ListView(
                     children: [

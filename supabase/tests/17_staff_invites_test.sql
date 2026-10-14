@@ -145,6 +145,17 @@ select ok((select accepted_by = '17000000-0000-4000-8000-000000000005' and accep
              from staff_invites where id = pg_temp.id('new')), 'the invite records who accepted');
 select throws_ok($$ select accept_invite(pg_temp.id('new'), pg_temp.tok('new')) $$,
   'invite_used', 'and works once');
+-- What the dashboard routes on after the invitee accepts (2026-10-14 auth fix): exactly one
+-- membership, floor staff (not owner level), and no arena of their own.
+select is((select count(*)::int from staff_profiles
+            where user_id = '17000000-0000-4000-8000-000000000005'), 1,
+  'a repeated accept leaves exactly one membership');
+select is((select count(*)::int from staff_profiles
+            where user_id = '17000000-0000-4000-8000-000000000005' and role = 'owner'), 0,
+  'accepting a staff invitation creates no arena and no ownership');
+select is((select jsonb_agg((e ->> 'role') || ':' || (e ->> 'active'))
+             from jsonb_array_elements(my_arenas()) e),
+  '["staff:true"]'::jsonb, 'my_arenas shows the invitee as active staff only (the staff app, not Create Arena)');
 
 -- Unconfirmed login: the address is not proven yet.
 select pg_temp.as_user('17000000-0000-4000-8000-000000000001');

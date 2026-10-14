@@ -93,4 +93,46 @@ void main() {
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   });
+
+  testWidgets('opened from More, it has a back button that returns there', (
+    tester,
+  ) async {
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: [
+          ...testOverrides(db),
+          controllerBoardProvider.overrideWith((ref) async => dashboard),
+        ],
+        child: MaterialApp(
+          home: Builder(
+            builder: (context) => Scaffold(
+              body: TextButton(
+                // As More does: a pushed page.
+                onPressed: () => Navigator.of(context).push(
+                  MaterialPageRoute<void>(
+                    builder: (_) => const ControllerBoardScreen(),
+                  ),
+                ),
+                child: const Text('More'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.text('More'));
+    await settle(tester);
+    expect(find.text('Controller board'), findsOneWidget);
+
+    await tester.tap(find.byType(BackButton));
+    // The page's exit transition, then it is gone (the board watches live
+    // tables, so the tree never idles: no pumpAndSettle).
+    await tester.pump();
+    await tester.pump(const Duration(seconds: 1));
+    expect(find.text('Controller board'), findsNothing);
+    expect(find.text('More'), findsOneWidget);
+
+    await tester.pumpWidget(const SizedBox());
+    await tester.pump(const Duration(milliseconds: 100));
+  });
 }

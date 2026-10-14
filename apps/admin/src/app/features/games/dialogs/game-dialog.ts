@@ -1,4 +1,4 @@
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import {
   MAT_DIALOG_DATA,
@@ -13,29 +13,36 @@ import { MatOption, MatSelect } from '@angular/material/select';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
 import { PushRefusal } from '../../../core/sync/push-ops';
-import { AgeRating, GameMedia } from '../../../core/floor/floor.models';
+import { AgeRating, Game, GameMedia } from '../../../core/floor/floor.models';
 import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
-import { AGE_RATINGS, MEDIA } from '../data/game-view';
+import { AGE_RATINGS, MAX_PLAYERS, MEDIA, PLAYER_MODES } from '../data/game-view';
 
 export interface GameDialogData {
   /** Platforms to choose from (in use, plus the game-based station types). */
   readonly platforms: readonly string[];
-  /** The platform picked in the list's filter, if any. */
+  /** The platform picked in the list's filter, if any (a new game starts on it). */
   readonly platform?: string;
-  /** Stations it can be marked playable on (none are picked for it). */
+  /** Stations a new game can be marked playable on (none are picked for it). */
   readonly stations: readonly { readonly id: string; readonly name: string }[];
+  /** The game to edit; absent to add one. */
+  readonly game?: Game;
 }
 
-/** Closes with the new game's id and the snackbar text; undefined when cancelled. */
+/** Closes with the game's id and the snackbar text; undefined when cancelled. */
 export interface GameDialogResult {
   readonly id: string;
   readonly snack: string;
 }
 
+/** The longest title the server stores (game.upsert refuses longer: invalid_name). */
+const MAX_TITLE = 80;
+
 /**
  * Design: dialog `d.k === 'game'`. Adds a game to the catalog staff pick from when starting a
- * session, with its age rating and media (game.upsert), and optionally the stations it is
- * playable on (game.set_compat, in the same batch). Nothing is marked playable unless picked.
+ * session (game.upsert, plus game.set_compat for the stations picked, in the same batch), or edits
+ * one: title, platforms, player mode, players per station, age rating and media. An edit sends the
+ * active flag it showed, so it is refused (not applied) if the game was archived or restored
+ * elsewhere meanwhile. Station statuses of an existing game are set on its detail pane.
  */
 @Component({
   selector: 'app-game-dialog',
@@ -53,34 +60,72 @@ export interface GameDialogResult {
     MatButton,
   ],
   template: `
-    <h2 mat-dialog-title>Add game</h2>
+    <h2 mat-dialog-title>{{ editing ? 'Edit ' + editing.name : 'Add game' }}</h2>
     <form novalidate (submit)="save($event)">
       <mat-dialog-content>
         <div class="flex flex-col gap-5 pt-1">
-          <p class="text-sm leading-[1.4] text-muted">Staff can pick it when starting a session.</p>
+          @if (!editing) {
+            <p class="text-sm leading-[1.4] text-muted">
+              Staff can pick it when starting a session.
+            </p>
+          }
           <mat-form-field>
             <mat-label>Title</mat-label>
             <input
               matInput
               autocomplete="off"
-              maxlength="80"
+              [attr.maxlength]="maxTitle"
               placeholder="e.g. Mortal Kombat 1"
               [value]="title()"
               (input)="title.set($any($event.target).value)"
             />
+            @if (editing) {
+              <mat-hint>Past bills show the game by its current title.</mat-hint>
+            }
           </mat-form-field>
           <mat-form-field>
-            <mat-label>Platform</mat-label>
-            <mat-select [value]="platform()" (selectionChange)="platform.set($event.value)">
-              @for (p of data.platforms; track p) {
+            <mat-label>Platforms</mat-label>
+            <mat-select
+              multiple
+              placeholder="No platform"
+              [value]="platforms()"
+              (selectionChange)="platforms.set($event.value)"
+            >
+              @for (p of platformChoices(); track p) {
                 <mat-option [value]="p">{{ p }}</mat-option>
               }
             </mat-select>
           </mat-form-field>
-          <div class="flex flex-col gap-5">
+          <div class="grid grid-cols-2 gap-4">
+            <mat-form-field>
+              <mat-label>Player mode</mat-label>
+              <mat-select [value]="playerMode()" (selectionChange)="setMode($event.value)">
+                @for (m of modes; track m.key) {
+                  <mat-option [value]="m.key">{{ m.label }}</mat-option>
+                }
+              </mat-select>
+            </mat-form-field>
+            <mat-form-field>
+              <mat-label>Players per station</mat-label>
+              <mat-select [value]="maxPlayers()" (selectionChange)="maxPlayers.set($event.value)">
+                @for (n of playerCounts; track n) {
+                  <mat-option [value]="n">{{ n }}</mat-option>
+                }
+              </mat-select>
+              <mat-hint>Most controllers one station may use on it</mat-hint>
+            </mat-form-field>
+          </div>
+          <div class="grid grid-cols-2 gap-4">
             <mat-form-field>
               <mat-label>Age rating</mat-label>
-              <mat-select [value]="age()" (selectionChange)="age.set($event.value)">
+              <mat-select
+                placeholder="Not set"
+                [value]="age()"
+                (selectionChange)="age.set($event.value)"
+              >
+                @if (editing) {
+                  <mat-option [value]="null">Not set</mat-option>
+                }
                 @for (a of ages; track a) {
                   <mat-option [value]="a">{{ a }}+</mat-option>
                 }
@@ -88,28 +133,37 @@ export interface GameDialogResult {
             </mat-form-field>
             <mat-form-field>
               <mat-label>Media</mat-label>
-              <mat-select [value]="mediaKey()" (selectionChange)="mediaKey.set($event.value)">
+              <mat-select
+                placeholder="Not set"
+                [value]="mediaKey()"
+                (selectionChange)="mediaKey.set($event.value)"
+              >
+                @if (editing) {
+                  <mat-option [value]="null">Not set</mat-option>
+                }
                 @for (m of media; track m.key) {
                   <mat-option [value]="m.key">{{ m.label }}</mat-option>
                 }
               </mat-select>
             </mat-form-field>
           </div>
-          <mat-form-field>
-            <mat-label>Playable on</mat-label>
-            <mat-select
-              multiple
-              placeholder="No stations yet"
-              [disabled]="!data.stations.length"
-              [value]="playableOn()"
-              (selectionChange)="playableOn.set($event.value)"
-            >
-              @for (s of data.stations; track s.id) {
-                <mat-option [value]="s.id">{{ s.name }}</mat-option>
-              }
-            </mat-select>
-            <mat-hint>Staff can start it only on these. You can change this later.</mat-hint>
-          </mat-form-field>
+          @if (!editing) {
+            <mat-form-field>
+              <mat-label>Playable on</mat-label>
+              <mat-select
+                multiple
+                placeholder="No stations yet"
+                [disabled]="!data.stations.length"
+                [value]="playableOn()"
+                (selectionChange)="playableOn.set($event.value)"
+              >
+                @for (s of data.stations; track s.id) {
+                  <mat-option [value]="s.id">{{ s.name }}</mat-option>
+                }
+              </mat-select>
+              <mat-hint>Staff can start it only on these. You can change this later.</mat-hint>
+            </mat-form-field>
+          }
           @if (error()) {
             <p role="alert" class="text-sm leading-[1.3] font-medium text-danger">{{ error() }}</p>
           }
@@ -117,7 +171,9 @@ export interface GameDialogResult {
       </mat-dialog-content>
       <mat-dialog-actions align="end">
         <button mat-button type="button" [disabled]="busy()" (click)="ref.close()">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()">Add</button>
+        <button mat-flat-button type="submit" [disabled]="busy()">
+          {{ editing ? 'Save' : 'Add' }}
+        </button>
       </mat-dialog-actions>
     </form>
   `,
@@ -127,55 +183,87 @@ export class GameDialog {
   protected readonly ref = inject<MatDialogRef<GameDialog, GameDialogResult>>(MatDialogRef);
   private readonly floor = inject(FloorStore);
 
+  protected readonly editing = this.data.game;
   protected readonly ages = AGE_RATINGS;
   protected readonly media = MEDIA;
-  protected readonly title = signal('');
-  /** The design's defaults for a new game: 3+, digital. */
-  protected readonly age = signal<AgeRating>(3);
-  protected readonly mediaKey = signal<GameMedia>('digital');
-  protected readonly platform = signal(this.data.platform ?? this.data.platforms[0] ?? '');
+  protected readonly modes = PLAYER_MODES;
+  protected readonly playerCounts = Array.from({ length: MAX_PLAYERS }, (_, i) => i + 1);
+  protected readonly maxTitle = MAX_TITLE;
+
+  protected readonly title = signal(this.editing?.name ?? '');
+  /** The design's defaults for a new game: 3+, digital, single player. */
+  protected readonly age = signal<AgeRating | null>(this.editing ? this.editing.ageRating : 3);
+  protected readonly mediaKey = signal<GameMedia | null>(
+    this.editing ? this.editing.media : 'digital',
+  );
+  protected readonly platforms = signal<readonly string[]>(
+    this.editing
+      ? this.editing.platforms
+      : [this.data.platform ?? this.data.platforms[0]].filter((p): p is string => !!p),
+  );
+  protected readonly playerMode = signal<Game['playerMode']>(this.editing?.playerMode ?? 'single');
+  protected readonly maxPlayers = signal(this.editing?.maxLocalPlayers ?? 1);
   /** Station ids; none until the owner picks them. */
   protected readonly playableOn = signal<readonly string[]>([]);
   protected readonly error = signal('');
   protected readonly busy = signal(false);
 
+  /** The choices, plus any platform the game already has (kept unless unticked). */
+  protected readonly platformChoices = computed(() =>
+    [...new Set([...this.data.platforms, ...(this.editing?.platforms ?? [])])].sort(),
+  );
+
+  protected setMode(mode: Game['playerMode']): void {
+    this.playerMode.set(mode);
+    // A single-player title takes one controller; a multiplayer one at least two.
+    if (mode === 'single') this.maxPlayers.set(1);
+    else if (this.maxPlayers() < 2) this.maxPlayers.set(2);
+  }
+
   protected async save(event: Event): Promise<void> {
     event.preventDefault();
+    if (this.busy()) return;
     const name = this.title().trim();
     if (name.length < 2) {
       this.error.set('Enter a title');
       return;
     }
-    if (this.floor.games().some((g) => g.name.toLowerCase() === name.toLowerCase())) {
+    if (name.length > MAX_TITLE) {
+      this.error.set(`Keep the title to ${MAX_TITLE} characters`);
+      return;
+    }
+    const id = this.editing?.id ?? crypto.randomUUID();
+    if (
+      this.floor.games().some((g) => g.id !== id && g.name.toLowerCase() === name.toLowerCase())
+    ) {
       this.error.set(`${name} is already in the list`);
       return;
     }
-    const id = crypto.randomUUID();
     this.busy.set(true);
     this.error.set('');
-    const stations = this.playableOn();
+    const stations = this.editing ? [] : this.playableOn();
+    const game = {
+      id,
+      name,
+      aliases: this.editing?.aliases ?? [],
+      categoryId: this.editing?.categoryId ?? null,
+      platforms: this.platforms(),
+      playerMode: this.playerMode(),
+      maxLocalPlayers: this.maxPlayers(),
+      active: this.editing?.active ?? true,
+      ageRating: this.age(),
+      media: this.mediaKey(),
+    };
     try {
-      await this.floor.saveGame(
-        {
-          id,
-          name,
-          aliases: [],
-          categoryId: null,
-          platforms: this.platform() ? [this.platform()] : [],
-          playerMode: 'single',
-          maxLocalPlayers: 1,
-          active: true,
-          ageRating: this.age(),
-          media: this.mediaKey(),
-        },
-        stations,
-      );
+      await this.floor.saveGame(game, stations, this.editing?.active);
       const on = stations.length;
       this.ref.close({
         id,
-        snack: on
-          ? `${name} added · playable on ${on} station${on === 1 ? '' : 's'}`
-          : `${name} added`,
+        snack: this.editing
+          ? `${name} saved`
+          : on
+            ? `${name} added · playable on ${on} station${on === 1 ? '' : 's'}`
+            : `${name} added`,
       });
     } catch (e) {
       const err = toAppError(e);

@@ -26,9 +26,33 @@
 // password, and sending the Auth invite. Errors: 4xx/5xx { error: <code>, message }; database
 // details are never echoed. Optional env: ADMIN_SITE_URL (base of the link), ADMIN_ORIGINS
 // (comma-separated origins allowed by CORS; unset = any origin, for local development).
+// Auth or the database not answering (down, unreachable, or slower than DEPENDENCY_TIMEOUT_MS) is
+// 503 service_unavailable with nothing created, never "session expired" or a refused invite.
 import { createClient } from 'npm:@supabase/supabase-js@2.117.3';
 
 const MAX_NAME = 80;
+
+/** Every call to Auth or the database gives up after this long: a hung dependency must not hang
+ * the owner's Invite button (the platform's own limit is minutes). */
+const DEPENDENCY_TIMEOUT_MS = 10_000;
+
+const timedFetch: typeof fetch = (input, init) => {
+  const timeout = AbortSignal.timeout(DEPENDENCY_TIMEOUT_MS);
+  return fetch(input, {
+    ...init,
+    signal: init?.signal ? AbortSignal.any([init.signal, timeout]) : timeout,
+  });
+};
+
+/**
+ * The dependency did not answer: no response at all (status 0: connection refused, DNS, the
+ * timeout above), a gateway error (502/503/504: the service behind it is down), or Auth's own
+ * "retryable fetch" error. A refusal (4xx, a database error code) is not this.
+ */
+function dependencyDown(status: number | undefined, name?: string): boolean {
+  if (name === 'AuthRetryableFetchError') return true;
+  return status === 0 || status === 502 || status === 503 || status === 504;
+}
 
 function allowedOrigin(origin: string | null): string | null {
   const list = (Deno.env.get('ADMIN_ORIGINS') ?? '')
@@ -90,6 +114,11 @@ function acceptUrl(req: Request, inviteId: string, token: string): string | null
   return url.toString();
 }
 
+/** Server-side diagnostics: a stage and error codes only — never tokens, keys or the address. */
+function logFailure(stage: string, err: { code?: string; status?: number } | null): void {
+  console.error(`staff-admin: ${stage} failed`, { code: err?.code ?? null, status: err?.status ?? null });
+}
+
 function randomSecret(): string {
   const bytes = crypto.getRandomValues(new Uint8Array(32));
   return Array.from(bytes, (b) => b.toString(16).padStart(2, '0')).join('') + 'Aa1';
@@ -115,6 +144,11 @@ Deno.serve(async (req) => {
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY');
   const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY');
   if (!url || !anonKey || !serviceKey) {
+    console.error('staff-admin: environment incomplete', {
+      SUPABASE_URL: !!url,
+      SUPABASE_ANON_KEY: !!anonKey,
+      SUPABASE_SERVICE_ROLE_KEY: !!serviceKey,
+    });
     return fail(500, 'misconfigured', 'Function environment is incomplete.');
   }
 
@@ -123,10 +157,14 @@ Deno.serve(async (req) => {
 
   // Everything the caller decides runs as the caller; the admin client only delivers e-mail.
   const asCaller = createClient(url, anonKey, {
-    global: { headers: { Authorization: auth } },
+    global: { headers: { Authorization: auth }, fetch: timedFetch },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const { data: who, error: whoErr } = await asCaller.auth.getUser(auth.slice('Bearer '.length));
+  if (whoErr && dependencyDown(whoErr.status, whoErr.name)) {
+    logFailure('auth.getUser', whoErr);
+    return fail(503, 'service_unavailable', 'Sign-in could not be checked right now. Try again.');
+  }
   if (whoErr || !who.user) {
     return fail(401, 'unauthorized', 'Your session has expired. Sign in again.');
   }
@@ -139,7 +177,11 @@ Deno.serve(async (req) => {
   }
   if (typeof input === 'string') return fail(400, 'invalid_input', input);
 
-  const { data: made, error: inviteErr } = await asCaller.rpc('invite_member', {
+  const {
+    data: made,
+    error: inviteErr,
+    status: inviteStatus,
+  } = await asCaller.rpc('invite_member', {
     p_arena: input.arena_id,
     p_email: input.email,
     p_name: input.name,
@@ -147,29 +189,44 @@ Deno.serve(async (req) => {
     p_perms: input.perms,
   });
   if (inviteErr) {
+    if (dependencyDown(inviteStatus)) {
+      logFailure('invite_member', { code: inviteErr.code, status: inviteStatus });
+      return fail(503, 'service_unavailable', 'The database did not answer. Nothing was sent.');
+    }
     if (inviteErr.code === '42501') {
       return fail(403, 'forbidden', inviteErr.hint ?? 'You cannot invite people to this arena.');
     }
     if (inviteErr.code === 'P0001' && /^[a-z_]+$/.test(inviteErr.message)) {
       return fail(400, inviteErr.message, inviteErr.hint ?? inviteErr.message);
     }
+    logFailure('invite_member', inviteErr);
     return fail(500, 'server_error', 'Could not create the invitation. Try again.');
   }
   const invite = made as { invite_id: string; token: string; expires_at: string };
-  const withdraw = () =>
-    asCaller.rpc('revoke_invite', { p_arena: input.arena_id, p_invite: invite.invite_id });
+  /** Takes the unsent invitation back. If even that fails, say so in the log: it stays pending
+   * (listed on the Users page, withdrawable, and replaced by the next invite to the address). */
+  const withdraw = async () => {
+    const { error, status } = await asCaller.rpc('revoke_invite', {
+      p_arena: input.arena_id,
+      p_invite: invite.invite_id,
+    });
+    if (error) logFailure('withdrawing the unsent invite', { code: error.code, status });
+  };
 
   const redirectTo = acceptUrl(req, invite.invite_id, invite.token);
   if (redirectTo === null) {
+    console.error('staff-admin: no invitation link base (set ADMIN_SITE_URL or send Origin)');
     await withdraw();
     return fail(500, 'misconfigured', 'Set ADMIN_SITE_URL for the invitation link.');
   }
 
   const admin = createClient(url, serviceKey, {
+    global: { fetch: timedFetch },
     auth: { persistSession: false, autoRefreshToken: false },
   });
   const signInLink = () =>
     createClient(url, anonKey, {
+      global: { fetch: timedFetch },
       auth: { persistSession: false, autoRefreshToken: false, flowType: 'implicit' },
     }).auth.signInWithOtp({
       email: input.email,
@@ -181,6 +238,7 @@ Deno.serve(async (req) => {
   });
   let sendErr: { code?: string; status?: number } | null = null;
   if (targetErr) {
+    logFailure('invite_delivery_target', targetErr);
     sendErr = { code: 'lookup_failed' };
   } else if (target === null) {
     ({ error: sendErr } = await admin.auth.admin.inviteUserByEmail(input.email, {
@@ -209,6 +267,7 @@ Deno.serve(async (req) => {
     }
   }
   if (sendErr) {
+    logFailure('invitation e-mail', sendErr);
     await withdraw();
     const limited = sendErr.status === 429 || /rate_limit/.test(sendErr.code ?? '');
     return limited

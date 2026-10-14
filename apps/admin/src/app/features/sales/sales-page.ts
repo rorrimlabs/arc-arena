@@ -9,33 +9,39 @@ import {
   resource,
   signal,
 } from '@angular/core';
-import { MatButton } from '@angular/material/button';
+import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatChipListbox, MatChipListboxChange, MatChipOption } from '@angular/material/chips';
-import { MatFormField, MatPrefix } from '@angular/material/form-field';
+import { MatFormField, MatLabel, MatPrefix } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
+import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { MatProgressBar } from '@angular/material/progress-bar';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
+import { Session } from '../../core/auth/session';
+import { Clock } from '../../core/time/clock';
+import { injectNow } from '../../core/time/ticker';
 import { Layout } from '../../core/layout/layout';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
 import { formatRupees } from '../../shared/money/rupees.pipe';
 import { StatusPill } from '../../shared/status-pill/status-pill';
-import { formatDate, formatTime } from '../../shared/time/ist';
+import { formatDate, formatIsoDate, formatTime, istDayStartOf } from '../../shared/time/ist';
 import { BillDetail } from './components/bill-detail';
-import { salesCsv } from './components/sales-csv';
+import { ReportMeta, billsCsv, paymentsCsv } from './components/sales-csv';
 import { SalesStore } from './data/sales-store';
 import {
   Bill,
   METHOD_FILTERS,
   SALES_RANGES,
   asMethod,
-  asRange,
   billState,
   matchesSearch,
+  methodName,
+  periodFor,
+  periodProblem,
   summarize,
   summaryLine,
 } from './data/sale.models';
@@ -43,10 +49,12 @@ import {
 const PAGE = 40;
 
 /**
- * Sales (design: `if (p === 'sales')`): the arena's closed bills for a date range, filtered by
- * payment method and search, with the range's takings summary and a CSV export. The range,
- * method and selected bill are in the URL (`?range=7d&method=upi&id=…`); on a wide screen the
- * first bill is shown when none is chosen, as in the design.
+ * Sales (design: `if (p === 'sales')`): the arena's closed bills for a period of IST days (a
+ * preset, or any dates up to 93 days), filtered by payment method and search, with the period's
+ * totals — expected, collected, outstanding — and two CSV reports (bills; payments ledger). The
+ * period, method and selected bill are in the URL (`?range=custom&from=…&to=…&method=upi&id=…`);
+ * on a wide screen the first bill is shown when none is chosen, as in the design. "Today" moves
+ * to the new day at midnight IST.
  */
 @Component({
   selector: 'app-sales-page',
@@ -57,12 +65,17 @@ const PAGE = 40;
     StatusPill,
     BillDetail,
     MatButton,
+    MatIconButton,
     MatChipListbox,
     MatChipOption,
     MatFormField,
+    MatLabel,
     MatPrefix,
     MatIcon,
     MatInput,
+    MatMenu,
+    MatMenuItem,
+    MatMenuTrigger,
     MatProgressBar,
   ],
   template: `
@@ -83,11 +96,11 @@ const PAGE = 40;
           <div class="flex flex-wrap gap-1.5">
             <mat-chip-listbox
               aria-label="Date range"
-              [value]="range()"
+              [value]="period().range"
               (change)="pickRange($event)"
             >
               @for (r of ranges; track r.key) {
-                <mat-chip-option [value]="r.key" [selectable]="r.key !== range()">{{
+                <mat-chip-option [value]="r.key" [selectable]="r.key !== period().range">{{
                   r.label
                 }}</mat-chip-option>
               }
@@ -102,21 +115,101 @@ const PAGE = 40;
               }
             </mat-chip-listbox>
           </div>
+          @if (period().range === 'custom') {
+            <div class="flex flex-wrap gap-2">
+              <mat-form-field class="w-44">
+                <mat-label>From</mat-label>
+                <input
+                  matInput
+                  type="date"
+                  aria-label="First day"
+                  [value]="period().first"
+                  [max]="today()"
+                  (change)="pickDates($any($event.target).value, period().last)"
+                />
+              </mat-form-field>
+              <mat-form-field class="w-44">
+                <mat-label>To</mat-label>
+                <input
+                  matInput
+                  type="date"
+                  aria-label="Last day"
+                  [value]="period().last"
+                  [max]="today()"
+                  (change)="pickDates(period().first, $any($event.target).value)"
+                />
+              </mat-form-field>
+            </div>
+            @if (dateError()) {
+              <p role="alert" class="text-[13px] leading-[1.3] text-danger">{{ dateError() }}</p>
+            }
+          }
+          <dl class="grid grid-cols-3 gap-2" aria-label="Totals">
+            <div class="flex flex-col gap-1">
+              <dt class="text-[12px] leading-none text-muted">Expected</dt>
+              <dd class="text-[15px] leading-none font-semibold tabular-nums">
+                {{ rupees(totals().expectedPaise) }}
+              </dd>
+            </div>
+            <div class="flex flex-col gap-1">
+              <dt class="text-[12px] leading-none text-muted">Collected</dt>
+              <dd class="text-[15px] leading-none font-semibold tabular-nums">
+                {{ rupees(totals().takingsPaise) }}
+              </dd>
+            </div>
+            <div class="flex flex-col gap-1">
+              <dt class="text-[12px] leading-none text-muted">Outstanding</dt>
+              <dd
+                class="text-[15px] leading-none font-semibold tabular-nums"
+                [class.text-warning]="totals().duePaise > 0"
+              >
+                {{ rupees(totals().duePaise) }}
+              </dd>
+            </div>
+          </dl>
           <div class="flex items-center gap-2">
             <p class="min-w-0 flex-1 text-[13px] leading-[1.3] text-muted" aria-live="polite">
               {{ summary() }}
             </p>
-            <div class="arena-compact">
+            <div class="arena-compact flex flex-none items-center">
+              <button
+                mat-icon-button
+                type="button"
+                [attr.aria-label]="refreshLabel()"
+                [disabled]="store.loading()"
+                (click)="refresh()"
+              >
+                <mat-icon aria-hidden="true">refresh</mat-icon>
+              </button>
               <button
                 mat-button
                 type="button"
                 [disabled]="!filtered().length"
-                (click)="exportCsv()"
+                [matMenuTriggerFor]="exportMenu"
               >
-                <mat-icon aria-hidden="true">download</mat-icon>CSV
+                <mat-icon aria-hidden="true">download</mat-icon>Export
               </button>
+              <mat-menu #exportMenu="matMenu">
+                <button mat-menu-item type="button" (click)="exportBills()">
+                  Bills report (CSV)
+                </button>
+                <button mat-menu-item type="button" (click)="exportPayments()">
+                  Payments ledger (CSV)
+                </button>
+              </mat-menu>
             </div>
           </div>
+          <details class="text-[12.5px] leading-[1.45] text-muted">
+            <summary class="cursor-pointer">What these totals mean</summary>
+            <ul class="mt-1 flex list-disc flex-col gap-0.5 pl-5">
+              <li>Bills belong to the day they closed (IST). Voided bills do not count.</li>
+              <li>Expected: the final bills, after rounding, waived ones included.</li>
+              <li>Collected: payments minus refunds on those bills, whenever they came in.</li>
+              <li>Outstanding: still owed on bills that are not waived.</li>
+              <li>Written off: what a waive left unpaid. Refunded: money given back.</li>
+              <li>On voided bills: money taken before a void, until it is refunded.</li>
+            </ul>
+          </details>
         </app-list-pane-header>
         @if (store.loading()) {
           <mat-progress-bar mode="indeterminate" aria-label="Loading bills" />
@@ -125,7 +218,7 @@ const PAGE = 40;
           @if (store.loadError(); as error) {
             <div class="flex flex-col items-center gap-3 px-4 py-12 text-center">
               <p role="alert" class="text-sm text-danger">{{ error }}</p>
-              <button mat-stroked-button type="button" (click)="store.load(range(), true)">
+              <button mat-stroked-button type="button" (click)="store.load(period(), true)">
                 Try again
               </button>
             </div>
@@ -174,7 +267,7 @@ const PAGE = 40;
       </ng-container>
       <ng-container detail>
         @if (selected(); as bill) {
-          <app-bill-detail [bill]="bill" [range]="range()" (closed)="close()" />
+          <app-bill-detail [bill]="bill" (closed)="close()" />
         }
       </ng-container>
     </app-list-detail>
@@ -183,13 +276,18 @@ const PAGE = 40;
 export class SalesPage {
   protected readonly store = inject(SalesStore);
   private readonly arena = inject(ArenaContext);
+  private readonly session = inject(Session);
+  private readonly clock = inject(Clock);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
   private readonly snack = inject(MatSnackBar);
   private readonly document = inject(DOCUMENT);
 
-  /** `?range=` — today | yesterday | 7d | 30d (default today). */
+  /** `?range=` — today | yesterday | 7d | 30d | custom (default today). */
   readonly rangeParam = input<string>(undefined, { alias: 'range' });
+  /** `?from=` / `?to=` — the first and last IST day of a custom range (YYYY-MM-DD). */
+  readonly fromParam = input<string>(undefined, { alias: 'from' });
+  readonly toParam = input<string>(undefined, { alias: 'to' });
   /** `?method=` — upi | cash, or all. */
   readonly methodParam = input<string>(undefined, { alias: 'method' });
   /** `?id=` — the selected bill. */
@@ -201,11 +299,22 @@ export class SalesPage {
   protected readonly rupees = formatRupees;
   protected readonly stateOf = billState;
 
-  protected readonly range = computed(() => asRange(this.rangeParam()));
+  /** Today's IST date; changes at midnight IST, which moves "Today" (and 7/30 days) along. */
+  private readonly now = injectNow(60_000);
+  protected readonly today = computed(() => formatIsoDate(this.now()));
+  protected readonly period = computed(() =>
+    periodFor(
+      this.rangeParam(),
+      this.fromParam(),
+      this.toParam(),
+      istDayStartOf(this.today()) ?? this.clock.now(),
+    ),
+  );
   protected readonly method = computed(() => asMethod(this.methodParam()));
   protected readonly query = signal('');
+  protected readonly dateError = signal('');
   protected readonly shownCount = linkedSignal({
-    source: () => [this.range(), this.method(), this.query()],
+    source: () => [this.period(), this.method(), this.query()],
     computation: () => PAGE,
   });
 
@@ -217,9 +326,14 @@ export class SalesPage {
       .filter((b) => (!method || (b.methods[method] ?? 0) > 0) && matchesSearch(b, q));
   });
   protected readonly visible = computed(() => this.filtered().slice(0, this.shownCount()));
-  protected readonly summary = computed(() => summaryLine(summarize(this.filtered())));
+  protected readonly totals = computed(() => summarize(this.filtered()));
+  protected readonly summary = computed(() => summaryLine(this.totals(), this.method()));
+  protected readonly refreshLabel = computed(() => {
+    const at = this.store.loadedAt();
+    return at ? `Refresh (updated ${formatTime(at)})` : 'Refresh';
+  });
 
-  /** A bill opened by link that is not in the loaded range. */
+  /** A bill opened by link that is not in the loaded period. */
   private readonly linked = resource({
     params: () => {
       const id = this.id();
@@ -240,22 +354,52 @@ export class SalesPage {
   });
 
   constructor() {
-    // Load (and reload on an arena or range switch) the current arena's bills.
+    // Load (and reload on an arena, period or day change) the current arena's bills.
     effect(() => {
-      if (this.arena.current().id) void this.store.load(this.range());
+      const period = this.period();
+      if (this.arena.current().id) void this.store.load(period);
     });
   }
 
   protected subtitle(b: Bill): string {
     const when =
-      this.range() === 'today' ? formatTime(b.at) : `${formatDate(b.at)}, ${formatTime(b.at)}`;
+      this.period().range === 'today'
+        ? formatTime(b.at)
+        : `${formatDate(b.at)}, ${formatTime(b.at)}`;
     return [b.ref, b.stations.join(', '), when].filter(Boolean).join(' · ');
   }
 
   protected pickRange(event: MatChipListboxChange): void {
     if (!event.value) return;
+    this.dateError.set('');
+    if (event.value === 'custom') {
+      // Start from the days on screen, so "Dates…" then one change picks an earlier day.
+      const p = this.period();
+      void this.router.navigate([], {
+        queryParams: { range: 'custom', from: p.first, to: p.last },
+        queryParamsHandling: 'merge',
+      });
+      return;
+    }
     void this.router.navigate([], {
-      queryParams: { range: event.value === 'today' ? null : event.value },
+      queryParams: { range: event.value === 'today' ? null : event.value, from: null, to: null },
+      queryParamsHandling: 'merge',
+    });
+  }
+
+  protected pickDates(first: string, last: string): void {
+    // One end moved past the other takes the other along (the period becomes that one day).
+    let from = first;
+    let to = last;
+    if (from && to && from > to) {
+      if (from !== this.period().first) to = from;
+      else from = to;
+    }
+    const problem = periodProblem(from, to);
+    this.dateError.set(problem ?? '');
+    if (problem) return;
+    void this.router.navigate([], {
+      queryParams: { range: 'custom', from, to },
       queryParamsHandling: 'merge',
     });
   }
@@ -271,23 +415,64 @@ export class SalesPage {
     void this.router.navigate([], { queryParams: { id: null }, queryParamsHandling: 'merge' });
   }
 
-  protected exportCsv(): void {
+  protected refresh(): void {
+    void this.store.refresh();
+  }
+
+  protected exportBills(): void {
     const bills = this.filtered();
-    const csv = salesCsv(bills);
+    this.download(billsCsv(bills, this.meta()), 'bills');
+    this.snack.open(`${bills.length} bill${bills.length === 1 ? '' : 's'} exported`, undefined, {
+      duration: 3200,
+    });
+  }
+
+  protected exportPayments(): void {
+    const bills = this.filtered();
+    const rows = bills.reduce((n, b) => n + b.payments.length, 0);
+    this.download(paymentsCsv(bills, this.meta()), 'payments');
+    this.snack.open(
+      `${rows} payment${rows === 1 ? '' : 's'} of ${bills.length} bill${bills.length === 1 ? '' : 's'} exported`,
+      undefined,
+      { duration: 3200 },
+    );
+  }
+
+  /** What the report covers and who made it, written at the top of every export. */
+  private meta(): ReportMeta {
+    const method = this.method();
+    const q = this.query().trim();
+    const filters = [
+      method ? `bills paid by ${methodName(method)}` : '',
+      q ? `search "${q}"` : '',
+    ].filter(Boolean);
+    const user = this.session.user();
+    return {
+      arena: this.arena.current().name,
+      period: this.period(),
+      generatedAt: this.clock.now(),
+      generatedBy: user ? `${user.name} <${user.email}>` : null,
+      filters: filters.length ? filters.join('; ') : null,
+    };
+  }
+
+  private download(csv: string, what: string): void {
+    const p = this.period();
     const slug = this.arena
       .current()
       .name.toLowerCase()
       .replace(/[^a-z0-9]+/g, '-');
+    const days = p.first === p.last ? p.first : `${p.first}_to_${p.last}`;
     try {
-      const url = URL.createObjectURL(new Blob([csv], { type: 'text/csv' }));
+      // A byte-order mark so spreadsheet apps read ₹ and names as UTF-8.
+      const url = URL.createObjectURL(new Blob(['﻿', csv], { type: 'text/csv' }));
       const a = this.document.createElement('a');
       a.href = url;
-      a.download = `${slug || 'arena'}-sales-${this.range()}.csv`;
+      a.download = `${slug || 'arena'}-${what}-${days}.csv`;
       a.click();
       setTimeout(() => URL.revokeObjectURL(url));
     } catch {
       // Download blocked (e.g. a sandboxed preview): the snackbar still reports the count.
     }
-    this.snack.open(`${bills.length} bills exported`, undefined, { duration: 3200 });
   }
 }

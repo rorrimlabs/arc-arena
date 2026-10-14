@@ -7,24 +7,35 @@ import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
 import { PricingStore } from '../pricing/data/pricing-store';
 import { ArenaSettings } from './components/arena-settings';
+import { BillingRules } from './components/billing-rules';
 import { BillingSettings } from './components/billing-settings';
 import { SessionSettings } from './components/session-settings';
 
-type Section = 'arena' | 'billing' | 'sessions';
+type Section = 'arena' | 'billing' | 'rules' | 'sessions';
 
 const SECTIONS: readonly { key: Section; icon: string; title: string; sub: string }[] = [
   { key: 'arena', icon: 'storefront', title: 'Arena', sub: 'Name, area, hours' },
   { key: 'billing', icon: 'payments', title: 'Billing', sub: 'GST, invoices, payment, discounts' },
+  { key: 'rules', icon: 'rule', title: 'Billing rules', sub: 'Rounding, grace, minimum charge' },
   { key: 'sessions', icon: 'timer', title: 'Sessions', sub: 'Time options and warnings' },
 ];
 
 /**
- * Settings (design: `if (p === 'settings')`): three groups of arena settings. The selected
- * group is in the URL (`?id=billing`); on a wide screen Arena is shown when none is chosen.
+ * Settings (design: `if (p === 'settings')`): the design's three groups of arena settings plus
+ * the billing rules. The selected group is in the URL (`?id=billing`); on a wide screen Arena is
+ * shown when none is chosen.
  */
 @Component({
   selector: 'app-settings-page',
-  imports: [ListDetail, ListPaneHeader, ListRow, ArenaSettings, BillingSettings, SessionSettings],
+  imports: [
+    ListDetail,
+    ListPaneHeader,
+    ListRow,
+    ArenaSettings,
+    BillingSettings,
+    BillingRules,
+    SessionSettings,
+  ],
   template: `
     <app-list-detail
       listLabel="Settings"
@@ -58,6 +69,9 @@ const SECTIONS: readonly { key: Section; icon: string; title: string; sub: strin
           @case ('billing') {
             <app-billing-settings (closed)="close()" />
           }
+          @case ('rules') {
+            <app-billing-rules (closed)="close()" />
+          }
           @case ('sessions') {
             <app-session-settings (closed)="close()" />
           }
@@ -72,7 +86,7 @@ export class SettingsPage {
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
 
-  /** `?id=` — arena | billing | sessions. */
+  /** `?id=` — arena | billing | rules | sessions. */
   readonly id = input<string>();
 
   protected readonly sections = SECTIONS;

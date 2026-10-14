@@ -7,6 +7,8 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
 import { Layout } from '../../core/layout/layout';
+import { Clock } from '../../core/time/clock';
+import { formatIsoDate } from '../../shared/time/ist';
 import { DetailPane } from '../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../shared/list-detail/detail-section';
 import { ListDetail } from '../../shared/list-detail/list-detail';
@@ -15,10 +17,12 @@ import { ListRow } from '../../shared/list-detail/list-row';
 import { NotConnected } from '../../shared/not-connected/not-connected';
 import { StatusPill } from '../../shared/status-pill/status-pill';
 import { HappyHourDetail } from './components/happy-hour-detail';
+import { HolidaysDetail } from './components/holidays-detail';
 import { TypeDetail } from './components/type-detail';
 import { PricingStore } from './data/pricing-store';
 import {
   StationType,
+  formatHolidayDay,
   headlinePrice,
   maxPlayers,
   summarizeWindows,
@@ -27,11 +31,13 @@ import {
 import { TypeDialog, TypeDialogData, TypeDialogResult } from './dialogs/type-dialog';
 
 const HAPPY = 'happy';
+const HOLIDAYS = 'holidays';
 
 /**
  * Pricing (design: `if (p === 'pricing')`) on the engine's model: station types with their
- * prices, and happy hour in place of the design's percentage rules. The selection is in the URL
- * (`?id=<type id>` or `?id=happy`); on a wide screen the first entry shows when none is chosen.
+ * prices, and happy hour and holidays in place of the design's percentage rules. The selection is
+ * in the URL (`?id=<type id>`, `?id=happy` or `?id=holidays`); on a wide screen the first entry
+ * shows when none is chosen.
  */
 @Component({
   selector: 'app-pricing-page',
@@ -42,6 +48,7 @@ const HAPPY = 'happy';
     StatusPill,
     TypeDetail,
     HappyHourDetail,
+    HolidaysDetail,
     NotConnected,
     DetailPane,
     DetailSection,
@@ -59,7 +66,7 @@ const HAPPY = 'happy';
       <ng-container list>
         <app-list-pane-header title="Pricing">
           <div actions class="flex gap-2">
-            <button mat-stroked-button type="button" (click)="add()">
+            <button mat-stroked-button type="button" [disabled]="!arena.canEdit()" (click)="add()">
               <mat-icon aria-hidden="true">add</mat-icon>Type
             </button>
             <button
@@ -144,6 +151,19 @@ const HAPPY = 'happy';
                     }}</app-status-pill>
                   </app-list-row>
                 </li>
+                <li>
+                  <app-list-row
+                    title="Holidays"
+                    [subtitle]="holidaySummary()"
+                    icon="event_busy"
+                    [selected]="selectedId() === holidays"
+                    [queryParams]="{ id: holidays }"
+                  >
+                    <app-status-pill [tone]="upcomingHolidays().length ? 'primary' : 'info'">{{
+                      upcomingHolidays().length ? upcomingHolidays().length + ' coming up' : 'None'
+                    }}</app-status-pill>
+                  </app-list-row>
+                </li>
               } @else if (!store.loading()) {
                 <li class="px-3 py-4 text-sm leading-[1.45] text-muted">Not loaded.</li>
               }
@@ -178,6 +198,8 @@ const HAPPY = 'happy';
           </app-detail-pane>
         } @else if (selectedId() === happy && store.hours()) {
           <app-happy-hour-detail (closed)="close()" />
+        } @else if (selectedId() === holidays && store.data()) {
+          <app-holidays-detail (closed)="close()" />
         } @else if (selectedType(); as t) {
           <app-type-detail [type]="t" (closed)="close()" />
         }
@@ -187,23 +209,35 @@ const HAPPY = 'happy';
 })
 export class PricingPage {
   protected readonly store = inject(PricingStore);
-  private readonly arena = inject(ArenaContext);
+  protected readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
 
-  /** `?id=` — a type id, or `happy`. */
+  /** `?id=` — a type id, `happy` or `holidays`. */
   readonly id = input<string>();
 
   protected readonly happy = HAPPY;
+  protected readonly holidays = HOLIDAYS;
   protected readonly icon = typeIcon;
   protected readonly happySummary = computed(() =>
     summarizeWindows(this.store.hours()?.happy ?? {}),
   );
+  /** Today in the arena (IST), "2026-10-13". */
+  private readonly today = formatIsoDate(inject(Clock).now());
+  protected readonly upcomingHolidays = computed(() =>
+    this.store.holidays().filter((h) => h.day >= this.today),
+  );
+  protected readonly holidaySummary = computed(() => {
+    const next = this.upcomingHolidays()[0];
+    return next
+      ? `Next: ${next.name} · ${formatHolidayDay(next.day)}`
+      : 'No happy hour on these days';
+  });
   protected readonly selectedId = computed<string | undefined>(() => {
     const id = this.id();
-    if (id === HAPPY || (id && this.store.byId().has(id))) return id;
+    if (id === HAPPY || id === HOLIDAYS || (id && this.store.byId().has(id))) return id;
     if (!this.layout.wideDetail() || !this.store.data()) return undefined;
     return this.store.types()[0]?.id ?? HAPPY;
   });
@@ -213,7 +247,7 @@ export class PricingPage {
   );
   protected readonly selectedType = computed(() => {
     const id = this.selectedId();
-    return id && id !== HAPPY ? this.store.byId().get(id) : undefined;
+    return id && id !== HAPPY && id !== HOLIDAYS ? this.store.byId().get(id) : undefined;
   });
 
   constructor() {

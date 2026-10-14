@@ -1,9 +1,11 @@
 import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { LoginScope } from '../../../core/auth/login-scope';
 import { partlyApplied, writeThenReload } from '../../../core/sync/push-ops';
+import { BillingPolicy } from './billing-policy';
 import { PricingApi } from './pricing-api';
-import { BusinessHours, PricingData, RateChange, TypeInput } from './pricing.models';
+import { BusinessHours, Holiday, PricingData, RateChange, TypeInput } from './pricing.models';
 
 /**
  * The current arena's price list. Every change goes to the server first; the screen then
@@ -20,24 +22,42 @@ export class PricingStore {
   readonly types = computed(() => this.data()?.types ?? []);
   readonly rates = computed(() => this.data()?.rates ?? []);
   readonly hours = computed(() => this.data()?.hours ?? null);
+  readonly holidays = computed(() => this.data()?.holidays ?? []);
+  readonly policy = computed(() => this.data()?.policy ?? null);
   readonly byId = computed(() => new Map(this.types().map((t) => [t.id, t])));
   readonly loading = signal(false);
   readonly loadError = signal('');
   private loadedArena: string | null = null;
+  /** Each load's number; only the newest one's answer lands (a switch of arena mid-load). */
+  private latest = 0;
+
+  constructor() {
+    // Sign-out or another login: the price list leaves memory; a read in flight does not land.
+    inject(LoginScope).onEnd(() => {
+      this.latest++;
+      this.loadedArena = null;
+      this.data.set(null);
+      this.loading.set(false);
+      this.loadError.set('');
+    });
+  }
 
   async load(force = false): Promise<void> {
     const arenaId = this.arena.current().id;
     if (!arenaId || (!force && this.loadedArena === arenaId)) return;
     if (this.loadedArena !== arenaId) this.data.set(null);
+    const call = ++this.latest;
     this.loading.set(true);
     this.loadError.set('');
     try {
-      this.data.set(await this.api.load(arenaId));
+      const data = await this.api.load(arenaId);
+      if (call !== this.latest) return;
+      this.data.set(data);
       this.loadedArena = arenaId;
     } catch (e) {
-      this.loadError.set(toAppError(e).message);
+      if (call === this.latest) this.loadError.set(toAppError(e).message);
     } finally {
-      this.loading.set(false);
+      if (call === this.latest) this.loading.set(false);
     }
   }
 
@@ -73,6 +93,31 @@ export class PricingStore {
     const arenaId = this.arena.current().id;
     await writeThenReload(
       () => this.api.saveHours(arenaId, hours),
+      () => this.load(true),
+    );
+  }
+
+  /** Holidays are part of the price list: the whole list reloads after a change. */
+  async saveHoliday(holiday: Holiday, replacing?: string): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.saveHoliday(arenaId, holiday, replacing),
+      () => this.load(true),
+    );
+  }
+
+  async deleteHoliday(day: string): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.deleteHoliday(arenaId, day),
+      () => this.load(true),
+    );
+  }
+
+  async savePolicy(policy: BillingPolicy): Promise<void> {
+    const arenaId = this.arena.current().id;
+    await writeThenReload(
+      () => this.api.savePolicy(arenaId, policy),
       () => this.load(true),
     );
   }

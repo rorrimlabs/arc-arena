@@ -1,10 +1,13 @@
 -- games — the arena's game library
 --
--- One row per title the arena offers. Written by op_game_upsert (game.upsert) and
--- op_game_set_active (game.set_active); op_session_start, op_session_reconfigure
--- and group placement bump last_played_at. max_local_players caps the controllers one
--- system may use on this game (players_exceeded otherwise). Per-station
--- availability lives in game_resources, button guides in game_controls.
+-- One row per title the arena offers. Written by op_game_upsert (game.upsert),
+-- op_game_set_active (game.set_active: archive / restore) and op_game_delete
+-- (game.delete: only a game nothing ever referred to; a used game is archived instead,
+-- since session_segments, group_assignments and controller_allocations keep pointing at
+-- it with no cascade); op_session_start, op_session_reconfigure and group placement bump
+-- last_played_at. max_local_players caps the controllers one system may use on this game
+-- (players_exceeded otherwise). Per-station availability lives in game_resources, button
+-- guides in game_controls (both deleted with the game).
 create table "public"."games" (
   "id"                uuid                     not null default gen_random_uuid(),
   "arena_id"          uuid                     not null,
@@ -56,7 +59,7 @@ comment on column public.games.player_mode is 'One of single, local (local multi
 
 comment on column public.games.max_local_players is 'Most players (controllers) one system may use at once on this title, 1-8. Starts, reconfigures and group placements above it are refused with players_exceeded.';
 
-comment on column public.games.active is 'False retires the title from selection without deleting it (game.set_active).';
+comment on column public.games.active is 'False archives the title: hidden from new sessions and bookings on every device, kept for the sessions, bills and bookings that refer to it (game.set_active).';
 
 comment on column public.games.last_played_at is 'Start time (UTC) of the latest session segment or group placement on this game.';
 

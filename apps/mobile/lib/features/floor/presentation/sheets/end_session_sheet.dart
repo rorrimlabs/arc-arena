@@ -42,6 +42,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   late final DateTime _endAt;
   late final SegmentBill _bill;
   final _amountCtrl = TextEditingController();
+  final _waiveReasonCtrl = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
 
   /// The pick, or the first method the arena offers when the pick is not (floor options).
@@ -71,8 +72,13 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   @override
   void dispose() {
     _amountCtrl.dispose();
+    _waiveReasonCtrl.dispose();
     super.dispose();
   }
+
+  /// A waive writes money off: it is never recorded without a reason.
+  bool get _waiveReasonMissing =>
+      _waived && _waiveReasonCtrl.text.trim().isEmpty;
 
   /// Exact paise for what is typed (never via a double); 0 when empty.
   int get _paidPaise => parseRupeesToPaise(_amountCtrl.text) ?? 0;
@@ -140,6 +146,18 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
             value: _waived,
             onChanged: (v) => setState(() => _waived = v),
           ),
+          if (_waived)
+            TextField(
+              key: const ValueKey('waive-reason'),
+              controller: _waiveReasonCtrl,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Reason for waiving',
+                helperText: 'The owner sees it with the amount written off',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
           if (!_waived) ...[
             Wrap(
               spacing: AppSpacing.sm,
@@ -174,7 +192,8 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           ],
           const SizedBox(height: AppSpacing.md),
           FilledButton.icon(
-            onPressed: _saving || _amountInvalid ? null : _confirm,
+            onPressed:
+                _saving || _amountInvalid || _waiveReasonMissing ? null : _confirm,
             icon: _saving
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check),
@@ -192,7 +211,9 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     setState(() => _saving = true);
     final actions = ref.read(sessionActionsProvider);
     final end = await actions.end(_session, widget.active.segments,
-        markWaived: _waived, at: _endAt);
+        markWaived: _waived,
+        waiveReason: _waived ? _waiveReasonCtrl.text : null,
+        at: _endAt);
     if (end.isErr) {
       if (mounted) {
         setState(() => _saving = false);

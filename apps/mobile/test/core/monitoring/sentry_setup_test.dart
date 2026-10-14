@@ -8,9 +8,9 @@ import 'package:arena_ops/data/sync/sync_transport.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:sentry_flutter/sentry_flutter.dart';
 
-SentryFlutterOptions _configured(AppConfig config) {
+SentryFlutterOptions _configured(AppConfig config, {bool debugBuild = false}) {
   final options = SentryFlutterOptions();
-  configureSentry(options, config);
+  configureSentry(options, config, debugBuild: debugBuild);
   return options;
 }
 
@@ -60,6 +60,20 @@ void main() {
     );
     expect(o.replay.sessionSampleRate, 0);
     expect(o.replay.onErrorSampleRate, 0);
+  });
+
+  test('app hangs are reported from profile/release builds, not debug', () {
+    const config = AppConfig(
+      backend: Backend.supabase,
+      sentryDsn: _dsn,
+      environment: 'production',
+    );
+    expect(_configured(config).enableAppHangTracking, isTrue);
+    expect(
+      _configured(config, debugBuild: true).enableAppHangTracking,
+      isFalse,
+      reason: 'debug Dart (JIT, breakpoints) blocks the iOS main thread',
+    );
   });
 
   test('no DSN: nothing is configured to send', () {

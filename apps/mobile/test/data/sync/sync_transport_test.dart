@@ -45,13 +45,17 @@ class _Server {
   final Future<http.Response> Function(http.Request) refresh;
   final Future<http.Response> Function(http.Request) rpc;
   int rpcCalls = 0;
+  int refreshCalls = 0;
 
   late final client = SupabaseClient(
     'http://backend.test',
     _key,
     authOptions: const AuthClientOptions(autoRefreshToken: false),
     httpClient: MockClient((req) async {
-      if (req.url.path == '/auth/v1/token') return refresh(req);
+      if (req.url.path == '/auth/v1/token') {
+        refreshCalls++;
+        return refresh(req);
+      }
       if (req.url.path.startsWith('/rest/v1/rpc/')) {
         rpcCalls++;
         return rpc(req);
@@ -160,6 +164,104 @@ void main() {
       await s.client.dispose();
     },
   );
+
+  // The phone's clock is behind: gotrue thinks the token is still good, the
+  // server says it expired. That used to stop sync with "Sign in again".
+  http.Response jwtExpired(http.Request req) => http.Response(
+    jsonEncode({
+      'code': 'PGRST303',
+      'message': 'JWT expired',
+      'hint': null,
+      'details': null,
+    }),
+    401,
+    request: req,
+    headers: {'content-type': 'application/json'},
+  );
+  Future<http.Response> freshSession(http.Request req) async => http.Response(
+    _session(_jwt(future)),
+    200,
+    request: req,
+    headers: {'content-type': 'application/json'},
+  );
+
+  test('a token the server counts as expired is refreshed once and the call '
+      'retried (slow phone clock)', () async {
+    late final _Server s;
+    s = _Server(
+      refresh: freshSession,
+      rpc: (req) async => s.refreshCalls == 0
+          ? jwtExpired(req)
+          : http.Response(
+              jsonEncode({'results': <Object>[]}),
+              200,
+              request: req,
+              headers: {'content-type': 'application/json'},
+            ),
+    );
+    await s.client.auth.setInitialSession(_session(_jwt(future)));
+    expect(await s.push(), isEmpty);
+    expect(s.refreshCalls, 1);
+    expect(s.rpcCalls, 2);
+    expect(s.client.auth.currentSession, isNotNull);
+    await s.client.dispose();
+  });
+
+  test('still refused after a fresh token: sign in again (not "revoked"), '
+      'and only one retry', () async {
+    final s = _Server(refresh: freshSession, rpc: (req) async => jwtExpired(req));
+    await s.client.auth.setInitialSession(_session(_jwt(future)));
+    await expectLater(
+      s.push(),
+      throwsA(
+        isA<SyncAuthException>().having((e) => e.revoked, 'revoked', isFalse),
+      ),
+    );
+    expect(s.refreshCalls, 1);
+    expect(s.rpcCalls, 2);
+    await s.client.dispose();
+  });
+
+  test('the refresh for a refused token cannot reach Auth: OFFLINE, the '
+      'sign-in is kept', () async {
+    final s = _Server(
+      refresh: (_) async =>
+          throw const SocketException('Network is unreachable'),
+      rpc: (req) async => jwtExpired(req),
+    );
+    await s.client.auth.setInitialSession(_session(_jwt(future)));
+    await expectLater(s.push(), throwsA(isA<SyncOfflineException>()));
+    expect(s.client.auth.currentSession, isNotNull);
+    expect(s.rpcCalls, 1);
+    await s.client.dispose();
+  }, timeout: const Timeout(Duration(minutes: 1)));
+
+  test('my_arenas at start-up gets the same single refresh-and-retry', () async {
+    late final _Server s;
+    s = _Server(
+      refresh: freshSession,
+      rpc: (req) async => s.refreshCalls == 0
+          ? jwtExpired(req)
+          : http.Response(
+              '[]',
+              200,
+              request: req,
+              headers: {'content-type': 'application/json'},
+            ),
+    );
+    await s.client.auth.setInitialSession(_session(_jwt(future)));
+    expect(
+      await rpcWithFreshToken(
+        s.client,
+        'my_arenas',
+        null,
+        timeout: const Duration(seconds: 5),
+      ),
+      isEmpty,
+    );
+    expect(s.refreshCalls, 1);
+    await s.client.dispose();
+  });
 
   test('a network failure on the call itself is OFFLINE', () async {
     final s = _Server(

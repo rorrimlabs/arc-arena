@@ -14,6 +14,8 @@
  */
 export const environment = {
   production: true,
-  supabaseUrl: '',
-  supabaseKey: '',
+  /** Hosted projects send real e-mail; only the local stack has a mail catcher. */
+  localMailUrl: '',
+  supabaseUrl: 'https://ouxvtvlzhxddmqirmnxo.supabase.co',
+  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91eHZ0dmx6aHhkZG1xaXJtbnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzMxOTYsImV4cCI6MjEwNzMwOTE5Nn0.iXmhphmepjbxKKfa6bp7V-4r6b2mSEza1AqyH0ePL_c',
 };

@@ -42,7 +42,13 @@ import { UserDialog, UserDialogData, UserDialogResult } from './dialogs/user-dia
     <app-list-detail listLabel="Users" detailLabel="User" [open]="!!selected()" (closed)="close()">
       <ng-container list>
         <app-list-pane-header title="Users">
-          <button actions mat-flat-button type="button" (click)="add()">
+          <button
+            actions
+            mat-flat-button
+            type="button"
+            [disabled]="!arena.canEdit()"
+            (click)="add()"
+          >
             <mat-icon aria-hidden="true">person_add</mat-icon>Invite
           </button>
           <p class="text-[13px] leading-[1.3] text-muted">
@@ -102,7 +108,7 @@ import { UserDialog, UserDialogData, UserDialogResult } from './dialogs/user-dia
 })
 export class UsersPage {
   protected readonly store = inject(UsersStore);
-  private readonly arena = inject(ArenaContext);
+  protected readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
   private readonly dialog = inject(MatDialog);

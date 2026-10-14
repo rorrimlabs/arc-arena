@@ -191,5 +191,18 @@
 }
 
 <main class="flex h-dvh min-w-0 flex-1 flex-col overflow-y-auto">
+  <app-local-server-note />
+  @if (arenaContext.current().id && !arenaContext.canEdit()) {
+    <p
+      role="note"
+      class="flex items-start gap-2 bg-warning-soft px-4 py-2.5 text-[13px] leading-[1.4] font-medium text-warning"
+    >
+      <span class="icon text-[18px] leading-none" aria-hidden="true">visibility</span>
+      <span>
+        View only. Changing games, stations, prices, staff or settings needs the Settings
+        permission: ask the owner.
+      </span>
+    </p>
+  }
   <router-outlet />
 </main>

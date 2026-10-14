@@ -11,8 +11,11 @@ import {
 export interface ConfirmDialogData {
   readonly title: string;
   readonly message: string;
-  /** The confirm button's label, e.g. "Remove". */
-  readonly confirm: string;
+  /**
+   * The confirm button's label, e.g. "Remove". Without one the dialog only informs: a single
+   * Close button (closes with false).
+   */
+  readonly confirm?: string;
   /** Destructive: the confirm button is filled in danger. */
   readonly danger?: boolean;
 }
@@ -27,15 +30,19 @@ export interface ConfirmDialogData {
       <p class="pt-1 text-sm leading-[1.4] text-muted">{{ data.message }}</p>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
-      <button mat-button type="button" [mat-dialog-close]="false">Cancel</button>
-      <button
-        mat-flat-button
-        type="button"
-        [class.danger-fill]="data.danger"
-        [mat-dialog-close]="true"
-      >
-        {{ data.confirm }}
+      <button mat-button type="button" [mat-dialog-close]="false">
+        {{ data.confirm ? 'Cancel' : 'Close' }}
       </button>
+      @if (data.confirm) {
+        <button
+          mat-flat-button
+          type="button"
+          [class.danger-fill]="data.danger"
+          [mat-dialog-close]="true"
+        >
+          {{ data.confirm }}
+        </button>
+      }
     </mat-dialog-actions>
   `,
 })

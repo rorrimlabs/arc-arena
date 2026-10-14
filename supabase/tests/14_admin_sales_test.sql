@@ -171,14 +171,15 @@ select is(jsonb_array_length(pg_temp.sales('2026-10-01T10:00:00Z', '2026-10-01T1
 -- ---------------------------------------------------------------- the summaries
 create temp table day as select pg_temp.sales('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z') as l;
 select is((select pg_temp.bill(l, 'a1400000-0000-0000-0000-00000000000a')
-            - array['at','started_at','ended_at'] from day),
+            - array['at','started_at','ended_at','recorded_at','payments'] from day),
   jsonb_build_object('kind','single','id','a1400000-0000-0000-0000-00000000000a',
     'status','completed','payment_status','paid','customer','Kiran','guest',false,
+    'returning', false,
     'stations', jsonb_build_array('HEX'), 'activities', jsonb_build_array('PlayStation 5'),
-    'games', '[]'::jsonb, 'players', 1,
+    'games', '[]'::jsonb, 'players', 1, 'player_minutes', 60,
     'billed_paise', 12000, 'paid_paise', 12000, 'refunded_paise', 0,
     'methods', jsonb_build_object('upi', 10000, 'cash', 2000),
-    'started_by', 'Staff', 'void_reason', null),
+    'started_by', 'Staff', 'void_reason', null, 'voided_at', null, 'voided_by', null),
   'A: billed ₹120, paid by method, station, activity, started by Staff');
 select is((select (pg_temp.bill(l, 'a1400000-0000-0000-0000-00000000000a')->>'at')::timestamptz from day),
   '2026-10-01T10:00:00Z'::timestamptz, 'A closed at its end');

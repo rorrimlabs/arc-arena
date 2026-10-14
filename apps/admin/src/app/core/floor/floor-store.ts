@@ -2,6 +2,7 @@ import { Service, Signal, computed, inject, signal } from '@angular/core';
 import { istDayStart } from '../../shared/time/ist';
 import { ArenaContext } from '../arena/arena-context';
 import { toAppError } from '../auth/auth-api';
+import { LoginScope } from '../auth/login-scope';
 import { writeThenReload } from '../sync/push-ops';
 import { Clock } from '../time/clock';
 import { FloorApi } from './floor-api';
@@ -12,6 +13,7 @@ import {
   Game,
   GameCompat,
   GameInput,
+  GameUsage,
   Play,
   Station,
   StationInput,
@@ -68,6 +70,16 @@ class Cached<T> {
     } finally {
       if (call === this.latest) this.loading.set(false);
     }
+  }
+
+  /** Forgets the value (another login): a read still in flight does not land. */
+  clear(): void {
+    this.latest++;
+    this.key = null;
+    this.value.set(this.empty);
+    this.ready.set(false);
+    this.loading.set(false);
+    this.error.set('');
   }
 }
 
@@ -131,6 +143,20 @@ export class FloorStore {
   readonly loading = computed(() => this.all.some((c) => c.loading()));
   /** The first read that failed, worded for the screen. */
   readonly loadError = computed(() => this.all.map((c) => c.error()).find(Boolean) ?? '');
+
+  constructor() {
+    // Sign-out or another login: nothing of this login's arena stays in memory.
+    inject(LoginScope).onEnd(() => this.all.forEach((c) => c.clear()));
+  }
+
+  /**
+   * The first of `what` that failed, worded for the screen (reactive). A screen asks only about
+   * the reads it shows, so another screen's failed read never hides it, and its "Try again"
+   * (load(what, true)) clears exactly what it reports.
+   */
+  errorOf(what: readonly FloorRead[]): string {
+    return what.map((w) => this.cache(w).error()).find(Boolean) ?? '';
+  }
 
   /** Loads the named reads for the current arena (each once, unless forced). */
   async load(what: readonly FloorRead[], force = false): Promise<void> {
@@ -198,18 +224,51 @@ export class FloorStore {
     await this.load(['stations'], true);
   }
 
-  /** Saves the game (and marks it playable on `playableOn`), then reloads both lists. */
-  async saveGame(game: GameInput, playableOn: readonly string[] = []): Promise<void> {
+  /**
+   * Saves the game (and marks it playable on `playableOn`), then reloads both lists. An edit
+   * passes `baseActive` (the active flag it showed); a stale one is refused and the list reloads
+   * to show what the server holds.
+   */
+  async saveGame(
+    game: GameInput,
+    playableOn: readonly string[] = [],
+    baseActive?: boolean,
+  ): Promise<void> {
     const arenaId = this.arena.current().id;
-    await writeThenReload(
-      () => this.api.saveGame(arenaId, game, playableOn),
-      () => this.load(playableOn.length ? ['games', 'gameResources'] : ['games'], true),
-    );
+    const reload = () =>
+      this.load(playableOn.length ? ['games', 'gameResources'] : ['games'], true);
+    try {
+      await writeThenReload(() => this.api.saveGame(arenaId, game, playableOn, baseActive), reload);
+    } catch (e) {
+      if (toAppError(e).code === 'stale') await reload();
+      throw e;
+    }
   }
 
+  /** Archives (false) or restores (true) a game, then reloads the list. */
   async setGameActive(id: string, active: boolean): Promise<void> {
     await this.api.setGameActive(this.arena.current().id, id, active);
     await this.load(['games'], true);
+  }
+
+  /** What still refers to a game (whether it can be deleted or must be archived). */
+  gameUsage(id: string): Promise<GameUsage> {
+    return this.api.gameUsage(this.arena.current().id, id);
+  }
+
+  /**
+   * Deletes a game nothing ever used, then reloads the games and their station statuses. A
+   * refusal (in play, history) also reloads, so the screen shows what the server holds.
+   */
+  async deleteGame(id: string): Promise<void> {
+    const reload = () => this.load(['games', 'gameResources'], true);
+    try {
+      await this.api.deleteGame(this.arena.current().id, id);
+    } catch (e) {
+      await reload();
+      throw e;
+    }
+    await reload();
   }
 
   async setGameCompat(gameId: string, resourceId: string, status: CompatStatus): Promise<void> {

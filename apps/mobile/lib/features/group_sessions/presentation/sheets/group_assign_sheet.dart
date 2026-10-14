@@ -46,7 +46,10 @@ class _GroupAssignSheet extends ConsumerStatefulWidget {
 }
 
 class _GroupAssignSheetState extends ConsumerState<_GroupAssignSheet> {
-  static const _activity = 'PS5';
+  /// The station type the group plays on: the one its players were placed on
+  /// (a group is created with at least one placement), whatever code the
+  /// owner gave it.
+  String get _activity => widget.group.assignments.first.activityCode;
   Resource? _resource;
   String? _gameId;
   String? _gameName;

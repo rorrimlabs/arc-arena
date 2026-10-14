@@ -83,3 +83,12 @@ Failure? paymentBalanceProblem({
   }
   return null;
 }
+
+/// A waive writes off what the customer did not pay, so it always says why.
+/// The server audits the reason with the amount written off (who, when, how
+/// much); the owner sees it in the bill's history on the dashboard.
+const waiveReasonRequired = Failure(
+  message: 'A waived bill needs a reason.',
+  fix: 'Say why it is complimentary, then end it.',
+  code: 'waive_reason_required',
+);

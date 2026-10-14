@@ -12,6 +12,7 @@ import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/notifications/reminder_plan.dart';
+import 'package:arena_ops/domain/value/enums.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import '../support/test_db.dart';
@@ -35,6 +36,8 @@ class _RecordingService implements NotificationService {
   Future<void> cancel(int id) async => cancelled.add(id);
   @override
   Future<void> cancelAll() async => cancelAllCount++;
+  @override
+  Future<List<int>> pendingIds() async => const [];
 }
 
 void main() {
@@ -49,6 +52,7 @@ void main() {
   final clock = FakeClock(DateTime.utc(2026, 10, 6, 0, 0));
 
   setUp(() async {
+    clock.set(DateTime.utc(2026, 10, 6, 0, 0));
     db = await seededMemoryDb();
     service = _RecordingService();
     final catalog = LocalCatalogRepository(db);
@@ -79,14 +83,14 @@ void main() {
   });
   tearDown(() async => db.close());
 
-  BookingDraft draft() => BookingDraft(
+  BookingDraft draft({String resourceId = 'void'}) => BookingDraft(
         customerId: customerId,
         activityCode: 'PS5',
         date: IstDate(2026, 10, 6),
         startMinuteOfDay: 15 * 60, // 3:00 PM IST
         durationMinutes: 60,
         gameId: 'g_eafc',
-        resourceId: 'void',
+        resourceId: resourceId,
       );
 
   test('creating a booking schedules a 30-min reminder (spec §23)', () async {
@@ -112,14 +116,73 @@ void main() {
     expect(service.cancelled, contains(reminderId(created.id, 1)));
   });
 
-  test('syncUpcoming clears all then reschedules booked future bookings', () async {
-    await actions.createBooking(draft());
+  test('reconcile reschedules booked future bookings in place and cancels '
+      'the reminders of one no longer booked', () async {
+    final kept = (await actions.createBooking(draft())).valueOrNull!;
+    final gone =
+        (await actions.createBooking(draft(resourceId: 'hex'))).valueOrNull!;
+    // Cancelled on another device: the row changes, nothing here is told.
+    await bookingsRepo.setStatus(gone.id, BookingStatus.cancelled);
+    service.scheduled.clear();
+    service.cancelled.clear();
+
+    await reminders.reconcile();
+
+    expect(service.cancelAllCount, 0, reason: 'never a cancel-all gap');
+    expect(service.scheduled.map((p) => p.bookingId), [kept.id]);
+    expect(service.cancelled, contains(reminderId(gone.id, 0)));
+    expect(service.cancelled, isNot(contains(reminderId(kept.id, 0))));
+  });
+
+  test('a reminder turned off stays off through a refresh; turned on, it is '
+      'back', () async {
+    final b = (await actions.createBooking(draft())).valueOrNull!;
+    await actions.setReminder(b, on: false);
     service.scheduled.clear();
 
-    await reminders.syncUpcoming();
+    await reminders.reconcile();
+    expect(service.scheduled, isEmpty, reason: 'used to come back at once');
 
-    // Cancels everything first (de-dupe on restart), then reschedules the one.
-    expect(service.cancelAllCount, 1);
-    expect(service.scheduled, hasLength(1));
+    await actions.setReminder(
+      (await bookingsRepo.getById(b.id))!,
+      on: true,
+    );
+    expect(service.scheduled.single.bookingId, b.id);
+  });
+
+  test('once the booking time passes, the reminder that rang stays in the tray',
+      () async {
+    final b = (await actions.createBooking(draft())).valueOrNull!;
+    service.cancelled.clear();
+    clock.set(DateTime.utc(2026, 10, 6, 9, 40)); // 3:10 PM IST, start passed
+
+    await reminders.reconcile();
+
+    expect(service.cancelled, isNot(contains(reminderId(b.id, 0))));
+  });
+
+  test('moved so its lead time has passed: the old reminder does not ring',
+      () async {
+    final b = (await actions.createBooking(draft())).valueOrNull!;
+    clock.set(DateTime.utc(2026, 10, 6, 8, 50)); // 2:20 PM IST
+    service.scheduled.clear();
+    service.cancelled.clear();
+
+    // Moved from 3:00 to 2:45 PM: its 30-min lead (2:15 PM) is gone, and the
+    // old one (2:30 PM) must not ring for the wrong time.
+    final moved = await actions.updateBooking(BookingDraft(
+      customerId: customerId,
+      activityCode: 'PS5',
+      date: IstDate(2026, 10, 6),
+      startMinuteOfDay: 14 * 60 + 45,
+      durationMinutes: 60,
+      gameId: 'g_eafc',
+      resourceId: 'void',
+      editingId: b.id,
+    ));
+    expect(moved.isOk, isTrue, reason: moved.failureOrNull?.display);
+
+    expect(service.cancelled, contains(reminderId(b.id, 0)));
+    expect(service.scheduled, isEmpty);
   });
 }

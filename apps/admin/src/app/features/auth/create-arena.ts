@@ -5,7 +5,7 @@ import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
 import { Router } from '@angular/router';
 import { ArenaApi } from '../../core/arena/arena-api';
-import { ArenaContext } from '../../core/arena/arena-context';
+import { ACCESS_HOME, ArenaContext } from '../../core/arena/arena-context';
 import { AuthApi, toAppError } from '../../core/auth/auth-api';
 import { Session } from '../../core/auth/session';
 import { AuthCard } from './auth-card';
@@ -14,8 +14,10 @@ import { MATERIAL_DEFAULTS } from '../../shared/material/material-defaults';
 const MAX_NAME = 80;
 
 /**
- * A signed-in login with no arena to manage creates its own (create_my_arena: confirmed logins,
- * one arena per login). It starts with the starter catalog; everything is editable afterwards.
+ * A signed-in login with no membership at all — a new owner — creates its own arena
+ * (create_my_arena: confirmed logins, one arena per login). It starts empty; the owner builds the
+ * catalog here. Floor staff and logins whose access is off never get here (noArenaGuard sends
+ * them to the account page).
  */
 @Component({
   selector: 'app-create-arena',
@@ -34,11 +36,6 @@ const MAX_NAME = 80;
         >
           Try again
         </button>
-      } @else if (context.ownsArena()) {
-        <p class="text-sm leading-[1.4] text-muted">
-          This login already owns an arena, but your access to it is turned off. Ask the operator to
-          restore it.
-        </p>
       } @else {
         <form class="flex flex-col gap-5" novalidate (submit)="create($event)">
           <mat-form-field appearance="outline" subscriptSizing="dynamic">
@@ -72,8 +69,8 @@ export class CreateArena implements OnInit {
 
   protected readonly subtitle = computed(
     () =>
-      `Signed in as ${this.session.user()?.email ?? ''}. You will be its owner. It starts with ` +
-      'sample stations, rates and games — change them any time. One arena per login.',
+      `Signed in as ${this.session.user()?.email ?? ''}. You will be its owner. It starts ` +
+      'empty: add station types, prices, stations and games here. One arena per login.',
   );
 
   protected readonly model = signal({ arena: '', owner: '' });
@@ -91,14 +88,19 @@ export class CreateArena implements OnInit {
     void this.check();
   }
 
-  /** Already manages an arena (e.g. opened this page by hand): go to the dashboard. */
+  /**
+   * Only a login with no membership creates an arena (noArenaGuard). One that has gained one
+   * meanwhile — or opened this page by hand — is sent where it belongs: the dashboard for an
+   * owner, the account page for staff or access turned off.
+   */
   protected async check(): Promise<void> {
     this.busy.set(true);
     try {
       await this.context.load(true);
       this.loadFailed.set(false);
       this.error.set('');
-      if (this.context.arenas().length > 0) await this.router.navigateByUrl('/');
+      const access = this.context.access();
+      if (access !== 'none') await this.router.navigateByUrl(ACCESS_HOME[access]);
     } catch (e) {
       this.loadFailed.set(true);
       this.error.set(toAppError(e).message);
