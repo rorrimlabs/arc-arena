@@ -26,23 +26,44 @@
   >
     <!-- Brand -->
     <div
-      class="flex h-topbar flex-none items-center gap-3"
+      class="flex h-topbar flex-none items-center justify-between gap-3"
       [class.justify-center]="rail()"
       [class.px-3]="!rail()"
     >
-      <div
-        class="grid size-10 flex-none place-items-center rounded-card bg-primary font-display text-[15px] leading-none font-extrabold text-on-primary"
-        aria-hidden="true"
-      >
-        404
-      </div>
-      @if (rail()) {
-        <span class="sr-only">ArenaOS</span>
-      } @else {
-        <div class="flex min-w-0 flex-col gap-0.75">
-          <span class="font-display text-[17px] leading-none font-bold">ArenaOS</span>
-          <span class="text-xs leading-none font-medium text-muted">Owner dashboard</span>
+      <div class="flex items-center gap-3">
+        <div
+          class="grid size-10 flex-none place-items-center rounded-card bg-primary font-display text-[15px] leading-none font-extrabold text-on-primary"
+          aria-hidden="true"
+        >
+          404
         </div>
+        @if (rail()) {
+          <span class="sr-only">ArenaOS</span>
+        } @else {
+          <div class="flex min-w-0 flex-col gap-0.75">
+            <span class="font-display text-[17px] leading-none font-bold">ArenaOS</span>
+            <span class="text-xs leading-none font-medium text-muted">Owner dashboard</span>
+          </div>
+        }
+      </div>
+
+      @if (!rail()) {
+        <button
+          type="button"
+          class="relative grid size-9 flex-none place-items-center rounded-full text-muted hover:bg-info-soft hover:text-fg outline-none"
+          title="Operational alerts"
+          aria-label="Operational alerts"
+          [cdkMenuTriggerFor]="notifMenu"
+        >
+          <span class="icon text-xl leading-none" aria-hidden="true">notifications</span>
+          @if (notifications.unreadCount() > 0) {
+            <span
+              class="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white leading-none"
+            >
+              {{ notifications.unreadCount() > 9 ? '9+' : notifications.unreadCount() }}
+            </span>
+          }
+        </button>
       }
     </div>
 
@@ -72,6 +93,31 @@
         }
       </button>
     </div>
+
+    @if (rail()) {
+      <div class="flex justify-center flex-none pb-2">
+        <button
+          type="button"
+          class="relative grid size-11 flex-none place-items-center rounded-card border border-border-strong text-muted hover:bg-info-soft hover:text-fg outline-none"
+          title="Operational alerts"
+          aria-label="Operational alerts"
+          [cdkMenuTriggerFor]="notifMenu"
+        >
+          <span class="icon text-xl leading-none" aria-hidden="true">notifications</span>
+          @if (notifications.unreadCount() > 0) {
+            <span
+              class="absolute top-1 right-1 flex size-4 items-center justify-center rounded-full bg-danger text-[10px] font-bold text-white leading-none"
+            >
+              {{ notifications.unreadCount() > 9 ? '9+' : notifications.unreadCount() }}
+            </span>
+          }
+        </button>
+      </div>
+    }
+
+    <ng-template #notifMenu>
+      <app-notifications-menu />
+    </ng-template>
 
     <ng-template #arenaMenu>
       <div cdkMenu class="min-w-60 rounded-menu bg-surface-raised py-2 text-fg shadow-raised">
@@ -156,6 +202,9 @@
       }
     </nav>
 
+    <!-- Only on the local Supabase stack: logins made here do not exist on the hosted server. -->
+    <app-local-server-note [variant]="rail() ? 'rail' : 'nav'" />
+
     <!-- Signed-in owner. As in the design, the initials avatar also signs out. -->
     <div
       class="flex flex-none items-center gap-3 border-t border-border py-3"
@@ -191,7 +240,6 @@
 }
 
 <main class="flex h-dvh min-w-0 flex-1 flex-col overflow-y-auto">
-  <app-local-server-note />
   @if (arenaContext.current().id && !arenaContext.canEdit()) {
     <p
       role="note"

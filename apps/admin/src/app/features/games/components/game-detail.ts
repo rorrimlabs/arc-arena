@@ -32,6 +32,7 @@ import {
   topFans,
 } from '../data/game-view';
 import { GameStations } from './game-stations';
+import { GameControls } from './game-controls';
 
 /**
  * Design: `if (p === 'games')` detail. 30-day play, availability to staff, the stations it can
@@ -46,6 +47,7 @@ import { GameStations } from './game-stations';
     DetailPane,
     DetailSection,
     GameStations,
+    GameControls,
     LineRow,
     ToggleRow,
     StatTile,
@@ -143,6 +145,8 @@ import { GameStations } from './game-stations';
       </app-detail-section>
 
       <app-game-stations [game]="g" />
+
+      <app-game-controls [game]="g" />
 
       <app-detail-section heading="Plays it most" subtitle="Members, last 30 days">
         @for (f of fans(); track f.customer.id) {

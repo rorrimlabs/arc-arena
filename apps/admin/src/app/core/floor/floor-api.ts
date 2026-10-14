@@ -12,6 +12,8 @@ import {
   Customer,
   Game,
   GameCompat,
+  GameControl,
+  GameControlInput,
   GameInput,
   GameUsage,
   Play,
@@ -71,6 +73,14 @@ export abstract class FloorApi {
     gameId: string,
     resourceId: string,
     status: CompatStatus,
+  ): Promise<void>;
+  /** Game controls guide rows (game_controls) for one game. */
+  abstract gameControls(arenaId: string, gameId: string): Promise<GameControl[]>;
+  /** Wholesale replacement of game controls guide rows (game.replace_controls). */
+  abstract saveGameControls(
+    arenaId: string,
+    gameId: string,
+    controls: readonly GameControlInput[],
   ): Promise<void>;
 }
 
@@ -412,6 +422,55 @@ class SupabaseFloorApi extends FloorApi {
       [{ kind: 'game.set_active', payload: { id, active } }],
       FLOOR_MESSAGES,
     );
+  }
+
+  async gameControls(arenaId: string, gameId: string): Promise<GameControl[]> {
+    const client = await this.supabase.client();
+    const { data, error } = await client
+      .from('game_controls')
+      .select('id, game_id, section, action, buttons, explanation, notes, image_url, sort_order')
+      .eq('arena_id', arenaId)
+      .eq('game_id', gameId)
+      .order('sort_order', { ascending: true })
+      .order('created_at', { ascending: true });
+    if (error) throw dbError(error);
+    return ((data as Row[] | null) ?? []).map((r) => ({
+      id: String(r['id']),
+      gameId: String(r['game_id']),
+      section: String(r['section']),
+      action: String(r['action']),
+      buttons: strings(r['buttons']),
+      explanation: str(r['explanation']),
+      notes: str(r['notes']),
+      imageUrl: str(r['image_url']),
+      sortOrder: Number(r['sort_order'] ?? 0),
+    }));
+  }
+
+  async saveGameControls(
+    arenaId: string,
+    gameId: string,
+    controls: readonly GameControlInput[],
+  ): Promise<void> {
+    const ops: SyncOp[] = [
+      {
+        kind: 'game.replace_controls',
+        payload: {
+          game_id: gameId,
+          controls: controls.map((c, i) => ({
+            id: c.id || crypto.randomUUID(),
+            section: c.section,
+            action: c.action,
+            buttons: c.buttons,
+            explanation: c.explanation ?? null,
+            notes: c.notes ?? null,
+            image_url: c.imageUrl ?? null,
+            sort_order: c.sortOrder ?? i,
+          })),
+        },
+      },
+    ];
+    await pushOps(await this.supabase.client(), arenaId, ops, FLOOR_MESSAGES);
   }
 
   /** Every row of an arena-scoped select, a page (the API's row cap) at a time. */

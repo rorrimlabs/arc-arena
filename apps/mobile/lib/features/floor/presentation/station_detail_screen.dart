@@ -12,6 +12,7 @@ import 'package:arena_ops/features/floor/presentation/sheets/change_controllers_
 import 'package:arena_ops/features/floor/presentation/sheets/change_game_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/end_session_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/extend_sheet.dart';
+import 'package:arena_ops/features/floor/presentation/sheets/session_expiry_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/session_history_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/switch_system_sheet.dart';
 import 'package:arena_ops/features/games/presentation/controls_sheet.dart';
@@ -56,7 +57,7 @@ class StationDetailScreen extends ConsumerWidget {
     final (Color accent, String badge) = switch (visual) {
       SessionVisualState.normal => (arena.stPlaying, 'Playing'),
       SessionVisualState.warning => (arena.stEnding, 'Ending'),
-      SessionVisualState.overtime => (arena.stOvertime, 'Over time'),
+      SessionVisualState.overtime => (arena.stOvertime, 'Expired · Action needed'),
     };
 
     final resources = ref.watch(resourcesProvider).value ?? const [];
@@ -141,6 +142,53 @@ class StationDetailScreen extends ConsumerWidget {
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.x5, AppSpacing.lg, AppSpacing.x5, AppSpacing.xxl),
         children: [
+          if (overtime) ...[
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.md),
+              margin: const EdgeInsets.only(bottom: AppSpacing.md),
+              decoration: BoxDecoration(
+                color: arena.stOvertimeBg,
+                borderRadius: BorderRadius.circular(AppRadii.md),
+                border: Border.all(color: arena.stOvertime),
+              ),
+              child: Row(
+                children: [
+                  Icon(Icons.alarm_off_rounded, color: arena.stOvertime, size: 22),
+                  const SizedBox(width: AppSpacing.md),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          'Session Expired · Bill Frozen',
+                          style: ArenaType.label.copyWith(
+                            color: arena.stOvertime,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: 2),
+                        Text(
+                          'Billing frozen at ${IstTime.format12(session.scheduledEndAt)}. No extra unapproved time is charged.',
+                          style: ArenaType.caption.copyWith(color: arena.textMuted),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: AppSpacing.sm),
+                  FilledButton.tonal(
+                    style: FilledButton.styleFrom(
+                      backgroundColor: arena.stOvertime,
+                      foregroundColor: Colors.white,
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                    ),
+                    onPressed: () => showSessionExpirySheet(context, a),
+                    child: const Text('Actions'),
+                  ),
+                ],
+              ),
+            ),
+          ],
           // Hero timer.
           Text(
             overtime
@@ -151,8 +199,10 @@ class StationDetailScreen extends ConsumerWidget {
               color: overtime ? arena.stOvertime : arena.text,
             ),
           ),
-          Text(overtime ? 'over the clock' : 'left on the clock',
-              style: ArenaType.body.copyWith(color: arena.textMuted)),
+          Text(
+            overtime ? 'over the clock (billing frozen)' : 'left on the clock',
+            style: ArenaType.body.copyWith(color: arena.textMuted),
+          ),
           const SizedBox(height: AppSpacing.lg),
           ClipRRect(
             borderRadius: BorderRadius.circular(AppRadii.pill),
@@ -166,8 +216,10 @@ class StationDetailScreen extends ConsumerWidget {
           const SizedBox(height: AppSpacing.sm),
           Row(
             children: [
-              Text('${elapsed.inMinutes}m played',
-                  style: ArenaType.caption.copyWith(color: arena.textMuted)),
+              Text(
+                '${timer.billableDuration(now).inMinutes}m billable playtime',
+                style: ArenaType.caption.copyWith(color: arena.textMuted),
+              ),
               const Spacer(),
               Text(
                 '${formatMinutesLabel(booked)} booked · from ${IstTime.format12(session.startedAt)}',
@@ -240,7 +292,14 @@ class StationDetailScreen extends ConsumerWidget {
         ],
       ),
       bottomNavigationBar: _ActionBar(
-        onExtend: () => showExtendSheet(context, a),
+        onExtend: () {
+          final now = ref.read(clockProvider).now();
+          if (now.isAfter(a.session.scheduledEndAt)) {
+            showSessionExpirySheet(context, a, initialMode: ExpiryActionMode.extend);
+          } else {
+            showExtendSheet(context, a);
+          }
+        },
         onBill: () => showEndSessionSheet(context, a),
       ),
     );

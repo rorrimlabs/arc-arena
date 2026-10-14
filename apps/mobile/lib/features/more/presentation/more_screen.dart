@@ -10,6 +10,7 @@ import 'package:arena_ops/features/controllers/presentation/controller_board_scr
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
+import 'package:arena_ops/features/notifications/presentation/notifications_screen.dart';
 import 'package:arena_ops/features/reports/presentation/session_log_screen.dart';
 import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
 import 'package:flutter/material.dart';
@@ -128,6 +129,12 @@ class MoreScreen extends ConsumerWidget {
                 title: 'Session log',
                 subtitle: 'Every session, searchable',
                 onTap: () => _push(context, const SessionLogScreen()),
+              ),
+              ArenaListRow(
+                icon: Icons.notifications_active_outlined,
+                title: 'Notifications & alerts',
+                subtitle: 'Session timer rings, warnings and reminders',
+                onTap: () => _push(context, const NotificationsScreen()),
               ),
             ]),
             _Group('You', [

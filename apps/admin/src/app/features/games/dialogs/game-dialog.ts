@@ -242,10 +242,15 @@ export class GameDialog {
     this.busy.set(true);
     this.error.set('');
     const stations = this.editing ? [] : this.playableOn();
+    const aliases = this.editing
+      ? this.editing.name !== name && !this.editing.aliases.includes(this.editing.name)
+        ? [...this.editing.aliases, this.editing.name]
+        : this.editing.aliases
+      : [];
     const game = {
       id,
       name,
-      aliases: this.editing?.aliases ?? [],
+      aliases,
       categoryId: this.editing?.categoryId ?? null,
       platforms: this.platforms(),
       playerMode: this.playerMode(),

@@ -9,6 +9,7 @@ class NotificationSettings {
     this.alert5Min = true,
     this.alert1Min = true,
     this.alertAtEnd = true,
+    this.alarmDurationSeconds = 15,
   });
 
   /// Whether phone vibration is enabled for local timer alerts.
@@ -26,12 +27,16 @@ class NotificationSettings {
   /// Whether to fire an alert when the session time expires ("സമയം കഴിഞ്ഞു").
   final bool alertAtEnd;
 
+  /// Duration in seconds to play audible ring when an alert triggers (default 15s).
+  final int alarmDurationSeconds;
+
   Map<String, dynamic> toJson() => {
         'vibrationEnabled': vibrationEnabled,
         'soundEnabled': soundEnabled,
         'alert5Min': alert5Min,
         'alert1Min': alert1Min,
         'alertAtEnd': alertAtEnd,
+        'alarmDurationSeconds': alarmDurationSeconds,
       };
 
   factory NotificationSettings.fromJson(Map<String, dynamic> json) =>
@@ -41,6 +46,7 @@ class NotificationSettings {
         alert5Min: json['alert5Min'] as bool? ?? true,
         alert1Min: json['alert1Min'] as bool? ?? true,
         alertAtEnd: json['alertAtEnd'] as bool? ?? true,
+        alarmDurationSeconds: json['alarmDurationSeconds'] as int? ?? 15,
       );
 
   NotificationSettings copyWith({
@@ -49,6 +55,7 @@ class NotificationSettings {
     bool? alert5Min,
     bool? alert1Min,
     bool? alertAtEnd,
+    int? alarmDurationSeconds,
   }) =>
       NotificationSettings(
         vibrationEnabled: vibrationEnabled ?? this.vibrationEnabled,
@@ -56,6 +63,8 @@ class NotificationSettings {
         alert5Min: alert5Min ?? this.alert5Min,
         alert1Min: alert1Min ?? this.alert1Min,
         alertAtEnd: alertAtEnd ?? this.alertAtEnd,
+        alarmDurationSeconds:
+            alarmDurationSeconds ?? this.alarmDurationSeconds,
       );
 
   @override
@@ -65,7 +74,8 @@ class NotificationSettings {
       other.soundEnabled == soundEnabled &&
       other.alert5Min == alert5Min &&
       other.alert1Min == alert1Min &&
-      other.alertAtEnd == alertAtEnd;
+      other.alertAtEnd == alertAtEnd &&
+      other.alarmDurationSeconds == alarmDurationSeconds;
 
   @override
   int get hashCode => Object.hash(
@@ -74,5 +84,6 @@ class NotificationSettings {
         alert5Min,
         alert1Min,
         alertAtEnd,
+        alarmDurationSeconds,
       );
 }

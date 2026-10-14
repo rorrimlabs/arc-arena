@@ -82,4 +82,42 @@ void main() {
 
     await disposeApp(tester);
   });
+
+  testWidgets('shows empty state when no staff accounts exist', (tester) async {
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        ...testOverrides(db, auth: AuthController.new),
+        usersProvider.overrideWith((ref) async => const []),
+      ],
+      child: const ArenaOpsApp(),
+    ));
+    await settle(tester);
+
+    expect(find.text('No staff accounts found'), findsOneWidget);
+    expect(
+      find.text(
+        'Add or invite staff members from the admin dashboard to get started.',
+      ),
+      findsOneWidget,
+    );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('shows error state when accounts fail to load', (tester) async {
+    await tester.pumpWidget(ProviderScope(
+      overrides: [
+        ...testOverrides(db, auth: AuthController.new),
+        usersProvider.overrideWithValue(
+          AsyncError(Exception('db error'), StackTrace.current),
+        ),
+      ],
+      child: const ArenaOpsApp(),
+    ));
+    await settle(tester);
+
+    expect(find.text('Could not load accounts'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
 }

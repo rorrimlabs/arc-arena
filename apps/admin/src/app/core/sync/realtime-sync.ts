@@ -70,6 +70,8 @@ export const TABLE_TARGETS: Readonly<Record<string, readonly RefreshTarget[]>> =
   holidays: PRICES,
   billing_policies: PRICES,
   controllers: ['controllers'],
+  controller_allocations: ['controllers'],
+  controller_moves: ['controllers'],
 };
 
 const ALL_TARGETS: readonly RefreshTarget[] = [
@@ -90,8 +92,8 @@ const ALL_TARGETS: readonly RefreshTarget[] = [
 
 /** What a committed op kind (`session.start`, `game.set_compat`…) refreshes, by its prefix. */
 const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
-  ['session.', BILLS],
-  ['group.', BILLS],
+  ['session.', [...BILLS, 'controllers']],
+  ['group.', [...BILLS, 'controllers']],
   ['payment.', ['sales', 'overview', 'floor_plays']],
   ['game.set_compat', ['game_resources']],
   // A deleted game takes its station statuses with it.

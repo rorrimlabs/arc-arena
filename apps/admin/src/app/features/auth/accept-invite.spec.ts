@@ -28,7 +28,7 @@ describe('Accept invitation', () => {
 
   async function start(
     url: string,
-    o: { signedIn?: boolean; role?: 'owner' | 'staff'; local?: LocalServer } = {},
+    o: { signedIn?: boolean; role?: 'owner' | 'staff'; local?: LocalServer | null } = {},
   ) {
     auth = new SampleAuthApi(o.signedIn ?? false);
     arenas = new SampleArenaApi(false);
@@ -162,21 +162,44 @@ describe('Accept invitation', () => {
     expect(TestBed.inject(Router).url).toBe('/sign-in');
   });
 
-  it('on the local test server, choosing a password and joining both say the login is only there', async () => {
+  it('on the local test server, choosing a password and joining both say the login is only there in an unobtrusive note', async () => {
     await start(LINK + session('invite'), {
       local: { address: '127.0.0.1:54431', mailUrl: null },
     });
-    const note = () => body().querySelector('app-local-server-note [role="note"]')?.textContent;
+    const noteEl = () => body().querySelector('app-local-server-note [role="note"]');
+    const note = () => noteEl()?.textContent;
     expect(heading()).toBe('Choose your password');
     expect(note()).toContain('Local test server (127.0.0.1:54431).');
     expect(note()).toContain('exist only on this computer');
     expect(note()).not.toContain('local mailbox');
+
+    // Unobtrusive styling: dark sunken surface, muted text, no yellow alert warning styling
+    expect(noteEl()?.classList.contains('bg-warning-soft')).toBe(false);
+    expect(noteEl()?.classList.contains('text-warning')).toBe(false);
+    expect(noteEl()?.classList.contains('bg-surface-sunken')).toBe(true);
+
+    // Form fields are top and center; the developer note is positioned below the form
+    const formEl = body().querySelector('form');
+    expect(formEl).not.toBeNull();
+    expect(
+      Boolean(formEl!.compareDocumentPosition(noteEl()!) & Node.DOCUMENT_POSITION_FOLLOWING),
+    ).toBe(true);
 
     type('Password', 'floor-pass-42');
     type('Type it again', 'floor-pass-42');
     await press('Save password and join');
     expect(heading()).toBe('You have joined 404 Arena Koramangala');
     expect(note()).toContain('dart_define.prod.json');
+  });
+
+  it('in a production build configuration the invitation page never displays the local server note', async () => {
+    // production: true causes localServer to return null
+    await start(LINK + session('invite'), {
+      local: null,
+    });
+    expect(body().querySelector('app-local-server-note [role="note"]')).toBeNull();
+    expect(heading()).toBe('Choose your password');
+    expect(body().querySelectorAll('input[type="password"]').length).toBe(2);
   });
 
   it('on a hosted project the invitation page has no local server note', async () => {

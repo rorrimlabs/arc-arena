@@ -42,7 +42,11 @@ class _SwitchSheetState extends ConsumerState<_SwitchSheet> {
     final current = active.current;
     final resources = ref.watch(resourcesProvider).value ?? const [];
     final open = ref.watch(openSegmentsProvider).value ?? const [];
-    final busy = {for (final s in open) s.resourceId};
+    final openGroups = ref.watch(openGroupAssignmentsProvider).value ?? const [];
+    final busy = {
+      for (final s in open) s.resourceId,
+      for (final g in openGroups) g.resourceId,
+    };
 
     // Compatibility: if a game is set, only systems that can run it.
     final compat = current.gameId == null

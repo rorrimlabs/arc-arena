@@ -165,7 +165,10 @@ export class UserDialog {
       this.ref.close({
         snack:
           `Invitation sent to ${email}${role === 'owner' ? ' as an owner' : ''}` +
-          (this.localServer ? ' on the local test server: the e-mail is in the local mailbox' : ''),
+          (this.localServer
+            ? ' on the local test server' +
+              (this.localServer.mailUrl ? ': the e-mail is in the local mailbox' : '')
+            : ''),
       });
     } catch (e) {
       this.error.set(toAppError(e).message);

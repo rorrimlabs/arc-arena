@@ -16,6 +16,8 @@ library;
 
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart'
+    show defaultTargetPlatform, kIsWeb, kReleaseMode, TargetPlatform;
 import 'package:meta/meta.dart';
 
 enum Backend { local, supabase }
@@ -170,7 +172,44 @@ class AppConfig {
     return null;
   }
 
+  /// Default local development Supabase endpoints and anon key.
+  static const defaultLocalSupabaseUrl = 'http://127.0.0.1:54431';
+  static const defaultLocalSupabaseAndroidUrl = 'http://10.0.2.2:54431';
+  static const defaultLocalSupabaseAnonKey =
+      'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH';
+
+  /// Local development Supabase URL, resolving host loopback for Android emulator.
+  static String get defaultDevSupabaseUrl {
+    if (!kIsWeb && defaultTargetPlatform == TargetPlatform.android) {
+      return defaultLocalSupabaseAndroidUrl;
+    }
+    return defaultLocalSupabaseUrl;
+  }
+
+  /// Converts loopback host (127.0.0.1 or localhost) to Android emulator loopback alias (10.0.2.2)
+  /// when running on an Android device or emulator.
+  static String normalizeDevUrl(
+    String url, {
+    TargetPlatform? platform,
+    bool? isWeb,
+  }) {
+    final effectiveIsWeb = isWeb ?? kIsWeb;
+    final effectivePlatform = platform ?? defaultTargetPlatform;
+    if (!effectiveIsWeb && effectivePlatform == TargetPlatform.android) {
+      final uri = Uri.tryParse(url);
+      if (uri != null && (uri.host == '127.0.0.1' || uri.host == 'localhost')) {
+        return uri.replace(host: '10.0.2.2').toString();
+      }
+    }
+    return url;
+  }
+
   /// Read configuration from the compile-time environment.
+  ///
+  /// Outside release builds, running without explicit configuration defaults to
+  /// the intended local Supabase stack ([defaultDevSupabaseUrl] and
+  /// [defaultLocalSupabaseAnonKey]) instead of fallback mock data.
+  /// Release builds strictly require explicit production configuration.
   factory AppConfig.fromEnvironment() {
     const raw = String.fromEnvironment('AO_BACKEND');
     const url = String.fromEnvironment('AO_SUPABASE_URL');
@@ -188,11 +227,39 @@ class AppConfig {
       'AO_SENTRY_REPLAY_ERROR_RATE',
     );
     const sentryDebug = String.fromEnvironment('AO_SENTRY_DEBUG');
+
+    final Backend backend;
+    final String? supabaseUrl;
+    final String? supabaseAnonKey;
+    final String backendSetting;
+
+    if (kReleaseMode) {
+      // Release builds must be explicitly configured via dart_define.prod.json.
+      backend = raw == 'supabase' ? Backend.supabase : Backend.local;
+      supabaseUrl = url.isEmpty ? null : url;
+      supabaseAnonKey = key.isEmpty ? null : key;
+      backendSetting = raw;
+    } else {
+      // Development builds default to the intended local Supabase stack
+      // unless explicitly opted into offline local mode ('local').
+      if (raw == 'local') {
+        backend = Backend.local;
+        supabaseUrl = url.isEmpty ? null : url;
+        supabaseAnonKey = key.isEmpty ? null : key;
+        backendSetting = raw;
+      } else {
+        backend = Backend.supabase;
+        supabaseUrl = url.isEmpty ? defaultDevSupabaseUrl : normalizeDevUrl(url);
+        supabaseAnonKey = key.isEmpty ? defaultLocalSupabaseAnonKey : key;
+        backendSetting = raw.isEmpty ? 'supabase' : raw;
+      }
+    }
+
     return AppConfig(
-      backend: raw == 'supabase' ? Backend.supabase : Backend.local,
-      supabaseUrl: url.isEmpty ? null : url,
-      supabaseAnonKey: key.isEmpty ? null : key,
-      backendSetting: raw,
+      backend: backend,
+      supabaseUrl: supabaseUrl,
+      supabaseAnonKey: supabaseAnonKey,
+      backendSetting: backendSetting,
       sentryDsn: sentryDsn.isEmpty ? null : sentryDsn,
       environment: environment.isEmpty ? 'development' : environment,
       replayEnabled: !const {

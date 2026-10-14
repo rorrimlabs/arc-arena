@@ -362,7 +362,7 @@ export class AcceptInvite {
         return;
       }
       // A new login has no password yet: it chooses one before joining.
-      this.step.set(this.link.type === 'invite' ? 'password' : 'confirm');
+      this.step.set(this.link.type !== 'magiclink' ? 'password' : 'confirm');
       return;
     }
     // No link session: the invitee signs in here (whoever the dashboard is signed in as).

@@ -3,6 +3,8 @@ import { CdkMenu, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
 import { Component, computed, effect, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { LocalServerNote } from '../../shared/local-server-note/local-server-note';
+import { AdminNotificationsStore } from '../notifications/admin-notifications.store';
+import { NotificationsMenu } from '../notifications/notifications-menu';
 import { ACCESS_HOME, ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
 import { RealtimeSync } from '../sync/realtime-sync';
@@ -21,6 +23,7 @@ import { NAV_GROUPS } from './nav';
     CdkMenu,
     CdkMenuItemRadio,
     LocalServerNote,
+    NotificationsMenu,
   ],
   templateUrl: './shell.html',
   host: { class: 'flex h-dvh overflow-hidden bg-bg text-fg' },
@@ -29,6 +32,7 @@ export class Shell {
   protected readonly layout = inject(Layout);
   protected readonly arenaContext = inject(ArenaContext);
   protected readonly session = inject(Session);
+  protected readonly notifications = inject(AdminNotificationsStore);
   /** Injected so live updates run while the dashboard is open (it follows user and arena). */
   private readonly realtime = inject(RealtimeSync);
   private readonly router = inject(Router);

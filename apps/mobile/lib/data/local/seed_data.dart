@@ -19,15 +19,29 @@ class LocalSeed {
   static Future<void> applyIfEmpty(
     AppDatabase db, {
     bool releaseBuild = kReleaseMode,
+    bool includeUsers = true,
   }) async {
     final existing = await db.select(db.activities).get();
     if (existing.isNotEmpty) return;
-    await apply(db, releaseBuild: releaseBuild);
+    await apply(db, releaseBuild: releaseBuild, includeUsers: includeUsers);
+  }
+
+  /// Removes any demo users ('Prashanth', 'Alan Benny') that were seeded into
+  /// a local-only database by earlier development runs.
+  static Future<int> removeDemoUsers(AppDatabase db) async {
+    return (db.delete(db.users)
+          ..where(
+            (u) =>
+                u.id.isIn(const ['u1', 'u2']) &
+                u.name.isIn(const ['Prashanth', 'Alan Benny']),
+          ))
+        .go();
   }
 
   static Future<void> apply(
     AppDatabase db, {
     bool releaseBuild = kReleaseMode,
+    bool includeUsers = true,
   }) async {
     if (releaseBuild) {
       throw StateError(
@@ -42,35 +56,37 @@ class LocalSeed {
       // One owner + one staff (development demo users). Default PINs:
       // owner 1111 · staff 2222 (development only). Hashed on the way in, exactly
       // like a PIN typed in Settings, so no plaintext PIN is ever written.
-      final ownerPin = PinCredential.create('1111');
-      final staffPin = PinCredential.create('2222');
-      await db.batch((b) {
-        b.insertAll(db.users, [
-          UsersCompanion.insert(
-            id: 'u1',
-            name: 'Prashanth',
-            perms: Permission.codesOf(Permission.all),
-            sortOrder: const Value(1),
-            pinSalt: Value(ownerPin.salt),
-            pinHash: Value(ownerPin.hash),
-            pinIterations: Value(ownerPin.iterations),
-          ),
-          UsersCompanion.insert(
-            id: 'u2',
-            name: 'Alan Benny',
-            perms: Permission.codesOf({
-              Permission.start,
-              Permission.bill,
-              Permission.discount,
-              Permission.members,
-            }),
-            sortOrder: const Value(2),
-            pinSalt: Value(staffPin.salt),
-            pinHash: Value(staffPin.hash),
-            pinIterations: Value(staffPin.iterations),
-          ),
-        ]);
-      });
+      if (includeUsers) {
+        final ownerPin = PinCredential.create('1111');
+        final staffPin = PinCredential.create('2222');
+        await db.batch((b) {
+          b.insertAll(db.users, [
+            UsersCompanion.insert(
+              id: 'u1',
+              name: 'Prashanth',
+              perms: Permission.codesOf(Permission.all),
+              sortOrder: const Value(1),
+              pinSalt: Value(ownerPin.salt),
+              pinHash: Value(ownerPin.hash),
+              pinIterations: Value(ownerPin.iterations),
+            ),
+            UsersCompanion.insert(
+              id: 'u2',
+              name: 'Alan Benny',
+              perms: Permission.codesOf({
+                Permission.start,
+                Permission.bill,
+                Permission.discount,
+                Permission.members,
+              }),
+              sortOrder: const Value(2),
+              pinSalt: Value(staffPin.salt),
+              pinHash: Value(staffPin.hash),
+              pinIterations: Value(staffPin.iterations),
+            ),
+          ]);
+        });
+      }
 
       // Activities -----------------------------------------------------------
       await db.batch((b) {

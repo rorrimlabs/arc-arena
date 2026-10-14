@@ -25,7 +25,8 @@
       "type": "dart",
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
-      "stopOnEntry": false
+      "stopOnEntry": false,
+      "toolArgs": ["--dart-define-from-file=dart_define.dev.json"]
     },
     {
       "name": "arena_ops (Profile)",

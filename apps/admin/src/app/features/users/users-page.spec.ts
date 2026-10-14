@@ -238,6 +238,30 @@ describe('Users', () => {
     );
   });
 
+  it('in the narrow rail, the local test server is an icon with a label and a spoken description', async () => {
+    await start('/users', 1200, { address: '127.0.0.1:54431', mailUrl: 'http://127.0.0.1:54434' });
+    const note = doc().querySelector('aside app-local-server-note [role="note"]');
+    expect(note?.getAttribute('title')).toContain('Local test server (127.0.0.1:54431)');
+    expect(note?.querySelector('.sr-only')?.textContent).toContain(
+      'Logins made here exist only on this computer.',
+    );
+    // Nothing above the page itself: a full-height page keeps its own height.
+    expect(doc().querySelector('main app-local-server-note')).toBeNull();
+  });
+
+  it('on a local test server without a mailbox, the invitation does not point to one', async () => {
+    await start('/users', 1440, { address: '127.0.0.1:54431', mailUrl: null });
+    expect(doc().querySelector('app-local-server-note a')).toBeNull();
+    button('Invite')?.click();
+    await settle();
+    type('Name', 'Farhan Ali');
+    type('Email', 'farhan@404arena.in');
+    button('Send invitation', dialog())?.click();
+    await settle();
+    await settle();
+    expect(snack()).toBe('Invitation sent to farhan@404arena.in on the local test server');
+  });
+
   it('on a hosted project there is no local server note', async () => {
     await start('/users');
     expect(doc().querySelector('app-local-server-note [role="note"]')).toBeNull();

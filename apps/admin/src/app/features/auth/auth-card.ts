@@ -24,8 +24,8 @@ import { LocalServerNote } from '../../shared/local-server-note/local-server-not
         <h1 class="font-display text-[28px] leading-[1.1] font-bold">{{ heading() }}</h1>
         <p class="text-sm leading-[1.4] text-muted">{{ subtitle() }}</p>
       </div>
-      <app-local-server-note framed />
       <ng-content />
+      <app-local-server-note />
     </main>
   `,
 })

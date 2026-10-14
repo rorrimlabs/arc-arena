@@ -6,6 +6,7 @@ import { ArenaApi } from '../../core/arena/arena-api';
 import { SampleArenaApi } from '../../core/arena/arena-api.sample';
 import { AppError, AuthApi } from '../../core/auth/auth-api';
 import { SampleAuthApi } from '../../core/auth/auth-api.sample';
+import { LOCAL_SERVER } from '../../core/supabase/local-server';
 import { UsersApi } from '../users/data/users-api';
 import { SampleUsersApi } from '../users/data/users-api.sample';
 
@@ -23,6 +24,7 @@ describe('Owner auth flow', () => {
         { provide: AuthApi, useValue: auth },
         { provide: ArenaApi, useValue: arenas },
         { provide: UsersApi, useValue: new SampleUsersApi() },
+        { provide: LOCAL_SERVER, useValue: null },
       ],
     });
     harness = await RouterTestingHarness.create();
@@ -272,6 +274,7 @@ describe('Owner auth flow', () => {
           { provide: AuthApi, useValue: auth },
           { provide: ArenaApi, useValue: arenas },
           { provide: UsersApi, useValue: new SampleUsersApi() },
+          { provide: LOCAL_SERVER, useValue: null },
         ],
       });
       harness = await RouterTestingHarness.create();
@@ -311,6 +314,7 @@ describe('Owner auth flow', () => {
         { provide: AuthApi, useValue: auth },
         { provide: ArenaApi, useValue: arenas },
         { provide: UsersApi, useValue: new SampleUsersApi() },
+        { provide: LOCAL_SERVER, useValue: null },
       ],
     });
     harness = await RouterTestingHarness.create();
@@ -342,6 +346,7 @@ describe('Owner auth flow', () => {
         { provide: AuthApi, useValue: auth },
         { provide: ArenaApi, useValue: arenas },
         { provide: UsersApi, useValue: new SampleUsersApi() },
+        { provide: LOCAL_SERVER, useValue: null },
       ],
     });
     harness = await RouterTestingHarness.create();

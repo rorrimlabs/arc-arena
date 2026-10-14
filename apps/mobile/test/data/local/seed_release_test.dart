@@ -25,4 +25,23 @@ void main() {
     await LocalSeed.applyIfEmpty(db, releaseBuild: false);
     expect(await db.select(db.users).get(), hasLength(2));
   });
+
+  test('applyIfEmpty with includeUsers: false seeds catalog without demo users', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    await LocalSeed.applyIfEmpty(db, releaseBuild: false, includeUsers: false);
+    expect(await db.select(db.users).get(), isEmpty);
+    expect(await db.select(db.activities).get(), isNotEmpty);
+  });
+
+  test('removeDemoUsers removes seeded demo users', () async {
+    final db = AppDatabase(NativeDatabase.memory());
+    addTearDown(db.close);
+    await LocalSeed.applyIfEmpty(db, releaseBuild: false);
+    expect(await db.select(db.users).get(), hasLength(2));
+    final removed = await LocalSeed.removeDemoUsers(db);
+    expect(removed, 2);
+    expect(await db.select(db.users).get(), isEmpty);
+    expect(await db.select(db.activities).get(), isNotEmpty);
+  });
 }

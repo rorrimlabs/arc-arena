@@ -179,15 +179,63 @@ class _UserList extends ConsumerWidget {
     return users.when(
       loading: () => const Center(child: CircularProgressIndicator()),
       error: (_, _) => Center(
-        child: Text(
-          'Could not load accounts.',
-          style: ArenaType.body.copyWith(color: arena.textMuted),
+        child: Padding(
+          padding: const EdgeInsets.all(AppSpacing.lg),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(Icons.error_outline, size: 36, color: arena.danger),
+              const SizedBox(height: AppSpacing.md),
+              Text(
+                'Could not load accounts',
+                style: ArenaType.h3.copyWith(color: arena.text, fontSize: 16),
+                textAlign: TextAlign.center,
+              ),
+              const SizedBox(height: AppSpacing.xs),
+              Text(
+                'Check your database connection or try restarting the app.',
+                style: ArenaType.caption.copyWith(color: arena.textMuted),
+                textAlign: TextAlign.center,
+              ),
+            ],
+          ),
         ),
       ),
-      data: (list) => ListView.separated(
-        itemCount: list.length,
-        separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
-        itemBuilder: (_, i) {
+      data: (list) {
+        if (list.isEmpty) {
+          return Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(AppSpacing.lg),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    Icons.people_outline,
+                    size: 36,
+                    color: arena.textSubtle,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    'No staff accounts found',
+                    style:
+                        ArenaType.h3.copyWith(color: arena.text, fontSize: 16),
+                    textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Add or invite staff members from the admin dashboard to get started.',
+                    style: ArenaType.caption.copyWith(color: arena.textMuted),
+                    textAlign: TextAlign.center,
+                  ),
+                ],
+              ),
+            ),
+          );
+        }
+        return ListView.separated(
+          itemCount: list.length,
+          separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.sm),
+          itemBuilder: (_, i) {
           final u = list[i];
           return Material(
             color: arena.surface,
@@ -244,8 +292,9 @@ class _UserList extends ConsumerWidget {
             ),
           );
         },
-      ),
-    );
+      );
+    },
+  );
   }
 }
 

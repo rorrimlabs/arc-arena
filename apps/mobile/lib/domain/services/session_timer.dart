@@ -27,11 +27,28 @@ class SessionTimer {
   /// How long before scheduled end the card turns amber.
   final Duration warnThreshold;
 
-  /// Time played so far (frozen at [actualEndedAt] once ended). Clamped to zero
-  /// if current clock is momentarily behind start time.
+  /// Total wall-clock time elapsed so far (frozen at [actualEndedAt] once ended).
   Duration elapsed(DateTime now) {
     final diff = (actualEndedAt ?? now).difference(startedAt);
     return diff.isNegative ? Duration.zero : diff;
+  }
+
+  /// Billable duration (frozen at [scheduledEndAt] once expired, or [actualEndedAt] if ended).
+  /// P0 Critical: Prevents counting unapproved overtime as billable playtime.
+  Duration billableDuration(DateTime now) {
+    if (actualEndedAt != null) {
+      final diff = actualEndedAt!.difference(startedAt);
+      return diff.isNegative ? Duration.zero : diff;
+    }
+    final effectiveEnd = now.isAfter(scheduledEndAt) ? scheduledEndAt : now;
+    final diff = effectiveEnd.difference(startedAt);
+    return diff.isNegative ? Duration.zero : diff;
+  }
+
+  /// Whether the configured session duration has expired and is awaiting staff action.
+  bool isExpired(DateTime now) {
+    if (actualEndedAt != null) return false;
+    return !now.isBefore(scheduledEndAt);
   }
 
   /// Detects impossible timer states or corrupted timestamps.

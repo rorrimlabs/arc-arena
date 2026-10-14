@@ -59,6 +59,31 @@ export interface GameCompat {
 }
 export type GameMedia = 'digital' | 'disc';
 
+/** One control-guide row (server: game_controls). Buttons are tokens (cross, r2…), rendered as badges. */
+export interface GameControl {
+  readonly id: string;
+  readonly gameId: string;
+  readonly section: string;
+  readonly action: string;
+  readonly buttons: readonly string[];
+  readonly explanation?: string | null;
+  readonly notes?: string | null;
+  readonly imageUrl?: string | null;
+  readonly sortOrder?: number;
+}
+
+/** Input for saving game controls via game.replace_controls. */
+export interface GameControlInput {
+  readonly id?: string;
+  readonly section: string;
+  readonly action: string;
+  readonly buttons: readonly string[];
+  readonly explanation?: string | null;
+  readonly notes?: string | null;
+  readonly imageUrl?: string | null;
+  readonly sortOrder?: number;
+}
+
 /** A registered member (server: customers that are not walk-in guests). */
 export interface Customer {
   readonly id: string;

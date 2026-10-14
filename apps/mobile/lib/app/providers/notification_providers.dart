@@ -11,6 +11,12 @@ import 'package:arena_ops/domain/notifications/notification_settings.dart';
 import 'package:arena_ops/domain/repositories/notification_settings_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+export 'package:arena_ops/app/notifications/session_alarm_controller.dart'
+    show
+        ActiveAlarmState,
+        SessionAlarmController,
+        sessionAlarmControllerProvider;
+
 /// The device notification service. Real implementation by default; overridden
 /// with [NoopNotificationService] in tests so no platform channel is touched.
 final notificationServiceProvider = Provider<NotificationService>(
@@ -51,3 +57,4 @@ final sessionRemindersProvider = Provider<SessionReminders>(
     clock: ref.watch(clockProvider),
   ),
 );
+

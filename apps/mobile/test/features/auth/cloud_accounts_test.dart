@@ -68,6 +68,49 @@ void main() {
       expect(continued, isTrue);
     });
 
+    testWidgets('normalizes email to lowercase and trims whitespace', (
+      tester,
+    ) async {
+      String? email;
+      await tester.pumpWidget(
+        _host(
+          CloudSignInScreen(
+            signIn: (e, _) async => email = e,
+            onSignedIn: () async {},
+          ),
+        ),
+      );
+      await tester.enterText(
+        find.byKey(const Key('cloud-email')),
+        '  Staff1@Gmail.COM  ',
+      );
+      await tester.enterText(
+        find.byKey(const Key('cloud-password')),
+        'secret-pass',
+      );
+      await tester.tap(find.widgetWithText(FilledButton, 'Sign in'));
+      await tester.pump();
+      expect(email, 'staff1@gmail.com');
+    });
+
+    testWidgets('displays server label when serverUrl is provided', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _host(
+          CloudSignInScreen(
+            signIn: (_, _) async {},
+            onSignedIn: () async {},
+            serverUrl: 'http://127.0.0.1:54431',
+          ),
+        ),
+      );
+      expect(
+        find.text('Server: Local test server (127.0.0.1:54431)'),
+        findsOneWidget,
+      );
+    });
+
     testWidgets('a refused sign-in shows why and does not continue', (
       tester,
     ) async {

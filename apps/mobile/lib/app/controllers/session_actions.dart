@@ -387,11 +387,27 @@ class SessionActions {
     return res;
   }
 
+  /// Effective billable cutoff for a session (spec §14, §16).
+  ///
+  /// P0 Critical: When the configured scheduledEndAt is reached and not extended,
+  /// billing freezes at scheduledEndAt while awaiting staff action. Unapproved
+  /// overtime is never automatically billed to the customer.
+  DateTime billableEndAt(Session session, DateTime now) {
+    if (session.actualEndedAt != null) return session.actualEndedAt!;
+    if (now.isAfter(session.scheduledEndAt)) {
+      return session.scheduledEndAt;
+    }
+    return now;
+  }
+
   /// Live amount so far, billed across all segments (spec §14, §16).
+  ///
+  /// Respects the configured session duration: if now is after scheduledEndAt,
+  /// billing is frozen at scheduledEndAt to stop automatic extra charges.
   SegmentBill liveBill(ActiveSession active, DateTime now) => billing.bill(
     snapshot: active.session.snapshot,
     segments: active.segments,
-    openEndAt: now,
+    openEndAt: billableEndAt(active.session, now),
   );
 
   // --- in-session changes (close current, open new at the exact instant) -----
@@ -626,6 +642,9 @@ class SessionActions {
   }
 
   /// The final bill from all segments, for the End screen (spec §19).
+  ///
+  /// P0 Critical: Defaults to [billableEndAt] if [at] is not specified, freezing
+  /// billable time at scheduledEndAt if the session expired without staff extension.
   SegmentBill endSummary(
     Session session,
     List<SessionSegment> segments, {
@@ -633,7 +652,7 @@ class SessionActions {
   }) => billing.bill(
     snapshot: session.snapshot,
     segments: segments,
-    openEndAt: at ?? clock.now(),
+    openEndAt: at ?? billableEndAt(session, clock.now()),
   );
 
   Future<Result<Session>> end(
@@ -649,7 +668,7 @@ class SessionActions {
     if (denied != null) return Err(denied);
     final reason = waiveReason?.trim() ?? '';
     if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
-    final actualEnd = at ?? clock.now();
+    final actualEnd = at ?? billableEndAt(session, clock.now());
     if (actualEnd.isBefore(session.startedAt)) {
       AppTelemetry.reportTimerAnomaly(
         sessionId: session.id,

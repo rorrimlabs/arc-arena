@@ -50,7 +50,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   void initState() {
     super.initState();
     final r = widget.initialResource;
-    if (r != null) {
+    if (r != null && r.status.isBookable) {
       _draft = _draft.copyWith(resourceId: r.id, resourceName: r.name);
       if (r.activityCodes.length == 1) {
         _applyActivityCode(r.activityCodes.first);
@@ -119,7 +119,8 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
             r.status == ResourceStatus.available &&
             // A station locked to the other mode (RIFT in VR) cannot take it.
             (r.currentMode == null || r.currentMode == _draft.activityCode) &&
-            !occupied.contains(r.id))
+            !occupied.contains(r.id) &&
+            (_draft.gameId == null || playableHere.contains(r.id)))
         .toList();
 
     // Steps are numbered as they are shown: Station, Game and Controllers

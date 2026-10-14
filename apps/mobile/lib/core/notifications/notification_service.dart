@@ -122,6 +122,7 @@ class LocalNotificationService implements NotificationService {
           enableVibration: true,
           vibrationPattern: Int64List.fromList([0, 500, 250, 500]),
           playSound: true,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
         ),
       );
       await android.createNotificationChannel(
@@ -132,6 +133,7 @@ class LocalNotificationService implements NotificationService {
           importance: Importance.max,
           enableVibration: false,
           playSound: true,
+          audioAttributesUsage: AudioAttributesUsage.alarm,
         ),
       );
     }
@@ -190,6 +192,10 @@ class LocalNotificationService implements NotificationService {
         priority: Priority.high,
         playSound: plan.playSound,
         enableVibration: plan.enableVibration,
+        audioAttributesUsage: AudioAttributesUsage.alarm,
+        category: AndroidNotificationCategory.alarm,
+        visibility: NotificationVisibility.public,
+        ticker: plan.title,
         vibrationPattern: plan.enableVibration
             ? Int64List.fromList([0, 500, 250, 500])
             : null,

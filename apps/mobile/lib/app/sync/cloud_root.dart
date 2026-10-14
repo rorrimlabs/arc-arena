@@ -44,10 +44,17 @@ export 'package:arena_ops/app/sync/staff_access.dart' show Membership;
 enum _Phase { checking, signIn, pickArena, opening, ready, failed }
 
 class CloudRoot extends StatefulWidget {
-  const CloudRoot({required this.documentsPath, super.key});
+  const CloudRoot({
+    required this.documentsPath,
+    this.backendUrl,
+    super.key,
+  });
 
   /// Where the per-arena database files and their backups live.
   final String documentsPath;
+
+  /// Active Supabase URL (e.g. for display on sign-in screen).
+  final String? backendUrl;
 
   @override
   State<CloudRoot> createState() => _CloudRootState();
@@ -626,6 +633,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
               _client.auth.signInWithPassword(email: email, password: password),
           onSignedIn: _loadArenas,
           notice: _message,
+          serverUrl: widget.backendUrl,
         ),
         _Phase.pickArena => CloudArenaPickScreen(
           arenas: _arenas,
@@ -670,6 +678,7 @@ class CloudSignInScreen extends StatefulWidget {
     required this.signIn,
     required this.onSignedIn,
     this.notice,
+    this.serverUrl,
     super.key,
   });
 
@@ -680,6 +689,10 @@ class CloudSignInScreen extends StatefulWidget {
   /// Why the device came back here (e.g. access turned off), if it was not
   /// the person's own choice.
   final String? notice;
+
+  /// Which server this screen submits to (shown to avoid confusion between
+  /// local test stack and production).
+  final String? serverUrl;
 
   @override
   State<CloudSignInScreen> createState() => _CloudSignInScreenState();
@@ -699,7 +712,7 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
   }
 
   Future<void> _submit() async {
-    final email = _email.text.trim();
+    final email = _email.text.trim().toLowerCase();
     if (email.isEmpty || _password.text.isEmpty) {
       setState(() => _error = 'Enter your e-mail and password.');
       return;
@@ -709,7 +722,19 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
       _error = null;
     });
     try {
-      await widget.signIn(email, _password.text);
+      await widget.signIn(email, _password.text).timeout(const Duration(seconds: 10));
+    } on TimeoutException {
+      if (mounted) {
+        setState(() {
+          final server = widget.serverUrl != null && widget.serverUrl!.isNotEmpty
+              ? ' (${serverLabel(widget.serverUrl!)})'
+              : '';
+          _error = "Connection timed out$server. Can't reach the server. "
+              "Check connection or run: adb reverse tcp:54431 tcp:54431";
+          _busy = false;
+        });
+      }
+      return;
     } on Object catch (e) {
       // A refused sign-in is never retried on its own; the typed e-mail stays.
       if (mounted) setState(() => _error = signInFailureMessage(e));
@@ -717,7 +742,9 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
       return;
     }
     try {
-      await widget.onSignedIn();
+      await widget.onSignedIn().timeout(const Duration(seconds: 15));
+    } on TimeoutException {
+      if (mounted) setState(() => _error = "Timed out loading your arenas. Try again.");
     } on Object catch (_) {
       if (mounted) setState(() => _error = "Couldn't load your arenas. Try again.");
     } finally {
@@ -751,6 +778,14 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
                   'Ask the owner.',
                   style: ArenaType.body.copyWith(color: arena.textMuted),
                 ),
+                if (widget.serverUrl != null && widget.serverUrl!.isNotEmpty) ...[
+                  const SizedBox(height: AppSpacing.xs),
+                  Text(
+                    'Server: ${serverLabel(widget.serverUrl!)}',
+                    key: const Key('cloud-server-label'),
+                    style: ArenaType.caption.copyWith(color: arena.textMuted),
+                  ),
+                ],
                 if (widget.notice != null) ...[
                   const SizedBox(height: AppSpacing.md),
                   Text(
@@ -763,6 +798,7 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
                   key: const Key('cloud-email'),
                   controller: _email,
                   keyboardType: TextInputType.emailAddress,
+                  textCapitalization: TextCapitalization.none,
                   autocorrect: false,
                   autofillHints: const [AutofillHints.email],
                   decoration: const InputDecoration(labelText: 'E-mail'),
@@ -786,7 +822,17 @@ class _CloudSignInScreenState extends State<CloudSignInScreen> {
                 const SizedBox(height: AppSpacing.xl),
                 FilledButton(
                   onPressed: _busy ? null : _submit,
-                  child: const Text('Sign in'),
+                  child: _busy
+                      ? const SizedBox(
+                          width: 20,
+                          height: 20,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            valueColor:
+                                AlwaysStoppedAnimation<Color>(Colors.white),
+                          ),
+                        )
+                      : const Text('Sign in'),
                 ),
               ],
             ),

@@ -7,6 +7,8 @@ import {
   Customer,
   Game,
   GameCompat,
+  GameControl,
+  GameControlInput,
   GameInput,
   GameUsage,
   Play,
@@ -383,6 +385,34 @@ export class SampleFloorApi extends FloorApi {
     this.gameList.splice(i, 1);
     this.compatList = this.compatList.filter((c) => c.gameId !== id);
     this.deletedGames.add(id);
+  }
+
+  readonly controlsByGame = new Map<string, GameControl[]>();
+
+  async gameControls(_arenaId: string, gameId: string): Promise<GameControl[]> {
+    this.fail();
+    return this.controlsByGame.get(gameId) ?? [];
+  }
+
+  async saveGameControls(
+    _arenaId: string,
+    gameId: string,
+    controls: readonly GameControlInput[],
+  ): Promise<void> {
+    this.fail();
+    const list: GameControl[] = controls.map((c, i) => ({
+      id: c.id || crypto.randomUUID(),
+      gameId,
+      section: c.section,
+      action: c.action,
+      buttons: c.buttons,
+      explanation: c.explanation ?? null,
+      notes: c.notes ?? null,
+      imageUrl: c.imageUrl ?? null,
+      sortOrder: c.sortOrder ?? i,
+    }));
+    this.controlsByGame.set(gameId, list);
+    this.ops.push({ kind: 'game.replace_controls', payload: { game_id: gameId, controls: list } });
   }
 
   private fail(): void {

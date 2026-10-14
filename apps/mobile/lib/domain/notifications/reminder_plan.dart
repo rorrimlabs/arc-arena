@@ -155,12 +155,13 @@ List<ReminderPlan> buildBookingReminders({
 }
 
 /// Builds local notification alerts for an active session (spec §23, timer alerts).
-/// Slot 0: 5 minutes before scheduled end
-/// Slot 1: 1 minute before scheduled end (spec: "1 min mune alert")
-/// Slot 2: At scheduled end / Expired (spec: "സമയം കഴിഞ്ഞു")
+/// Slot 0: 5 minutes before scheduled end ("Ending soon (5m)")
+/// Slot 1: 1 minute before scheduled end ("Ending soon (1m)")
+/// Slot 2: At scheduled end / Expired ("Session time completed")
 List<ReminderPlan> buildSessionAlerts({
   required String sessionId,
   required String titleName,
+  String? customerName,
   required DateTime scheduledEndAt,
   required DateTime now,
   bool vibrationEnabled = true,
@@ -172,6 +173,9 @@ List<ReminderPlan> buildSessionAlerts({
   final plans = <ReminderPlan>[];
   final endUtc = scheduledEndAt.toUtc();
   final endLabel = IstTime.format12(endUtc);
+  final custPrefix = (customerName != null && customerName.isNotEmpty)
+      ? '$customerName • '
+      : '';
 
   // Slot 0: 5 min before
   if (alert5Min) {
@@ -181,8 +185,8 @@ List<ReminderPlan> buildSessionAlerts({
         id: sessionAlertId(sessionId, 0),
         sessionId: sessionId,
         fireAtUtc: fiveMinAt,
-        title: '5 min remaining: $titleName',
-        body: 'Session ends at $endLabel. Prepare to extend or wrap up.',
+        title: '$titleName — Ending soon (5m)',
+        body: '${custPrefix}Session ends at $endLabel. Prepare to extend or wrap up.',
         enableVibration: vibrationEnabled,
         playSound: soundEnabled,
       ));
@@ -197,8 +201,8 @@ List<ReminderPlan> buildSessionAlerts({
         id: sessionAlertId(sessionId, 1),
         sessionId: sessionId,
         fireAtUtc: oneMinAt,
-        title: '1 min remaining: $titleName',
-        body: 'Session ends in 1 minute ($endLabel)! Final reminder.',
+        title: '$titleName — Ending soon (1m)',
+        body: '${custPrefix}Session ends in 1 minute ($endLabel)! Final reminder.',
         enableVibration: vibrationEnabled,
         playSound: soundEnabled,
       ));
@@ -212,8 +216,8 @@ List<ReminderPlan> buildSessionAlerts({
         id: sessionAlertId(sessionId, 2),
         sessionId: sessionId,
         fireAtUtc: endUtc,
-        title: 'Time Expired: $titleName',
-        body: 'Session time has ended ($endLabel). Ready for checkout.',
+        title: '$titleName — Session time completed',
+        body: '${custPrefix}Session time has ended ($endLabel). Ready for checkout.',
         enableVibration: vibrationEnabled,
         playSound: soundEnabled,
       ));

@@ -8,6 +8,7 @@ import 'package:arena_ops/app/sync/cloud_root.dart';
 import 'package:arena_ops/app/sync/secure_session_storage.dart';
 import 'package:arena_ops/app/sync/staff_access.dart' show serverLabel;
 import 'package:arena_ops/core/config/app_config.dart';
+import 'package:arena_ops/core/config/dev_url_resolver.dart';
 import 'package:arena_ops/core/monitoring/sentry_setup.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
@@ -49,20 +50,28 @@ Future<void> main() async {
       if (config.isSupabase) {
         // Cloud mode: each person signs in with their own account; the arena's
         // data lives in its own database file (the local-only file is untouched).
+        final resolvedUrl = await resolveDevBackendUrl(config.supabaseUrl!);
         await Supabase.initialize(
-          url: config.supabaseUrl!,
+          url: resolvedUrl,
           publishableKey: config.supabaseAnonKey!,
           authOptions: FlutterAuthClientOptions(
-            localStorage: SecureSessionStorage(backendUrl: config.supabaseUrl!),
+            localStorage: SecureSessionStorage(backendUrl: resolvedUrl),
           ),
         );
         // Which project this build signs in to, in the `flutter run` console
         // only: logins exist only on the project they were invited on.
         if (kDebugMode) {
-          debugPrint('Staff app signs in to: ${serverLabel(config.supabaseUrl!)}');
+          debugPrint('Staff app signs in to: ${serverLabel(resolvedUrl)}');
         }
         final documents = await getApplicationDocumentsDirectory();
-        runApp(SentryWidget(child: CloudRoot(documentsPath: documents.path)));
+        runApp(
+          SentryWidget(
+            child: CloudRoot(
+              documentsPath: documents.path,
+              backendUrl: resolvedUrl,
+            ),
+          ),
+        );
         return;
       }
 
@@ -94,7 +103,11 @@ Future<void> main() async {
         ),
       );
       try {
-        await LocalSeed.applyIfEmpty(db).timeout(const Duration(seconds: 4));
+        await LocalSeed.applyIfEmpty(
+          db,
+          includeUsers: false,
+        ).timeout(const Duration(seconds: 4));
+        await LocalSeed.removeDemoUsers(db);
       } catch (e) {
         debugPrint('LocalSeed startup warning: $e');
       }

@@ -102,7 +102,45 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
                   style: ArenaType.caption.copyWith(color: arena.textMuted),
                 ),
                 const SizedBox(height: AppSpacing.lg),
-                for (final u in _users)
+                if (_users.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(
+                      vertical: AppSpacing.xxl,
+                    ),
+                    child: Center(
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(
+                            Icons.people_outline,
+                            size: 36,
+                            color: arena.textSubtle,
+                          ),
+                          const SizedBox(height: AppSpacing.md),
+                          Text(
+                            'No staff members yet',
+                            style: ArenaType.h3.copyWith(
+                              color: arena.text,
+                              fontSize: 16,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: AppSpacing.xs),
+                          Text(
+                            cloud == null
+                                ? 'Tap "Add person" below to create the first staff profile.'
+                                : 'Invite staff members from the admin dashboard to add them.',
+                            style: ArenaType.caption.copyWith(
+                              color: arena.textMuted,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  )
+                else
+                  for (final u in _users)
                   Padding(
                     padding: const EdgeInsets.only(bottom: AppSpacing.sm),
                     child: Material(

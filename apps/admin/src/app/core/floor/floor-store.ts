@@ -12,6 +12,8 @@ import {
   Customer,
   Game,
   GameCompat,
+  GameControl,
+  GameControlInput,
   GameInput,
   GameUsage,
   Play,
@@ -274,6 +276,18 @@ export class FloorStore {
   async setGameCompat(gameId: string, resourceId: string, status: CompatStatus): Promise<void> {
     await this.api.setGameCompat(this.arena.current().id, gameId, resourceId, status);
     await this.load(['gameResources'], true);
+  }
+
+  async gameControls(gameId: string): Promise<GameControl[]> {
+    const arenaId = this.arena.current().id;
+    if (!arenaId) return [];
+    return this.api.gameControls(arenaId, gameId);
+  }
+
+  async saveGameControls(gameId: string, controls: readonly GameControlInput[]): Promise<void> {
+    const arenaId = this.arena.current().id;
+    if (!arenaId) return;
+    await this.api.saveGameControls(arenaId, gameId, controls);
   }
 }
 

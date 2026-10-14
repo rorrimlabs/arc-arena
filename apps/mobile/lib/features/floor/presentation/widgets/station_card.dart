@@ -164,7 +164,7 @@ class StationCard extends ConsumerWidget {
     final (Color accent, String badge) = switch (visual) {
       SessionVisualState.normal => (arena.stPlaying, 'Playing'),
       SessionVisualState.warning => (arena.stEnding, 'Ending'),
-      SessionVisualState.overtime => (arena.stOvertime, 'Over time'),
+      SessionVisualState.overtime => (arena.stOvertime, 'Expired · Action needed'),
     };
     final overtime = visual == SessionVisualState.overtime;
 
@@ -206,7 +206,7 @@ class StationCard extends ConsumerWidget {
               ).copyWith(color: bill.isIncomplete ? arena.warning : arena.text),
             ),
             Text(
-              ' so far',
+              overtime ? ' frozen at end' : ' so far',
               style: ArenaType.caption.copyWith(color: arena.textMuted),
             ),
             if (bill.isIncomplete) ...[
@@ -226,7 +226,7 @@ class StationCard extends ConsumerWidget {
         // Quick actions are always available, not only when ending/overtime.
         Row(
           children: [
-            Expanded(child: _quietButton(arena, '+30', onExtend)),
+            Expanded(child: _quietButton(arena, overtime ? 'Extend' : '+30', onExtend)),
             const SizedBox(width: AppSpacing.sm),
             Expanded(child: _primaryButton(arena, 'Bill', onBill)),
             if (onMore != null) ...[
@@ -367,7 +367,7 @@ class StationCard extends ConsumerWidget {
         Padding(
           padding: const EdgeInsets.only(bottom: 4),
           child: Text(
-            overtime ? 'over' : 'left',
+            overtime ? 'over (frozen)' : 'left',
             style: ArenaType.caption.copyWith(color: arena.textMuted),
           ),
         ),

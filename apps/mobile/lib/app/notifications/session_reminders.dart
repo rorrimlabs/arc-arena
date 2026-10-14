@@ -161,7 +161,8 @@ class SessionReminders {
 
       final plans = buildSessionAlerts(
         sessionId: session.id,
-        titleName: '$stationName ($customerName)',
+        titleName: stationName,
+        customerName: customerName,
         scheduledEndAt: session.scheduledEndAt,
         now: clock.now(),
         vibrationEnabled: settings.vibrationEnabled,
@@ -194,7 +195,8 @@ class SessionReminders {
 
       final plans = buildSessionAlerts(
         sessionId: group.id,
-        titleName: 'Group (${group.playerCount}p) — $customerName',
+        titleName: 'Group (${group.playerCount}p)',
+        customerName: customerName,
         scheduledEndAt: group.scheduledEndAt,
         now: clock.now(),
         vibrationEnabled: settings.vibrationEnabled,

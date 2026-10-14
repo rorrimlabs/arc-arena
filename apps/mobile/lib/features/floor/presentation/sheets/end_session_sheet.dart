@@ -56,7 +56,10 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   @override
   void initState() {
     super.initState();
-    _endAt = ref.read(clockProvider).now();
+    final now = ref.read(clockProvider).now();
+    // P0 Critical: Freeze billable cutoff at scheduledEndAt if expired, preventing
+    // delayed staff action from billing unapproved extra overtime.
+    _endAt = ref.read(sessionActionsProvider).billableEndAt(_session, now);
     _bill = ref
         .read(sessionActionsProvider)
         .endSummary(_session, widget.active.segments, at: _endAt);
@@ -126,6 +129,32 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           const SizedBox(height: AppSpacing.xs),
           Text(customer?.displayName ?? '', style: theme.textTheme.bodyMedium),
           const SizedBox(height: AppSpacing.sm),
+          if (ref.watch(nowProvider).value?.isAfter(_session.scheduledEndAt) ?? false) ...[
+            Container(
+              padding: const EdgeInsets.all(AppSpacing.sm),
+              margin: const EdgeInsets.only(bottom: AppSpacing.sm),
+              decoration: BoxDecoration(
+                color: const Color(0x1AFF9500),
+                borderRadius: BorderRadius.circular(AppRadii.sm),
+                border: Border.all(color: const Color(0x66FF9500)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.lock_clock_rounded, color: Color(0xFFFF9500), size: 18),
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    child: Text(
+                      'Bill frozen at scheduled cutoff (${IstTime.format12(_session.scheduledEndAt)}). Extra unapproved time is not charged.',
+                      style: theme.textTheme.bodySmall?.copyWith(
+                        color: const Color(0xFFFF9500),
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
           _BillCard(bill: _bill, resources: resources, games: games),
           if (_bill.isIncomplete) ...[
             const SizedBox(height: AppSpacing.sm),

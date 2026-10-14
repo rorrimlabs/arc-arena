@@ -14,6 +14,7 @@ import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/end_session_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/extend_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/session_actions_sheet.dart';
+import 'package:arena_ops/features/floor/presentation/sheets/session_expiry_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/view_games_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/widgets/awaiting_payment.dart';
 import 'package:arena_ops/features/floor/presentation/station_detail_screen.dart';
@@ -186,19 +187,37 @@ class FloorScreen extends ConsumerWidget {
         resource: r,
         active: a,
         nextBooking: nextBookingByResource[r.id],
-        onStart: a == null ? () => _newSession(context, resource: r) : null,
+        onStart: a == null && r.status.isBookable
+            ? () => _newSession(context, resource: r)
+            : null,
         onViewGames:
             a == null && r.kind == ResourceKind.station && r.status.isBookable
             ? () => showViewGamesSheet(context, r)
             : null,
         onTap: a == null
             ? null
-            : () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => StationDetailScreen(sessionId: a.session.id),
-                ),
-              ),
-        onExtend: a == null ? null : () => showExtendSheet(context, a),
+            : () {
+                final now = ref.read(clockProvider).now();
+                if (now.isAfter(a.session.scheduledEndAt)) {
+                  showSessionExpirySheet(context, a);
+                } else {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => StationDetailScreen(sessionId: a.session.id),
+                    ),
+                  );
+                }
+              },
+        onExtend: a == null
+            ? null
+            : () {
+                final now = ref.read(clockProvider).now();
+                if (now.isAfter(a.session.scheduledEndAt)) {
+                  showSessionExpirySheet(context, a, initialMode: ExpiryActionMode.extend);
+                } else {
+                  showExtendSheet(context, a);
+                }
+              },
         onBill: a == null ? null : () => showEndSessionSheet(context, a),
         onMore: a == null ? null : () => showSessionActionsSheet(context, a),
       );

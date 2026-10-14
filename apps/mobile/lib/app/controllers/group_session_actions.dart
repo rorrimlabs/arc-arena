@@ -594,6 +594,14 @@ class GroupSessionActions {
 
   // --- live bill -------------------------------------------------------------
 
+  DateTime billableEndAt(GroupSession group, DateTime now) {
+    if (group.actualEndedAt != null) return group.actualEndedAt!;
+    if (now.isAfter(group.scheduledEndAt)) {
+      return group.scheduledEndAt;
+    }
+    return now;
+  }
+
   /// Live amount so far, billed across all assignments by the group's mode.
   GroupBill liveBill(ActiveGroupSession g, DateTime now) => billing.bill(
     snapshot: g.group.snapshot,
@@ -601,7 +609,7 @@ class GroupSessionActions {
     mode: g.group.billingMode,
     purchasedControllerCount: g.group.purchasedControllerCount,
     groupStart: g.group.startedAt,
-    openEndAt: now,
+    openEndAt: billableEndAt(g.group, now),
   );
 
   // --- candidate systems for switch / add (group feature §5–§6) --------------
@@ -1061,7 +1069,7 @@ class GroupSessionActions {
     mode: g.group.billingMode,
     purchasedControllerCount: g.group.purchasedControllerCount,
     groupStart: g.group.startedAt,
-    openEndAt: at ?? clock.now(),
+    openEndAt: at ?? billableEndAt(g.group, clock.now()),
   );
 
   Future<Result<GroupSession>> end(
@@ -1076,7 +1084,7 @@ class GroupSessionActions {
     if (denied != null) return Err(denied);
     final reason = waiveReason?.trim() ?? '';
     if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
-    final actualEnd = at ?? clock.now();
+    final actualEnd = at ?? billableEndAt(g.group, clock.now());
     if (actualEnd.isBefore(g.group.startedAt)) {
       AppTelemetry.reportTimerAnomaly(
         sessionId: g.group.id,

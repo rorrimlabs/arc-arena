@@ -6,6 +6,7 @@ library;
 import 'dart:convert';
 
 import 'package:arena_ops/core/config/app_config.dart';
+import 'package:flutter/foundation.dart' show TargetPlatform;
 import 'package:flutter_test/flutter_test.dart';
 
 String _jwt(String role) {
@@ -217,6 +218,57 @@ void main() {
       expect(AppConfig.sampleRate('1.5'), isNull);
       expect(AppConfig.sampleRate('-0.1'), isNull);
       expect(AppConfig.sampleRate('ten'), isNull);
+    });
+  });
+
+  group('fromEnvironment defaults', () {
+    test('development runs without defines default to local Supabase', () {
+      final c = AppConfig.fromEnvironment();
+      expect(c.backend, Backend.supabase);
+      expect(c.isSupabase, isTrue);
+      expect(c.supabaseUrl, AppConfig.defaultDevSupabaseUrl);
+      expect(c.supabaseAnonKey, AppConfig.defaultLocalSupabaseAnonKey);
+      expect(c.supabaseReady, isTrue);
+      expect(c.problemFor(releaseBuild: false), isNull);
+      expect(
+        c.problemFor(releaseBuild: true),
+        contains('development server'),
+      );
+    });
+
+    test('normalizeDevUrl maps 127.0.0.1 to 10.0.2.2 on Android', () {
+      expect(
+        AppConfig.normalizeDevUrl(
+          'http://127.0.0.1:54431',
+          platform: TargetPlatform.android,
+          isWeb: false,
+        ),
+        'http://10.0.2.2:54431',
+      );
+      expect(
+        AppConfig.normalizeDevUrl(
+          'http://localhost:54431',
+          platform: TargetPlatform.android,
+          isWeb: false,
+        ),
+        'http://10.0.2.2:54431',
+      );
+      expect(
+        AppConfig.normalizeDevUrl(
+          'http://127.0.0.1:54431',
+          platform: TargetPlatform.iOS,
+          isWeb: false,
+        ),
+        'http://127.0.0.1:54431',
+      );
+      expect(
+        AppConfig.normalizeDevUrl(
+          'https://xyz.supabase.co',
+          platform: TargetPlatform.android,
+          isWeb: false,
+        ),
+        'https://xyz.supabase.co',
+      );
     });
   });
 }
