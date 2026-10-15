@@ -77,8 +77,9 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
             <input
               matInput
               type="number"
-              inputmode="numeric"
-              min="1"
+              inputmode="decimal"
+              min="0"
+              step="0.5"
               [value]="unitCount()"
               (input)="unitCount.set($any($event.target).value)"
             />
@@ -280,7 +281,7 @@ export class TypeDetail {
     const t = this.type();
     const unit = this.draftUnit();
     if (unit == null || unit > MAX_UNIT_MINUTES) {
-      this.error.set('Charge per a whole number of minutes, hours or days, up to 7 days');
+      this.error.set('Charge per whole minutes, or hours or days such as 1.5 hours, up to 7 days');
       return;
     }
     const unitChanged = unit !== this.savedUnit();

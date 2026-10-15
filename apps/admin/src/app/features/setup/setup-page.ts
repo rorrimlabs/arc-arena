@@ -229,8 +229,9 @@ function stationKind(noun: ResourceNoun): Station['kind'] {
                         <input
                           matInput
                           type="number"
-                          inputmode="numeric"
-                          min="1"
+                          inputmode="decimal"
+                          min="0"
+                          step="0.5"
                           [value]="units()[t.code]?.count ?? ''"
                           (input)="setUnit(t.code, { count: $any($event.target).value })"
                         />
@@ -581,7 +582,7 @@ export class SetupPage {
       const unit = this.draftUnit(t);
       if (unit == null || unit > MAX_UNIT_MINUTES) {
         this.error.set(
-          `${t.name}: charge per a whole number of minutes, hours or days, up to 7 days`,
+          `${t.name}: charge per whole minutes, or hours or days such as 1.5 hours, up to 7 days`,
         );
         return;
       }

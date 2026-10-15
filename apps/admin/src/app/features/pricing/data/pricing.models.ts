@@ -173,20 +173,32 @@ export const TIME_UNITS: readonly { key: TimeUnit; label: string; minutes: numbe
 /** Longest unit a price can be per: a week. */
 export const MAX_UNIT_MINUTES = 7 * 1440;
 
-/** 1440 → 1 day, 120 → 2 hours, 45 → 45 minutes (the largest whole unit). */
+/**
+ * The way an owner would say a unit: 1440 → 1 day, 2160 → 1.5 days, 120 → 2 hours,
+ * 90 → 1.5 hours, 45 → 45 minutes. Halves are used only above one (30 stays 30 minutes).
+ */
 export function splitUnit(minutes: number): { count: number; unit: TimeUnit } {
-  if (minutes > 0 && minutes % 1440 === 0) return { count: minutes / 1440, unit: 'days' };
-  if (minutes > 0 && minutes % 60 === 0) return { count: minutes / 60, unit: 'hours' };
+  if (minutes > 0 && (minutes % 1440 === 0 || (minutes > 1440 && minutes % 720 === 0))) {
+    return { count: minutes / 1440, unit: 'days' };
+  }
+  if (minutes > 0 && (minutes % 60 === 0 || (minutes > 60 && minutes % 30 === 0))) {
+    return { count: minutes / 60, unit: 'hours' };
+  }
   return { count: minutes, unit: 'minutes' };
 }
 
-/** Minutes for "count unit", or null when count is not a whole number from 1. */
+/**
+ * Minutes for "count unit" (1.5 hours → 90), or null unless it comes to a whole number of
+ * minutes from 1: prices are stored per whole minutes.
+ */
 export function joinUnit(count: number, unit: TimeUnit): number | null {
-  if (!Number.isInteger(count) || count < 1) return null;
-  return count * (TIME_UNITS.find((u) => u.key === unit)?.minutes ?? 1);
+  if (!Number.isFinite(count) || count <= 0) return null;
+  const minutes = count * (TIME_UNITS.find((u) => u.key === unit)?.minutes ?? 1);
+  const whole = Math.round(minutes);
+  return Math.abs(minutes - whole) < 1e-9 && whole >= 1 ? whole : null;
 }
 
-/** "per hour", "per 30 min", "per 2 hours", "per day", "per 3 days". */
+/** "per hour", "per 30 min", "per 1.5 hours", "per day", "per 1.5 days". */
 export function perLabel(unitMinutes: number): string {
   const { count, unit } = splitUnit(unitMinutes);
   if (unit === 'minutes') return `per ${count} min`;
