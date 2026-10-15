@@ -100,6 +100,11 @@ export function accessoryIcon(name: string): string {
   if (/vr|headset/i.test(name)) return 'view_in_ar';
   if (/wheel|steer|pedal|racing/i.test(name)) return 'trip_origin';
   if (/head ?phone|audio/i.test(name)) return 'headphones';
+  if (/cue|ball set|snooker|pool/i.test(name)) return 'sports_bar';
+  if (/football|soccer/i.test(name)) return 'sports_soccer';
+  if (/cricket|bat\b/i.test(name)) return 'sports_cricket';
+  if (/badminton|racket|shuttle/i.test(name)) return 'sports_tennis';
+  if (/bib|jersey|vest/i.test(name)) return 'checkroom';
   if (/stick|gun|arcade/i.test(name)) return 'joystick';
   return 'videogame_asset';
 }

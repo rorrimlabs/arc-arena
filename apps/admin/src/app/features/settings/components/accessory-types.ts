@@ -1,10 +1,12 @@
-import { Component, effect, inject, output, signal } from '@angular/core';
+import { Component, computed, effect, inject, output, resource, signal } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
+import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { CatalogAccessory, VenueApi } from '../../../core/venue/venue';
 import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
@@ -19,11 +21,22 @@ import {
 
 /**
  * Settings › Accessory types: the kinds of kit stations carry (Controller, VR headset, Steering
- * wheel…). Nothing is built in. Accessories themselves are added on each station.
+ * wheel, cue stick…), picked from the global catalog or the owner's own. Accessories themselves
+ * are added on each station.
  */
 @Component({
   selector: 'app-accessory-types',
-  imports: [DetailPane, DetailSection, StatusPill, MatButton, MatIconButton, MatIcon],
+  imports: [
+    DetailPane,
+    DetailSection,
+    StatusPill,
+    MatButton,
+    MatIconButton,
+    MatIcon,
+    MatMenu,
+    MatMenuItem,
+    MatMenuTrigger,
+  ],
   template: `
     <app-detail-pane
       crumb="Settings / Accessory types"
@@ -32,9 +45,25 @@ import {
       [subtitle]="arena.current().name"
       (closed)="closed.emit()"
     >
-      <div actions>
+      <div actions class="flex gap-2">
+        <button
+          mat-stroked-button
+          type="button"
+          [disabled]="busy() || !arena.canEdit() || !offered().length"
+          [matMenuTriggerFor]="catalogMenu"
+        >
+          <mat-icon aria-hidden="true">library_add</mat-icon>From catalog
+        </button>
+        <mat-menu #catalogMenu="matMenu">
+          @for (c of offered(); track c.name) {
+            <button mat-menu-item type="button" (click)="adopt(c)">
+              <mat-icon aria-hidden="true">{{ icon(c.name) }}</mat-icon
+              >{{ c.name }}
+            </button>
+          }
+        </mat-menu>
         <button mat-flat-button type="button" [disabled]="!arena.canEdit()" (click)="add()">
-          <mat-icon aria-hidden="true">add</mat-icon>Type
+          <mat-icon aria-hidden="true">add</mat-icon>Custom
         </button>
       </div>
       <app-detail-section
@@ -80,8 +109,8 @@ import {
               </li>
             } @empty {
               <li class="px-2 text-[13px] leading-[1.45] text-muted">
-                No accessory types yet. Add one, e.g. Controller (counts as a controller), VR
-                headset or Steering wheel.
+                No accessory types yet. Pick one from the catalog (Controller, VR headset, Cue
+                stick, Football…) or add your own.
               </li>
             }
           </ul>
@@ -98,6 +127,16 @@ export class AccessoryTypes {
 
   readonly closed = output<void>();
 
+  private readonly venueApi = inject(VenueApi);
+  private readonly catalog = resource({ loader: () => this.venueApi.accessoryCatalog() });
+  /** Catalog types the arena doesn't have yet (names are unique ignoring case). */
+  protected readonly offered = computed(() => {
+    const have = new Set(this.store.kinds().map((k) => k.name.trim().toLowerCase()));
+    return this.catalog.hasValue()
+      ? this.catalog.value().filter((c) => !have.has(c.name.toLowerCase()))
+      : [];
+  });
+
   protected readonly icon = accessoryIcon;
   protected readonly busy = signal(false);
 
@@ -113,6 +152,25 @@ export class AccessoryTypes {
       k.countsAsController ? 'Counts as a controller' : 'Tracked only',
       `${n} on stations`,
     ].join(' · ');
+  }
+
+  /** Adds a ready-made type from the global catalog. */
+  protected async adopt(c: CatalogAccessory): Promise<void> {
+    this.busy.set(true);
+    try {
+      await this.store.saveKind({
+        id: crypto.randomUUID(),
+        name: c.name,
+        countsAsController: c.countsAsController,
+        sortOrder: this.store.kinds().length,
+        active: true,
+      });
+      this.say(`${c.name} added · add them on each station`);
+    } catch (e) {
+      this.say(toAppError(e).message);
+    } finally {
+      this.busy.set(false);
+    }
   }
 
   protected add(): void {

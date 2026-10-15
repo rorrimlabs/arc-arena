@@ -90,7 +90,7 @@ select is(
   (select array_agg(p.proname::text order by p.proname) from pg_proc p
     where p.pronamespace = 'public'::regnamespace
       and has_function_privilege('authenticated', p.oid, 'execute')),
-  array['accept_invite', 'app_is_owner', 'arena_activity', 'arena_discount_usage', 'arena_game_fans',
+  array['accept_invite', 'accessory_kind_catalog', 'app_is_owner', 'arena_activity', 'arena_discount_usage', 'arena_game_fans',
         'arena_game_stats', 'arena_invites', 'arena_members', 'arena_overview', 'arena_pricing', 'arena_sale',
         'arena_sales', 'arena_staff', 'arena_station_stats', 'create_my_arena', 'invite_member', 'my_arenas',
         'revoke_invite', 'station_type_catalog',

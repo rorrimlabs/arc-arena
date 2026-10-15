@@ -77,6 +77,12 @@ edit. The catalog carries no prices: the owner always enters them.
 | arcade | Arcade machine (time-based; per-play is not supported) |
 | other | Lounge / private room |
 
+**Accessory types work the same way.** `public.accessory_kind_catalog()` lists ready-made
+accessory types (`{name, group, counts_as_controller}`: Controller, Fight stick, VR headset,
+Steering wheel, Headphones, Cue stick, Ball set, Football, Cricket kit, Badminton racket, Bibs).
+Settings → Accessory types offers them under "From catalog" (sent as the ordinary
+`accessory_kind.upsert`) next to a custom type.
+
 **Business category is not stored.** At sign-up it only pre-ticks catalog types (gaming centre →
 PS5, PC, VR). A turf that later adds a PlayStation picks it from the same catalog.
 

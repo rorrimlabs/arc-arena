@@ -57,6 +57,13 @@ export interface CatalogType {
   readonly noun: ResourceNoun;
 }
 
+/** One entry of the server's global accessory type catalog (accessory_kind_catalog()). */
+export interface CatalogAccessory {
+  readonly name: string;
+  readonly group: CatalogType['group'];
+  readonly countsAsController: boolean;
+}
+
 export const VENUE_MESSAGES: Readonly<Record<string, string>> = {
   invalid_venue_profile: 'Choose what your venue calls the things it rents out',
   setting_not_shared:
@@ -99,6 +106,7 @@ export interface VenueData {
 export abstract class VenueApi {
   abstract load(arenaId: string): Promise<VenueData>;
   abstract catalog(): Promise<CatalogType[]>;
+  abstract accessoryCatalog(): Promise<CatalogAccessory[]>;
   abstract saveNoun(arenaId: string, noun: ResourceNoun): Promise<void>;
 }
 
@@ -153,6 +161,17 @@ class SupabaseVenueApi extends VenueApi {
       durationModel: e['duration_model'] as CatalogType['durationModel'],
       unitMinutes: Number(e['unit_minutes']),
       noun: parseNoun({ resource_noun: e['noun'] }),
+    }));
+  }
+
+  async accessoryCatalog(): Promise<CatalogAccessory[]> {
+    const client = await this.supabase.client();
+    const { data, error } = await client.rpc('accessory_kind_catalog');
+    if (error) throw dbError(error);
+    return ((data ?? []) as Record<string, unknown>[]).map((e) => ({
+      name: String(e['name']),
+      group: e['group'] as CatalogType['group'],
+      countsAsController: e['counts_as_controller'] === true,
     }));
   }
 

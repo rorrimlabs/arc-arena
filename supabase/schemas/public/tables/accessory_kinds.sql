@@ -1,6 +1,7 @@
 -- accessory_kinds — what sort of thing an accessory is (Controller, VR headset, Steering wheel …)
 --
--- Owner-defined per arena; nothing is seeded. An accessory (a controllers row)
+-- Owner-defined per arena; nothing is seeded (owners pick from accessory_kind_catalog() or add
+-- their own). An accessory (a controllers row)
 -- points at one through kind_id. counts_as_controller says whether accessories
 -- of the kind are game pads: only those are allocated to players, counted for
 -- controller-count pricing and borrowed by session starts. An accessory with no
