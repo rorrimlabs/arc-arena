@@ -51,10 +51,23 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     final r = widget.initialResource;
     if (r != null) {
       _draft = _draft.copyWith(resourceId: r.id, resourceName: r.name);
-      if (r.activityCodes.length == 1) {
-        _applyActivityCode(r.activityCodes.first);
-      }
+      // The station's type decides pricing; one it is locked to or its only one.
+      final code = r.currentMode ??
+          (r.activityCodes.length == 1 ? r.activityCodes.first : null);
+      if (code != null) _applyActivityCode(code);
     }
+  }
+
+  /// The types a station can start right now: the one it is locked to, else
+  /// every active type it offers (several only for a multi-type station such
+  /// as RIFT, PS5 or VR).
+  static List<String> _typesFor(Resource r, Set<String> activeCodes) {
+    final mode = r.currentMode;
+    if (mode != null) return activeCodes.contains(mode) ? [mode] : const [];
+    return [
+      for (final c in r.activityCodes)
+        if (activeCodes.contains(c)) c,
+    ];
   }
 
   void _update(NewSessionDraft next) {
@@ -89,6 +102,11 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
   @override
   Widget build(BuildContext context) {
     final activities = ref.watch(activitiesProvider).value ?? const [];
+    final noun = ref.watch(resourceNounProvider);
+    final activeCodes = {
+      for (final a in activities)
+        if (a.active) a.code,
+    };
     final resources = ref.watch(resourcesProvider).value ?? const [];
     final openSegments = ref.watch(openSegmentsProvider).value ?? const [];
     // A STATION is free when no session or group player is on it — whether
@@ -112,18 +130,28 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
                 const [])
           if (rf.status.isPlayable) rf.resource.id,
     };
+    // Every free station that can start something; its type comes with it.
     final availableResources = resources
         .where((r) =>
-            r.activityCodes.contains(_draft.activityCode) &&
             r.status == ResourceStatus.available &&
-            // A station locked to the other mode (RIFT in VR) cannot take it.
-            (r.currentMode == null || r.currentMode == _draft.activityCode) &&
-            !occupied.contains(r.id))
+            !occupied.contains(r.id) &&
+            _typesFor(r, activeCodes).isNotEmpty)
         .toList();
+    // Stations the chosen type can move to (controller borrowing alternatives).
+    final sameType = [
+      for (final r in availableResources)
+        if (_typesFor(r, activeCodes).contains(_draft.activityCode)) r,
+    ];
+    Resource? station;
+    for (final r in resources) {
+      if (r.id == _draft.resourceId) station = r;
+    }
+    final stationTypes =
+        station == null ? const <String>[] : _typesFor(station, activeCodes);
 
-    // Steps are numbered as they are shown: Station, Game and Controllers
-    // only appear once an activity is picked, so a hidden step must not
-    // leave a hole in the sequence.
+    // Steps are numbered as they are shown: Game and Controllers only appear
+    // for a station whose type uses them, so a hidden step must not leave a
+    // hole in the sequence.
     var step = 0;
     String n(String label) => '${++step} · $label';
 
@@ -147,39 +175,50 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
             ),
           ),
           _Section(
-            title: n('Activity'),
-            child: Wrap(
-              spacing: AppSpacing.sm,
-              children: [
-                for (final a in activities)
-                  ChoiceChip(
-                    label: Text(a.name),
-                    selected: _draft.activityCode == a.code,
-                    onSelected: (_) {
-                      _applyActivityCode(a.code);
-                      _update(_draft);
-                    },
-                  ),
-              ],
-            ),
-          ),
-          if (activity != null)
-            _Section(
-              title: n(ref.watch(resourceNounProvider).one),
-              child: availableResources.isEmpty
-                  ? const Text('No stations available for this activity right now.')
-                  : Wrap(
-                      spacing: AppSpacing.sm,
-                      children: [
-                        for (final r in availableResources)
-                          ChoiceChip(
-                            label: Text(r.name),
-                            selected: _draft.resourceId == r.id,
-                            onSelected: (_) => _changeStation(r),
-                          ),
+            title: n(noun.one),
+            child: availableResources.isEmpty
+                ? Text('No ${noun.many.toLowerCase()} free right now.')
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Wrap(
+                        spacing: AppSpacing.sm,
+                        children: [
+                          for (final r in availableResources)
+                            ChoiceChip(
+                              label: Text(r.name),
+                              selected: _draft.resourceId == r.id,
+                              onSelected: (_) =>
+                                  _changeStation(r, _typesFor(r, activeCodes)),
+                            ),
+                        ],
+                      ),
+                      // Only a station offering several types (and not locked
+                      // to one) asks which: the price depends on it.
+                      if (stationTypes.length > 1) ...[
+                        const SizedBox(height: AppSpacing.sm),
+                        Text('Play as',
+                            style: Theme.of(context).textTheme.bodySmall),
+                        const SizedBox(height: AppSpacing.xs),
+                        Wrap(
+                          spacing: AppSpacing.sm,
+                          children: [
+                            for (final a in activities)
+                              if (stationTypes.contains(a.code))
+                                ChoiceChip(
+                                  label: Text(a.name),
+                                  selected: _draft.activityCode == a.code,
+                                  onSelected: (_) {
+                                    _applyActivityCode(a.code);
+                                    _update(_draft);
+                                  },
+                                ),
+                          ],
+                        ),
                       ],
-                    ),
-            ),
+                    ],
+                  ),
+          ),
           if (activity != null && activity.usesGames)
             _Section(
               title: n('Game'),
@@ -215,7 +254,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
                       style: Theme.of(context).textTheme.bodySmall)
                   : ControllerChoiceField(
                       alternatives: [
-                        for (final r in availableResources)
+                        for (final r in sameType)
                           if (_draft.gameId == null ||
                               playableHere.contains(r.id))
                             r,
@@ -284,14 +323,30 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
         controllerCount:
             (activity?.usesControllers ?? false) ? _draft.controllerCount : null,
         previousAmount: _previousAmount,
+        prompt: 'Pick a customer and a ${noun.word}.',
       ),
     );
   }
 
-  /// A new station keeps the requested count and any explicitly borrowed
-  /// pads; pads picked at the old station are no longer valid here and drop
-  /// out — the field then tops up from the new station.
-  void _changeStation(Resource r) {
+  /// A new station brings its type: the same type keeps the requested count
+  /// and any explicitly borrowed pads (pads picked at the old station drop
+  /// out and the field tops up from the new one); another type starts the
+  /// game and controllers afresh. A multi-type station keeps the current type
+  /// when it offers it, else waits for "Play as".
+  void _changeStation(Resource r, List<String> types) {
+    final keep = types.contains(_draft.activityCode);
+    if (!keep) {
+      _gameName = null;
+      _gameMax = null;
+      if (types.length == 1) {
+        _applyActivityCode(types.first);
+      } else {
+        _draft = _draft.copyWith(
+            clearActivity: true, clearGame: true, clearControllers: true);
+      }
+      _update(_draft.copyWith(resourceId: r.id, resourceName: r.name));
+      return;
+    }
     final c = _draft.controllers;
     final borrowed = [
       for (final id in c.padIds)
@@ -355,11 +410,13 @@ class _PreviewBar extends StatelessWidget {
     required this.loading,
     required this.starting,
     required this.onStart,
+    required this.prompt,
     this.controllerCount,
     this.previousAmount,
   });
 
   final Result<StartPlan>? preview;
+  final String prompt;
   final bool loading;
   final bool starting;
   final VoidCallback onStart;
@@ -395,7 +452,7 @@ class _PreviewBar extends StatelessWidget {
               else if (failure != null)
                 Text(failure.display, style: TextStyle(color: theme.colorScheme.error))
               else
-                const Text('Pick a customer, activity and station.'),
+                Text(prompt),
               const SizedBox(height: AppSpacing.sm),
               FilledButton.icon(
                 onPressed: canStart ? onStart : null,

@@ -90,11 +90,12 @@ class NewSessionDraft {
     ControllerChoice? controllers,
     int? durationMinutes,
     bool? openEnded,
+    bool clearActivity = false,
     bool clearGame = false,
     bool clearControllers = false,
   }) => NewSessionDraft(
     customerId: customerId ?? this.customerId,
-    activityCode: activityCode ?? this.activityCode,
+    activityCode: clearActivity ? null : (activityCode ?? this.activityCode),
     resourceId: resourceId ?? this.resourceId,
     resourceName: resourceName ?? this.resourceName,
     gameId: clearGame ? null : (gameId ?? this.gameId),
@@ -312,12 +313,19 @@ class SessionActions {
 
   /// Price preview + availability for a new session (spec §6, §17).
   Future<Result<StartPlan>> previewStart(NewSessionDraft d) async {
-    if (d.customerId == null ||
-        d.activityCode == null ||
-        d.resourceId == null) {
+    if (d.customerId == null || d.resourceId == null) {
       return const Err(
         Failure(
-          message: 'Pick a customer, activity and station.',
+          message: 'Pick a customer and a station.',
+          code: 'incomplete',
+        ),
+      );
+    }
+    // The type comes with the station; only a multi-type one asks for it.
+    if (d.activityCode == null) {
+      return const Err(
+        Failure(
+          message: 'Choose what this station plays as.',
           code: 'incomplete',
         ),
       );
