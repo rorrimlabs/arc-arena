@@ -294,8 +294,9 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
                         : 'Custom'),
                     selected: isCustom,
                     onSelected: (_) async {
+                      // Up to a day: rates can be per hour or per day.
                       final mins = await showCustomMinutesSheet(context,
-                          initial: _draft.durationMinutes ?? 60);
+                          initial: _draft.durationMinutes ?? 60, max: 24 * 60);
                       if (mins != null) {
                         _update(_draft.copyWith(
                             durationMinutes: mins, openEnded: false));

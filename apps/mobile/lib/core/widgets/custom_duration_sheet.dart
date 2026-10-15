@@ -5,8 +5,9 @@ import 'package:flutter/services.dart';
 
 /// A fast, floor-friendly way to enter a custom number of minutes (spec §12).
 ///
-/// Staff pick a duration that isn't one of the quick presets: step by ±5/±15 or
-/// type an exact value. Returns the chosen minutes, or null if cancelled. The
+/// Staff pick a duration that isn't one of the quick presets: step by ±5/±15
+/// minutes or ±1 hour, or type exact hours and minutes. Returns the chosen
+/// total in minutes, or null if cancelled. The
 /// caller recalculates its quote from the result (the pricing engine already
 /// supports arbitrary durations — this only exposes it in the UI).
 Future<int?> showCustomMinutesSheet(
@@ -57,24 +58,39 @@ class _CustomMinutes extends StatefulWidget {
 
 class _CustomMinutesState extends State<_CustomMinutes> {
   late int _minutes = (widget.initial ?? 60).clamp(widget.min, widget.max);
-  late final TextEditingController _controller =
-      TextEditingController(text: '$_minutes');
+  late final TextEditingController _hours =
+      TextEditingController(text: '${_minutes ~/ 60}');
+  late final TextEditingController _mins =
+      TextEditingController(text: '${_minutes % 60}');
 
+  /// A stepper or the clamp moved the total: both fields follow it.
   void _set(int value) {
     final clamped = value.clamp(widget.min, widget.max);
     setState(() => _minutes = clamped);
-    if (_controller.text != '$clamped') {
-      _controller.text = '$clamped';
-      _controller.selection =
-          TextSelection.collapsed(offset: _controller.text.length);
-    }
+    _write(_hours, clamped ~/ 60);
+    _write(_mins, clamped % 60);
+  }
+
+  static void _write(TextEditingController c, int value) {
+    if (c.text == '$value') return;
+    c.text = '$value';
+    c.selection = TextSelection.collapsed(offset: c.text.length);
+  }
+
+  /// Typing in either field: the total is hours × 60 + minutes (minutes may
+  /// run past 59, e.g. 0 h 90 min), clamped to the allowed range.
+  void _typed() {
+    final h = int.tryParse(_hours.text) ?? 0;
+    final m = int.tryParse(_mins.text) ?? 0;
+    setState(() => _minutes = (h * 60 + m).clamp(widget.min, widget.max));
   }
 
   void _bump(int delta) => _set(_minutes + delta);
 
   @override
   void dispose() {
-    _controller.dispose();
+    _hours.dispose();
+    _mins.dispose();
     super.dispose();
   }
 
@@ -117,19 +133,49 @@ class _CustomMinutesState extends State<_CustomMinutes> {
                 Expanded(child: stepButton('+15', 15)),
               ],
             ),
+            const SizedBox(height: AppSpacing.sm),
+            Row(
+              children: [
+                Expanded(child: stepButton('−1 h', -60)),
+                const SizedBox(width: AppSpacing.sm),
+                Expanded(child: stepButton('+1 h', 60)),
+              ],
+            ),
             const SizedBox(height: AppSpacing.lg),
-            TextField(
-              controller: _controller,
-              keyboardType: TextInputType.number,
-              inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-              decoration: const InputDecoration(
-                labelText: 'Minutes',
-                suffixText: 'min',
-              ),
-              onChanged: (v) {
-                final n = int.tryParse(v);
-                if (n != null) setState(() => _minutes = n.clamp(widget.min, widget.max));
-              },
+            Row(
+              children: [
+                Expanded(
+                  child: TextField(
+                    controller: _hours,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Hours',
+                      suffixText: 'h',
+                    ),
+                    onChanged: (_) => _typed(),
+                  ),
+                ),
+                const SizedBox(width: AppSpacing.md),
+                Expanded(
+                  child: TextField(
+                    controller: _mins,
+                    keyboardType: TextInputType.number,
+                    inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                    decoration: const InputDecoration(
+                      labelText: 'Minutes',
+                      suffixText: 'min',
+                    ),
+                    onChanged: (_) => _typed(),
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: AppSpacing.xs),
+            Text(
+              'From ${formatMinutesLabel(Duration(minutes: widget.min))} to '
+              '${formatMinutesLabel(Duration(minutes: widget.max))}',
+              style: theme.textTheme.bodySmall?.copyWith(color: arena.textMuted),
             ),
             const SizedBox(height: AppSpacing.lg),
             FilledButton(
