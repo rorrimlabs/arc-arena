@@ -12,6 +12,8 @@ import { MatInput } from '@angular/material/input';
 import { MatOption, MatSelect } from '@angular/material/select';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
+import { Station } from '../../../core/floor/floor.models';
+import { ResourceNoun, VenueStore } from '../../../core/venue/venue';
 import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
 import { PricingStore } from '../../pricing/data/pricing-store';
 import { headlinePrice } from '../../pricing/data/pricing.models';
@@ -31,6 +33,11 @@ export interface StationDialogResult {
  * Design: dialog `d.k === 'station'`. Adds a station of one type; a blank name becomes the next
  * free "<CODE>-<n>". Staff see it on the floor after their next sync.
  */
+/** Tables and rooms get their own floor zone in the app; everything else is a station. */
+function stationKind(noun: ResourceNoun): Station['kind'] {
+  return noun === 'table' || noun === 'room' ? noun : 'station';
+}
+
 @Component({
   selector: 'app-station-dialog',
   providers: [MATERIAL_DEFAULTS],
@@ -87,6 +94,7 @@ export class StationDialog {
   protected readonly ref = inject<MatDialogRef<StationDialog, StationDialogResult>>(MatDialogRef);
   private readonly floor = inject(FloorStore);
   private readonly pricing = inject(PricingStore);
+  private readonly venue = inject(VenueStore);
 
   protected readonly types = computed(() => this.pricing.types().filter((t) => t.active));
   protected readonly code = signal(
@@ -98,7 +106,7 @@ export class StationDialog {
 
   /** The next free "<CODE>-<n>". */
   protected readonly auto = computed(() => {
-    const prefix = this.code() || 'Station';
+    const prefix = this.code() || this.venue.words().one;
     const taken = new Set(this.floor.stations().map((s) => s.name.toLowerCase()));
     let n = this.floor.stations().filter((s) => s.activityCodes.includes(this.code())).length + 1;
     while (taken.has(`${prefix}-${n}`.toLowerCase())) n++;
@@ -140,7 +148,7 @@ export class StationDialog {
       await this.floor.saveStation({
         id,
         name,
-        kind: 'station',
+        kind: stationKind(this.venue.noun()),
         status: 'available',
         sortOrder: Math.max(-1, ...this.floor.stations().map((s) => s.sortOrder)) + 1,
         activityCodes: [this.code()],

@@ -106,7 +106,7 @@ export const WEEKDAYS: readonly { readonly key: string; readonly short: string }
 
 export const BILLING_STYLES: readonly { readonly key: DurationModel; readonly label: string }[] = [
   { key: 'hourly', label: 'By the minute, hourly rate' },
-  { key: 'unit', label: 'In fixed blocks (e.g. VR)' },
+  { key: 'unit', label: 'In fixed blocks (e.g. VR, a turf hour)' },
   { key: 'flat_hourly', label: 'Flat hourly, any group size' },
 ];
 
@@ -114,10 +114,13 @@ export function billingLabel(model: DurationModel): string {
   return BILLING_STYLES.find((b) => b.key === model)?.label ?? model;
 }
 
-export function typeIcon(t: Pick<StationType, 'usesControllers' | 'durationModel'>): string {
+export function typeIcon(
+  t: Pick<StationType, 'usesControllers' | 'usesGames' | 'durationModel'>,
+): string {
   if (t.usesControllers) return 'sports_esports';
-  if (t.durationModel === 'unit') return 'view_in_ar';
+  if (t.durationModel === 'unit') return t.usesGames ? 'view_in_ar' : 'stadium';
   if (t.durationModel === 'flat_hourly') return 'weekend';
+  if (t.usesGames) return 'computer';
   return 'table_restaurant';
 }
 
@@ -305,7 +308,10 @@ export interface DiscountOptions {
   readonly reasonRequired: boolean;
 }
 
-export const DEFAULT_DISCOUNT_OPTIONS: DiscountOptions = { manualMaxPercent: 0, reasonRequired: true };
+export const DEFAULT_DISCOUNT_OPTIONS: DiscountOptions = {
+  manualMaxPercent: 0,
+  reasonRequired: true,
+};
 
 /** One use of a discount on a bill (arena_discount_usage). */
 export interface DiscountUse {

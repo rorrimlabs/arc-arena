@@ -14,8 +14,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 /// session can start on it and no other station can borrow it. The owner can
 /// also rename a pad, add one, set its home station, and move/borrow it to
 /// another station. A pad away from home says where it belongs, so it can be
-/// walked back. For a dual-capability station (RIFT) the owner locks PS5 or VR
-/// here — disabled while a session is running on it.
+/// walked back. For a station offering several types (RIFT: PS5 or VR) the owner
+/// locks one here — disabled while a session is running on it.
 Future<void> showStationControllersSheet(
   BuildContext context,
   Resource resource,
@@ -74,9 +74,8 @@ class _StationControllersSheet extends ConsumerWidget {
         a.resourceId,
     };
     final occupied = busy.contains(station.id);
-    final dual =
-        station.activityCodes.contains('PS5') &&
-        station.activityCodes.contains('VR');
+    // A station offering several types is locked to one of them at a time.
+    final dual = station.activityCodes.length > 1;
 
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: AppSpacing.lg),

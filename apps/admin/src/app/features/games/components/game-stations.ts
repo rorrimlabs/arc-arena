@@ -6,6 +6,7 @@ import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
 import { CompatStatus, Game } from '../../../core/floor/floor.models';
+import { VenueStore } from '../../../core/venue/venue';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
 import { COMPAT_CHOICES, compatLabel, gameStations, playableCount } from '../data/game-view';
 
@@ -73,7 +74,10 @@ export class GameStations {
 
   readonly game = input.required<Game>();
 
-  private readonly stations = computed(() => gameStations(this.floor.stations()));
+  private readonly venue = inject(VenueStore);
+  private readonly stations = computed(() =>
+    gameStations(this.floor.stations(), this.venue.gameTypeCodes()),
+  );
   private readonly statuses = computed(() => this.floor.compatByGame().get(this.game().id));
   protected readonly rows = computed(() => {
     const statuses = this.statuses();

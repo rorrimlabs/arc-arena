@@ -23,7 +23,7 @@ export function typeLabel(codes: readonly string[], types: readonly StationType[
 
 export function stationIcon(codes: readonly string[], types: readonly StationType[]): string {
   const t = typesOf(codes, types)[0];
-  return t ? typeIcon(t) : 'sports_esports';
+  return t ? typeIcon(t) : 'grid_view';
 }
 
 /** "PlayStation 5 · ₹120 / hr" (the first type's cheapest standard price). */

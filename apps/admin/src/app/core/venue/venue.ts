@@ -171,6 +171,11 @@ export class VenueStore {
     return types ? capabilitiesOf(types) : null;
   });
   readonly words = computed(() => NOUN_WORDS[this.noun()]);
+  /** Codes of the active types that pick a game; null until loaded. */
+  readonly gameTypeCodes = computed<ReadonlySet<string> | null>(() => {
+    const types = this.types();
+    return types ? new Set(types.filter((t) => t.active && t.usesGames).map((t) => t.code)) : null;
+  });
 
   private loadedArena: string | null = null;
   private pending: Promise<void> | null = null;

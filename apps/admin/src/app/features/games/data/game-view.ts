@@ -33,9 +33,17 @@ export function compatLabel(status: CompatStatus): string {
   return COMPAT_LABELS[status] ?? status;
 }
 
-/** The stations a game can be marked on: the arena's stations still in use, in floor order. */
-export function gameStations(stations: readonly Station[]): Station[] {
-  return stations.filter((s) => s.kind === 'station' && s.status !== 'disabled');
+/**
+ * The stations a game can be marked on: those still in use offering a type that picks a game
+ * (`gameTypes`, from core/venue; every station in use while it loads), in floor order.
+ */
+export function gameStations(
+  stations: readonly Station[],
+  gameTypes: ReadonlySet<string> | null,
+): Station[] {
+  return stations.filter(
+    (s) => s.status !== 'disabled' && (!gameTypes || s.activityCodes.some((c) => gameTypes.has(c))),
+  );
 }
 
 /** How many of `stations` let staff start the game (a station without a row: not installed). */

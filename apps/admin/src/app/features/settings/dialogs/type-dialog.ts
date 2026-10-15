@@ -63,7 +63,7 @@ export interface TypeDialogResult {
             {{
               editing
                 ? 'Changes apply to sessions started after you save.'
-                : 'What staff can start on the floor, e.g. Game Station, VR or Pool Table. Set its price in Pricing after.'
+                : 'What staff can start on the floor, e.g. PlayStation, Pool table or Football turf. Set its price in Pricing after.'
             }}
           </p>
           <mat-form-field>
@@ -80,7 +80,7 @@ export interface TypeDialogResult {
                 [formField]="f.code"
                 (input)="codeTouched = true"
               />
-              <mat-hint>Short and permanent, e.g. PS5. Letters, digits or _.</mat-hint>
+              <mat-hint>Short and permanent, e.g. PS5 or POOL. Letters, digits or _.</mat-hint>
             </mat-form-field>
           } @else {
             <p class="text-sm text-muted">Code: {{ data.type?.code }}</p>
@@ -207,7 +207,10 @@ export class TypeDialog {
         sortOrder: existing?.sortOrder ?? this.store.types().length,
         active: existing?.active ?? true,
       });
-      this.ref.close({ id, snack: existing ? 'Type saved' : `${name} added · set its price in Pricing` });
+      this.ref.close({
+        id,
+        snack: existing ? 'Type saved' : `${name} added · set its price in Pricing`,
+      });
     } catch (e) {
       this.error.set(toAppError(e).message);
     } finally {

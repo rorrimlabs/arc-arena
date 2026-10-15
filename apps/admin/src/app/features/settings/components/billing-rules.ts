@@ -148,7 +148,10 @@ import { PricingStore } from '../../pricing/data/pricing-store';
           </mat-form-field>
         </app-detail-section>
 
-        <app-detail-section heading="Fixed-block types" subtitle="Types sold in blocks, e.g. VR.">
+        <app-detail-section
+          heading="Fixed-block types"
+          subtitle="Types sold in blocks, e.g. VR or a turf hour."
+        >
           <mat-form-field>
             <mat-label>Part-used block</mat-label>
             <mat-select [formField]="f.vrUnitRounding">

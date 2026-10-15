@@ -13,6 +13,7 @@ import { FloorRead, FloorStore } from '../../core/floor/floor-store';
 import { Game } from '../../core/floor/floor.models';
 import { Layout } from '../../core/layout/layout';
 import { injectNow } from '../../core/time/ticker';
+import { VenueStore } from '../../core/venue/venue';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
@@ -150,6 +151,7 @@ import { GameDialog, GameDialogData, GameDialogResult } from './dialogs/game-dia
 export class GamesPage {
   protected readonly floor = inject(FloorStore);
   private readonly pricing = inject(PricingStore);
+  private readonly venue = inject(VenueStore);
   protected readonly arena = inject(ArenaContext);
   private readonly layout = inject(Layout);
   private readonly router = inject(Router);
@@ -197,7 +199,7 @@ export class GamesPage {
   /** Games staff could pick but no station lets them start (warned in the list). */
   protected readonly unplayable = computed(() => {
     if (!this.floor.gameResourcesReady() || !this.floor.stationsReady()) return new Set<string>();
-    const stations = gameStations(this.floor.stations());
+    const stations = gameStations(this.floor.stations(), this.venue.gameTypeCodes());
     const byGame = this.floor.compatByGame();
     return new Set(
       this.floor
@@ -253,7 +255,10 @@ export class GamesPage {
     this.open({
       platforms: this.platformChoices(),
       platform: platform === 'all' ? undefined : platform,
-      stations: gameStations(this.floor.stations()).map((s) => ({ id: s.id, name: s.name })),
+      stations: gameStations(this.floor.stations(), this.venue.gameTypeCodes()).map((s) => ({
+        id: s.id,
+        name: s.name,
+      })),
     });
   }
 

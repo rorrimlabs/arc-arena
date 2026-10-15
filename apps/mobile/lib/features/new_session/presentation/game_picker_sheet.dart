@@ -134,7 +134,7 @@ class _GamePickerState extends ConsumerState<_GamePicker> {
 /// a loading state, search, and the add-game / library fallback.
 Future<Game?> showGamePickerForActivity(
   BuildContext context, {
-  required String platform,
+  required String activityCode,
   required String activityLabel,
 }) {
   return showModalBottomSheet<Game>(
@@ -144,7 +144,7 @@ Future<Game?> showGamePickerForActivity(
     builder: (_) => FractionallySizedBox(
       heightFactor: 0.9,
       child: _ActivityGamePicker(
-        platform: platform,
+        activityCode: activityCode,
         activityLabel: activityLabel,
       ),
     ),
@@ -152,8 +152,8 @@ Future<Game?> showGamePickerForActivity(
 }
 
 class _ActivityGamePicker extends ConsumerStatefulWidget {
-  const _ActivityGamePicker({required this.platform, required this.activityLabel});
-  final String platform;
+  const _ActivityGamePicker({required this.activityCode, required this.activityLabel});
+  final String activityCode;
   final String activityLabel;
   @override
   ConsumerState<_ActivityGamePicker> createState() => _ActivityGamePickerState();
@@ -167,12 +167,12 @@ class _ActivityGamePickerState extends ConsumerState<_ActivityGamePicker> {
     final theme = Theme.of(context);
     final gamesAsync = ref.watch(activeGamesProvider);
     final canEdit = ref.watch(catalogActionsProvider).canChangeSettings;
+    final playable = ref.watch(gamesPlayableForActivityProvider(widget.activityCode)).value;
 
     List<Game> filter(List<Game> all) {
       final q = _query.trim().toLowerCase();
       return all
-          .where((g) =>
-              g.platforms.isEmpty || g.platforms.contains(widget.platform))
+          .where((g) => playable == null || playable.contains(g.id))
           .where((g) =>
               q.isEmpty ||
               g.name.toLowerCase().contains(q) ||

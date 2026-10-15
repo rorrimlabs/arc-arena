@@ -25,6 +25,7 @@ import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:arena_ops/domain/repositories/customer_repository.dart';
 import 'package:arena_ops/domain/repositories/group_session_repository.dart';
 import 'package:arena_ops/domain/repositories/session_repository.dart';
+import 'package:arena_ops/domain/services/game_compatibility.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
 import 'package:arena_ops/domain/services/venue_capabilities.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -172,6 +173,19 @@ final resourcesForGameProvider =
     return ref.watch(catalogRepositoryProvider).resourcesForGame(gameId);
   },
 );
+
+/// Games playable for a station type (marked playable on a station offering it); null while
+/// the catalog loads.
+final gamesPlayableForActivityProvider =
+    FutureProvider.autoDispose.family<Set<String>, String>((ref, activityCode) async {
+  ref.watch(syncRevisionProvider);
+  final catalog = ref.watch(catalogRepositoryProvider);
+  return gamesPlayableForActivity(
+    activityCode,
+    await catalog.compatibility(),
+    await catalog.resources(),
+  );
+});
 
 final recentCustomersProvider = StreamProvider.autoDispose<List<Customer>>(
   (ref) => ref.watch(customerRepositoryProvider).watchRecent(),

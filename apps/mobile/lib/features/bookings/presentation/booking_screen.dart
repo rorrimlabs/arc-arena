@@ -348,10 +348,9 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
       );
 
   Future<Game?> _pickGame(Activity activity) {
-    final platform = activity.code == 'VR' ? 'PSVR2' : 'PS5';
     return showGamePickerForActivity(
       context,
-      platform: platform,
+      activityCode: activity.code,
       activityLabel: activity.name,
     );
   }
