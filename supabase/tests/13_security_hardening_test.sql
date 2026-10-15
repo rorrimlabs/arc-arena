@@ -93,7 +93,7 @@ select is(
   array['accept_invite', 'app_is_owner', 'arena_activity', 'arena_discount_usage', 'arena_game_fans',
         'arena_game_stats', 'arena_invites', 'arena_members', 'arena_overview', 'arena_pricing', 'arena_sale',
         'arena_sales', 'arena_staff', 'arena_station_stats', 'create_my_arena', 'invite_member', 'my_arenas',
-        'revoke_invite',
+        'revoke_invite', 'station_type_catalog',
         'sync_fetch_entity', 'sync_pull', 'sync_push'],
   'the client API is exactly these functions');
 -- Security Advisor lints 0028/0029: no SECURITY DEFINER function in an exposed

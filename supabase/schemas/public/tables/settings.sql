@@ -1,7 +1,9 @@
 -- settings — per-arena key/value configuration shared across devices (jsonb)
 --
--- One row per (arena, key). Devices may write 'business_hours' and 'floor_options'
--- (op_settings_save / settings.save refuses others with setting_not_shared).
+-- One row per (arena, key). Devices may write 'business_hours', 'floor_options',
+-- 'discount_options' and 'venue_profile' (op_settings_save / settings.save refuses others
+-- with setting_not_shared).
+-- venue_profile holds what the venue calls its resources (validated by _venue_profile; labels only).
 -- floor_options holds what the floor app offers staff: payment methods, session start presets
 -- and the end-of-session warning (validated by _floor_options; not part of pricing).
 -- business_hours holds the opening window per ISO weekday in IST and
