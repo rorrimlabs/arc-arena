@@ -14,7 +14,7 @@ Future<int?> showCustomMinutesSheet(
   BuildContext context, {
   int? initial,
   String title = 'Custom duration',
-  int min = 5,
+  int min = 1,
   int max = 600,
   int step = 5,
 }) {
@@ -170,12 +170,6 @@ class _CustomMinutesState extends State<_CustomMinutes> {
                   ),
                 ),
               ],
-            ),
-            const SizedBox(height: AppSpacing.xs),
-            Text(
-              'From ${formatMinutesLabel(Duration(minutes: widget.min))} to '
-              '${formatMinutesLabel(Duration(minutes: widget.max))}',
-              style: theme.textTheme.bodySmall?.copyWith(color: arena.textMuted),
             ),
             const SizedBox(height: AppSpacing.lg),
             FilledButton(

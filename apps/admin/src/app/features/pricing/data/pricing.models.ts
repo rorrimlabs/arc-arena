@@ -163,13 +163,7 @@ export function cheapestRate(type: StationType, rates: readonly Rate[]): Rate | 
   return own.length ? own.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a)) : null;
 }
 
-/** The time a price is charged per, as the owner sets it: so many minutes, hours or days. */
-export type TimeUnit = 'minutes' | 'hours' | 'days';
-export const TIME_UNITS: readonly { key: TimeUnit; label: string; minutes: number }[] = [
-  { key: 'minutes', label: 'minutes', minutes: 1 },
-  { key: 'hours', label: 'hours', minutes: 60 },
-  { key: 'days', label: 'days', minutes: 1440 },
-];
+/** The time a price is charged per is entered as hours and minutes (24 h = a day). */
 /** Longest unit a price can be per: a week. */
 export const MAX_UNIT_MINUTES = 7 * 1440;
 
@@ -177,7 +171,10 @@ export const MAX_UNIT_MINUTES = 7 * 1440;
  * The way an owner would say a unit: 1440 → 1 day, 2160 → 1.5 days, 120 → 2 hours,
  * 90 → 1.5 hours, 45 → 45 minutes. Halves are used only above one (30 stays 30 minutes).
  */
-export function splitUnit(minutes: number): { count: number; unit: TimeUnit } {
+export function splitUnit(minutes: number): {
+  count: number;
+  unit: 'minutes' | 'hours' | 'days';
+} {
   if (minutes > 0 && (minutes % 1440 === 0 || (minutes > 1440 && minutes % 720 === 0))) {
     return { count: minutes / 1440, unit: 'days' };
   }
@@ -188,14 +185,16 @@ export function splitUnit(minutes: number): { count: number; unit: TimeUnit } {
 }
 
 /**
- * Minutes for "count unit" (1.5 hours → 90), or null unless it comes to a whole number of
- * minutes from 1: prices are stored per whole minutes.
+ * Minutes for typed hours and minutes ("1" h "30" min → 90), or null unless both are whole
+ * numbers from 0 (blank = 0) and the total is at least a minute.
  */
-export function joinUnit(count: number, unit: TimeUnit): number | null {
-  if (!Number.isFinite(count) || count <= 0) return null;
-  const minutes = count * (TIME_UNITS.find((u) => u.key === unit)?.minutes ?? 1);
-  const whole = Math.round(minutes);
-  return Math.abs(minutes - whole) < 1e-9 && whole >= 1 ? whole : null;
+export function unitFromParts(hours: string, minutes: string): number | null {
+  const part = (v: string) => (v.trim() === '' ? 0 : Number(v));
+  const h = part(hours);
+  const m = part(minutes);
+  if (!Number.isInteger(h) || !Number.isInteger(m) || h < 0 || m < 0) return null;
+  const total = h * 60 + m;
+  return total >= 1 ? total : null;
 }
 
 /** "per hour", "per 30 min", "per 1.5 hours", "per day", "per 1.5 days". */

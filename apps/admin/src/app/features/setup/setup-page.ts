@@ -5,7 +5,6 @@ import { MatCheckbox } from '@angular/material/checkbox';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
 import { MatProgressBar } from '@angular/material/progress-bar';
-import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
@@ -26,15 +25,12 @@ import {
   MAX_UNIT_MINUTES,
   RateChange,
   StationType,
-  TIME_UNITS,
-  TimeUnit,
   WEEKDAYS,
   findRate,
   fromTimeInput,
-  joinUnit,
   perLabel,
   rateRows,
-  splitUnit,
+  unitFromParts,
   typeIcon,
 } from '../pricing/data/pricing.models';
 
@@ -100,8 +96,6 @@ function stationKind(noun: ResourceNoun): Station['kind'] {
     MatLabel,
     MatInput,
     MatProgressBar,
-    MatSelect,
-    MatOption,
   ],
   host: { class: 'flex min-h-full flex-col' },
   template: `
@@ -223,29 +217,31 @@ function stationKind(noun: ResourceNoun): Station['kind'] {
                       <span class="icon text-lg text-muted" aria-hidden="true">{{ icon(t) }}</span>
                       {{ t.name }} · {{ per(t) }}
                     </legend>
-                    <div class="flex flex-wrap items-start gap-3">
+                    <div class="flex flex-wrap items-center gap-3">
+                      <span class="text-sm">Charged per</span>
                       <mat-form-field class="arena-dense w-28">
-                        <mat-label>Charged per</mat-label>
+                        <mat-label>Hours</mat-label>
                         <input
                           matInput
                           type="number"
-                          inputmode="decimal"
+                          inputmode="numeric"
                           min="0"
-                          step="0.5"
-                          [value]="units()[t.code]?.count ?? ''"
-                          (input)="setUnit(t.code, { count: $any($event.target).value })"
+                          [value]="units()[t.code]?.hours ?? ''"
+                          (input)="setUnit(t.code, { hours: $any($event.target).value })"
                         />
+                        <span matTextSuffix>h</span>
                       </mat-form-field>
-                      <mat-form-field class="arena-dense w-32">
-                        <mat-label>Unit</mat-label>
-                        <mat-select
-                          [value]="units()[t.code]?.unit ?? 'hours'"
-                          (selectionChange)="setUnit(t.code, { unit: $event.value })"
-                        >
-                          @for (u of timeUnits; track u.key) {
-                            <mat-option [value]="u.key">{{ u.label }}</mat-option>
-                          }
-                        </mat-select>
+                      <mat-form-field class="arena-dense w-28">
+                        <mat-label>Minutes</mat-label>
+                        <input
+                          matInput
+                          type="number"
+                          inputmode="numeric"
+                          min="0"
+                          [value]="units()[t.code]?.minutes ?? ''"
+                          (input)="setUnit(t.code, { minutes: $any($event.target).value })"
+                        />
+                        <span matTextSuffix>min</span>
                       </mat-form-field>
                     </div>
                     <div
@@ -396,11 +392,10 @@ export class SetupPage {
   // --- step 3: prices (whole rupees as typed, by type code and controller count)
   protected readonly activeTypes = computed(() => this.pricing.types().filter((t) => t.active));
   protected readonly prices = signal<Readonly<Record<string, string>>>({});
-  /** "Charged per [count] [unit]" per type code, as typed. */
+  /** "Charged per [hours] h [minutes] min" per type code, as typed. */
   protected readonly units = signal<
-    Readonly<Record<string, { readonly count: string; readonly unit: TimeUnit }>>
+    Readonly<Record<string, { readonly hours: string; readonly minutes: string }>>
   >({});
-  protected readonly timeUnits = TIME_UNITS;
 
   // --- step 4: how many of each
   protected readonly counts = signal<Readonly<Record<string, number>>>({});
@@ -466,9 +461,9 @@ export class SetupPage {
     return perLabel(this.draftUnit(t) ?? this.unitMinutes(t));
   }
 
-  protected setUnit(code: string, change: { count?: string; unit?: TimeUnit }): void {
+  protected setUnit(code: string, change: { hours?: string; minutes?: string }): void {
     this.units.update((u) => {
-      const was = u[code] ?? { count: '1', unit: 'hours' as TimeUnit };
+      const was = u[code] ?? { hours: '1', minutes: '0' };
       return { ...u, [code]: { ...was, ...change } };
     });
   }
@@ -476,7 +471,7 @@ export class SetupPage {
   /** The drafted unit in minutes; null while what is typed is not a whole count. */
   private draftUnit(t: StationType): number | null {
     const u = this.units()[t.code];
-    return u ? joinUnit(Number(u.count), u.unit) : null;
+    return u ? unitFromParts(u.hours, u.minutes) : null;
   }
 
   protected priceKey(t: StationType, row: number | null): string {
@@ -582,7 +577,7 @@ export class SetupPage {
       const unit = this.draftUnit(t);
       if (unit == null || unit > MAX_UNIT_MINUTES) {
         this.error.set(
-          `${t.name}: charge per whole minutes, or hours or days such as 1.5 hours, up to 7 days`,
+          `${t.name}: charged per whole hours and minutes, at least 1 minute, up to 168 hours`,
         );
         return;
       }
@@ -658,11 +653,11 @@ export class SetupPage {
     const rates = this.pricing.rates();
     const prices: Record<string, string> = { ...this.prices() };
     const counts: Record<string, number> = { ...this.counts() };
-    const units: Record<string, { count: string; unit: TimeUnit }> = { ...this.units() };
+    const units: Record<string, { hours: string; minutes: string }> = { ...this.units() };
     for (const t of this.activeTypes()) {
       if (!units[t.code]) {
-        const { count, unit } = splitUnit(this.unitMinutes(t));
-        units[t.code] = { count: String(count), unit };
+        const m = this.unitMinutes(t);
+        units[t.code] = { hours: String(Math.floor(m / 60)), minutes: String(m % 60) };
       }
       for (const row of rateRows(t)) {
         const r = findRate(rates, t.code, row);

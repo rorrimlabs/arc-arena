@@ -1,7 +1,6 @@
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
-import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { toAppError } from '../../../core/auth/auth-api';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
@@ -15,17 +14,14 @@ import {
   MAX_UNIT_MINUTES,
   RateChange,
   StationType,
-  TIME_UNITS,
-  TimeUnit,
   cheapestRate,
   findRate,
-  joinUnit,
   maxPlayers,
   perLabel,
   rateRows,
   rulePrice,
+  unitFromParts,
   ruleWhen,
-  splitUnit,
   typeIcon,
   unitMinutesOf,
 } from '../data/pricing.models';
@@ -54,8 +50,6 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
     MatFormField,
     MatLabel,
     MatInput,
-    MatSelect,
-    MatOption,
   ],
   template: `
     @let t = type();
@@ -71,27 +65,34 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
       }}</app-status-pill>
 
       <app-detail-section heading="Base price" [subtitle]="priceHelp()">
-        <div class="flex flex-wrap items-start gap-3" role="group" aria-label="Charged per">
-          <mat-form-field class="w-32">
-            <mat-label>Charged per</mat-label>
-            <input
-              matInput
-              type="number"
-              inputmode="decimal"
-              min="0"
-              step="0.5"
-              [value]="unitCount()"
-              (input)="unitCount.set($any($event.target).value)"
-            />
-          </mat-form-field>
-          <mat-form-field class="w-36">
-            <mat-label>Unit</mat-label>
-            <mat-select [value]="unitKind()" (selectionChange)="unitKind.set($event.value)">
-              @for (u of timeUnits; track u.key) {
-                <mat-option [value]="u.key">{{ u.label }}</mat-option>
-              }
-            </mat-select>
-          </mat-form-field>
+        <div class="flex flex-col gap-1" role="group" aria-labelledby="charged-per">
+          <span id="charged-per" class="text-sm font-medium">Charged per</span>
+          <div class="flex flex-wrap items-start gap-3">
+            <mat-form-field class="w-36">
+              <mat-label>Hours</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                min="0"
+                [value]="unitHours()"
+                (input)="unitHours.set($any($event.target).value)"
+              />
+              <span matTextSuffix>h</span>
+            </mat-form-field>
+            <mat-form-field class="w-36">
+              <mat-label>Minutes</mat-label>
+              <input
+                matInput
+                type="number"
+                inputmode="numeric"
+                min="0"
+                [value]="unitMinutes()"
+                (input)="unitMinutes.set($any($event.target).value)"
+              />
+              <span matTextSuffix>min</span>
+            </mat-form-field>
+          </div>
         </div>
         <p class="text-[13px] leading-[1.45] text-muted">{{ unitHelp() }}</p>
         <div
@@ -233,12 +234,11 @@ export class TypeDetail {
   });
   private readonly savedUnit = computed(() => unitMinutesOf(this.type(), this.store.rates()));
   protected readonly draft = linkedSignal<Draft>(() => this.saved());
-  /** "Charged per [count] [unit]", e.g. 30 minutes, 1 hour, 1 day. */
-  protected readonly unitCount = linkedSignal(() => String(splitUnit(this.savedUnit()).count));
-  protected readonly unitKind = linkedSignal<TimeUnit>(() => splitUnit(this.savedUnit()).unit);
-  protected readonly timeUnits = TIME_UNITS;
+  /** "Charged per [hours] h [minutes] min": 1 h 30 min, 24 h for a day. */
+  protected readonly unitHours = linkedSignal(() => String(Math.floor(this.savedUnit() / 60)));
+  protected readonly unitMinutes = linkedSignal(() => String(this.savedUnit() % 60));
   /** The drafted unit in minutes; null while what is typed is not a whole count. */
-  private readonly draftUnit = computed(() => joinUnit(Number(this.unitCount()), this.unitKind()));
+  private readonly draftUnit = computed(() => unitFromParts(this.unitHours(), this.unitMinutes()));
   protected readonly unitHelp = computed(() => {
     const per = perLabel(this.draftUnit() ?? this.savedUnit());
     return this.type().durationModel === 'unit'
@@ -271,9 +271,8 @@ export class TypeDetail {
 
   protected discard(): void {
     this.draft.set(this.saved());
-    const { count, unit } = splitUnit(this.savedUnit());
-    this.unitCount.set(String(count));
-    this.unitKind.set(unit);
+    this.unitHours.set(String(Math.floor(this.savedUnit() / 60)));
+    this.unitMinutes.set(String(this.savedUnit() % 60));
     this.error.set('');
   }
 
@@ -281,7 +280,7 @@ export class TypeDetail {
     const t = this.type();
     const unit = this.draftUnit();
     if (unit == null || unit > MAX_UNIT_MINUTES) {
-      this.error.set('Charge per whole minutes, or hours or days such as 1.5 hours, up to 7 days');
+      this.error.set('Charged per: whole hours and minutes, at least 1 minute, up to 168 hours');
       return;
     }
     const unitChanged = unit !== this.savedUnit();
