@@ -683,6 +683,17 @@ class $ActivitiesTable extends Activities
     ),
     defaultValue: const Constant(true),
   );
+  static const VerificationMeta _overtimeGraceMinutesMeta =
+      const VerificationMeta('overtimeGraceMinutes');
+  @override
+  late final GeneratedColumn<int> overtimeGraceMinutes = GeneratedColumn<int>(
+    'overtime_grace_minutes',
+    aliasedName,
+    false,
+    type: DriftSqlType.int,
+    requiredDuringInsert: false,
+    defaultValue: const Constant(0),
+  );
   @override
   List<GeneratedColumn> get $columns => [
     id,
@@ -694,6 +705,7 @@ class $ActivitiesTable extends Activities
     legacyHappyHourEligible,
     sortOrder,
     active,
+    overtimeGraceMinutes,
   ];
   @override
   String get aliasedName => _alias ?? actualTableName;
@@ -779,6 +791,15 @@ class $ActivitiesTable extends Activities
         active.isAcceptableOrUnknown(data['active']!, _activeMeta),
       );
     }
+    if (data.containsKey('overtime_grace_minutes')) {
+      context.handle(
+        _overtimeGraceMinutesMeta,
+        overtimeGraceMinutes.isAcceptableOrUnknown(
+          data['overtime_grace_minutes']!,
+          _overtimeGraceMinutesMeta,
+        ),
+      );
+    }
     return context;
   }
 
@@ -824,6 +845,10 @@ class $ActivitiesTable extends Activities
         DriftSqlType.bool,
         data['${effectivePrefix}active'],
       )!,
+      overtimeGraceMinutes: attachedDatabase.typeMapping.read(
+        DriftSqlType.int,
+        data['${effectivePrefix}overtime_grace_minutes'],
+      )!,
     );
   }
 
@@ -848,6 +873,10 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
   final bool legacyHappyHourEligible;
   final int sortOrder;
   final bool active;
+
+  /// v17: overtime allowed free past a session's booked end when it ends on
+  /// this type (Activity.overtimeGraceMinutes). Part of the pricing snapshot.
+  final int overtimeGraceMinutes;
   const ActivityRow({
     required this.id,
     required this.code,
@@ -858,6 +887,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     required this.legacyHappyHourEligible,
     required this.sortOrder,
     required this.active,
+    required this.overtimeGraceMinutes,
   });
   @override
   Map<String, Expression> toColumns(bool nullToAbsent) {
@@ -871,6 +901,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     map['happy_hour_eligible'] = Variable<bool>(legacyHappyHourEligible);
     map['sort_order'] = Variable<int>(sortOrder);
     map['active'] = Variable<bool>(active);
+    map['overtime_grace_minutes'] = Variable<int>(overtimeGraceMinutes);
     return map;
   }
 
@@ -885,6 +916,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       legacyHappyHourEligible: Value(legacyHappyHourEligible),
       sortOrder: Value(sortOrder),
       active: Value(active),
+      overtimeGraceMinutes: Value(overtimeGraceMinutes),
     );
   }
 
@@ -905,6 +937,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       ),
       sortOrder: serializer.fromJson<int>(json['sortOrder']),
       active: serializer.fromJson<bool>(json['active']),
+      overtimeGraceMinutes: serializer.fromJson<int>(
+        json['overtimeGraceMinutes'],
+      ),
     );
   }
   @override
@@ -922,6 +957,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
       ),
       'sortOrder': serializer.toJson<int>(sortOrder),
       'active': serializer.toJson<bool>(active),
+      'overtimeGraceMinutes': serializer.toJson<int>(overtimeGraceMinutes),
     };
   }
 
@@ -935,6 +971,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     bool? legacyHappyHourEligible,
     int? sortOrder,
     bool? active,
+    int? overtimeGraceMinutes,
   }) => ActivityRow(
     id: id ?? this.id,
     code: code ?? this.code,
@@ -946,6 +983,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
         legacyHappyHourEligible ?? this.legacyHappyHourEligible,
     sortOrder: sortOrder ?? this.sortOrder,
     active: active ?? this.active,
+    overtimeGraceMinutes: overtimeGraceMinutes ?? this.overtimeGraceMinutes,
   );
   ActivityRow copyWithCompanion(ActivitiesCompanion data) {
     return ActivityRow(
@@ -964,6 +1002,9 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           : this.legacyHappyHourEligible,
       sortOrder: data.sortOrder.present ? data.sortOrder.value : this.sortOrder,
       active: data.active.present ? data.active.value : this.active,
+      overtimeGraceMinutes: data.overtimeGraceMinutes.present
+          ? data.overtimeGraceMinutes.value
+          : this.overtimeGraceMinutes,
     );
   }
 
@@ -978,7 +1019,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           ..write('durationModel: $durationModel, ')
           ..write('legacyHappyHourEligible: $legacyHappyHourEligible, ')
           ..write('sortOrder: $sortOrder, ')
-          ..write('active: $active')
+          ..write('active: $active, ')
+          ..write('overtimeGraceMinutes: $overtimeGraceMinutes')
           ..write(')'))
         .toString();
   }
@@ -994,6 +1036,7 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
     legacyHappyHourEligible,
     sortOrder,
     active,
+    overtimeGraceMinutes,
   );
   @override
   bool operator ==(Object other) =>
@@ -1007,7 +1050,8 @@ class ActivityRow extends DataClass implements Insertable<ActivityRow> {
           other.durationModel == this.durationModel &&
           other.legacyHappyHourEligible == this.legacyHappyHourEligible &&
           other.sortOrder == this.sortOrder &&
-          other.active == this.active);
+          other.active == this.active &&
+          other.overtimeGraceMinutes == this.overtimeGraceMinutes);
 }
 
 class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
@@ -1020,6 +1064,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
   final Value<bool> legacyHappyHourEligible;
   final Value<int> sortOrder;
   final Value<bool> active;
+  final Value<int> overtimeGraceMinutes;
   final Value<int> rowid;
   const ActivitiesCompanion({
     this.id = const Value.absent(),
@@ -1031,6 +1076,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.legacyHappyHourEligible = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.active = const Value.absent(),
+    this.overtimeGraceMinutes = const Value.absent(),
     this.rowid = const Value.absent(),
   });
   ActivitiesCompanion.insert({
@@ -1043,6 +1089,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     this.legacyHappyHourEligible = const Value.absent(),
     this.sortOrder = const Value.absent(),
     this.active = const Value.absent(),
+    this.overtimeGraceMinutes = const Value.absent(),
     this.rowid = const Value.absent(),
   }) : id = Value(id),
        code = Value(code),
@@ -1060,6 +1107,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Expression<bool>? legacyHappyHourEligible,
     Expression<int>? sortOrder,
     Expression<bool>? active,
+    Expression<int>? overtimeGraceMinutes,
     Expression<int>? rowid,
   }) {
     return RawValuesInsertable({
@@ -1073,6 +1121,8 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
         'happy_hour_eligible': legacyHappyHourEligible,
       if (sortOrder != null) 'sort_order': sortOrder,
       if (active != null) 'active': active,
+      if (overtimeGraceMinutes != null)
+        'overtime_grace_minutes': overtimeGraceMinutes,
       if (rowid != null) 'rowid': rowid,
     });
   }
@@ -1087,6 +1137,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     Value<bool>? legacyHappyHourEligible,
     Value<int>? sortOrder,
     Value<bool>? active,
+    Value<int>? overtimeGraceMinutes,
     Value<int>? rowid,
   }) {
     return ActivitiesCompanion(
@@ -1100,6 +1151,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           legacyHappyHourEligible ?? this.legacyHappyHourEligible,
       sortOrder: sortOrder ?? this.sortOrder,
       active: active ?? this.active,
+      overtimeGraceMinutes: overtimeGraceMinutes ?? this.overtimeGraceMinutes,
       rowid: rowid ?? this.rowid,
     );
   }
@@ -1136,6 +1188,9 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
     if (active.present) {
       map['active'] = Variable<bool>(active.value);
     }
+    if (overtimeGraceMinutes.present) {
+      map['overtime_grace_minutes'] = Variable<int>(overtimeGraceMinutes.value);
+    }
     if (rowid.present) {
       map['rowid'] = Variable<int>(rowid.value);
     }
@@ -1154,6 +1209,7 @@ class ActivitiesCompanion extends UpdateCompanion<ActivityRow> {
           ..write('legacyHappyHourEligible: $legacyHappyHourEligible, ')
           ..write('sortOrder: $sortOrder, ')
           ..write('active: $active, ')
+          ..write('overtimeGraceMinutes: $overtimeGraceMinutes, ')
           ..write('rowid: $rowid')
           ..write(')'))
         .toString();
@@ -17813,6 +17869,7 @@ typedef $$ActivitiesTableCreateCompanionBuilder = ActivitiesCompanion Function({
   Value<bool> legacyHappyHourEligible,
   Value<int> sortOrder,
   Value<bool> active,
+  Value<int> overtimeGraceMinutes,
   Value<int> rowid,
 });
 typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
@@ -17825,6 +17882,7 @@ typedef $$ActivitiesTableUpdateCompanionBuilder = ActivitiesCompanion Function({
   Value<bool> legacyHappyHourEligible,
   Value<int> sortOrder,
   Value<bool> active,
+  Value<int> overtimeGraceMinutes,
   Value<int> rowid,
 });
 
@@ -17879,6 +17937,11 @@ class $$ActivitiesTableFilterComposer
 
   ColumnFilters<bool> get active => $composableBuilder(
     column: $table.active,
+    builder: (column) => ColumnFilters(column),
+  );
+
+  ColumnFilters<int> get overtimeGraceMinutes => $composableBuilder(
+    column: $table.overtimeGraceMinutes,
     builder: (column) => ColumnFilters(column),
   );
 }
@@ -17936,6 +17999,11 @@ class $$ActivitiesTableOrderingComposer
     column: $table.active,
     builder: (column) => ColumnOrderings(column),
   );
+
+  ColumnOrderings<int> get overtimeGraceMinutes => $composableBuilder(
+    column: $table.overtimeGraceMinutes,
+    builder: (column) => ColumnOrderings(column),
+  );
 }
 
 class $$ActivitiesTableAnnotationComposer
@@ -17979,6 +18047,11 @@ class $$ActivitiesTableAnnotationComposer
 
   GeneratedColumn<bool> get active =>
       $composableBuilder(column: $table.active, builder: (column) => column);
+
+  GeneratedColumn<int> get overtimeGraceMinutes => $composableBuilder(
+    column: $table.overtimeGraceMinutes,
+    builder: (column) => column,
+  );
 }
 
 class $$ActivitiesTableTableManager
@@ -18021,6 +18094,7 @@ class $$ActivitiesTableTableManager
                 Value<bool> legacyHappyHourEligible = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<bool> active = const Value.absent(),
+                Value<int> overtimeGraceMinutes = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivitiesCompanion(
                 id: id,
@@ -18032,6 +18106,7 @@ class $$ActivitiesTableTableManager
                 legacyHappyHourEligible: legacyHappyHourEligible,
                 sortOrder: sortOrder,
                 active: active,
+                overtimeGraceMinutes: overtimeGraceMinutes,
                 rowid: rowid,
               ),
           createCompanionCallback:
@@ -18045,6 +18120,7 @@ class $$ActivitiesTableTableManager
                 Value<bool> legacyHappyHourEligible = const Value.absent(),
                 Value<int> sortOrder = const Value.absent(),
                 Value<bool> active = const Value.absent(),
+                Value<int> overtimeGraceMinutes = const Value.absent(),
                 Value<int> rowid = const Value.absent(),
               }) => ActivitiesCompanion.insert(
                 id: id,
@@ -18056,6 +18132,7 @@ class $$ActivitiesTableTableManager
                 legacyHappyHourEligible: legacyHappyHourEligible,
                 sortOrder: sortOrder,
                 active: active,
+                overtimeGraceMinutes: overtimeGraceMinutes,
                 rowid: rowid,
               ),
           withReferenceMapper: (p0) => p0

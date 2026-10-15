@@ -11,15 +11,21 @@ class ActivitySpec {
   const ActivitySpec({
     required this.code,
     required this.durationModel,
+    this.overtimeGraceMinutes = 0,
   });
 
   final String code; // PS5 | VR | POOL | LOUNGE
   final DurationModel durationModel;
 
+  /// Overtime allowed free past a session's booked end when it ends on this
+  /// type (see `overtimeBillUntil`). 0 = every overtime minute is billed.
+  final int overtimeGraceMinutes;
+
   /// Same keys as the server's `_pricing_snapshot` activities.
   Map<String, dynamic> toJson() => {
         'code': code,
         'duration_model': durationModel.code,
+        'overtime_grace_minutes': overtimeGraceMinutes,
       };
 
   /// Snapshots frozen by older builds carry an extra activity flag; it is
@@ -27,16 +33,19 @@ class ActivitySpec {
   factory ActivitySpec.fromJson(Map<String, dynamic> j) => ActivitySpec(
         code: j['code'] as String,
         durationModel: DurationModel.fromCode(j['duration_model'] as String),
+        // Snapshots frozen before the overtime grace existed: none.
+        overtimeGraceMinutes: (j['overtime_grace_minutes'] as int?) ?? 0,
       );
 
   @override
   bool operator ==(Object other) =>
       other is ActivitySpec &&
       other.code == code &&
-      other.durationModel == durationModel;
+      other.durationModel == durationModel &&
+      other.overtimeGraceMinutes == overtimeGraceMinutes;
 
   @override
-  int get hashCode => Object.hash(code, durationModel);
+  int get hashCode => Object.hash(code, durationModel, overtimeGraceMinutes);
 }
 
 /// A price for a given activity + band + (optional) controller count. The

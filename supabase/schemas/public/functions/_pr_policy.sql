@@ -17,8 +17,7 @@ create or replace function public._pr_policy (
     "minimum_charge_minutes":0,"early_exit":"actual","rounding_scope":"session",
     "late_arrival":"actual","vr_unit_rounding":"up","money_rounding_paise":100,
     "money_rounding_dir":"nearest","payment_timing":"either","allow_extend_past_close":false,
-    "cleaning_gap_minutes":0,"group_billing_mode":"per_system",
-    "overtime_grace_minutes":0}'::jsonb
+    "cleaning_gap_minutes":0,"group_billing_mode":"per_system"}'::jsonb
     || coalesce(s->'policy', '{}'::jsonb);
 $function$;
 

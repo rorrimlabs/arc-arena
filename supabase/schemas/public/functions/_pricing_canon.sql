@@ -24,7 +24,9 @@ create or replace function public._pricing_canon (
                  (r->>'unit_minutes')::int, (r->>'price_paise')::bigint)
         from jsonb_array_elements(coalesce(s->'rates', '[]'::jsonb)) r), '[]'::jsonb),
     'activities', coalesce((select jsonb_agg(jsonb_build_object('code', a->>'code',
-        'model', a->>'duration_model')
+        'model', a->>'duration_model',
+        -- Absent (an older device or snapshot) = no grace.
+        'grace', coalesce((a->>'overtime_grace_minutes')::int, 0))
         order by a->>'code', a->>'duration_model')
         from jsonb_array_elements(coalesce(s->'activities', '[]'::jsonb)) a), '[]'::jsonb),
     'policy', _pr_policy(s),

@@ -7,7 +7,7 @@
 -- One jsonb object:
 --   types[] — every activity (station type), retired ones included, ordered by
 --             sort_order then name: {id, code, name, uses_controllers,
---             uses_games, duration_model, sort_order,
+--             uses_games, duration_model, overtime_grace_minutes, sort_order,
 --             active, stations} where stations counts the arena's stations
 --             offering it that are not disabled;
 --   rates[] — the active rate card's standard rates as devices price them
@@ -38,7 +38,7 @@ begin
       select jsonb_agg(jsonb_build_object(
           'id', a.id, 'code', a.code, 'name', a.name,
           'uses_controllers', a.uses_controllers, 'uses_games', a.uses_games,
-          'duration_model', a.duration_model,
+          'duration_model', a.duration_model, 'overtime_grace_minutes', a.overtime_grace_minutes,
           'sort_order', a.sort_order, 'active', a.active,
           'stations', (select count(*) from resource_activities ra
                          join resources r on r.id = ra.resource_id

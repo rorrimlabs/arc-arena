@@ -142,7 +142,9 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
             _OvertimeCard(
               scheduledEnd: _session.scheduledEndAt,
               over: _endAt.difference(_session.scheduledEndAt),
-              graceMinutes: _session.snapshot.policy.overtimeGraceMinutes,
+              graceMinutes: ref
+                  .read(sessionActionsProvider)
+                  .overtimeGraceFor(_session, widget.active.segments),
               booked: _booked!,
               whole: _whole!,
               charged: _bill.total == _whole!.total &&

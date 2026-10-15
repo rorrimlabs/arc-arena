@@ -1,6 +1,7 @@
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
+import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { toAppError } from '../../../core/auth/auth-api';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
@@ -9,6 +10,7 @@ import { DetailSection } from '../../../shared/list-detail/detail-section';
 import { UnsavedBar } from '../../../shared/list-detail/unsaved-bar';
 import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
+import { minuteChoices } from '../data/billing-policy';
 import { PricingStore } from '../data/pricing-store';
 import {
   MAX_UNIT_MINUTES,
@@ -50,6 +52,8 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
     MatFormField,
     MatLabel,
     MatInput,
+    MatSelect,
+    MatOption,
   ],
   template: `
     @let t = type();
@@ -95,6 +99,15 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
           </div>
         </div>
         <p class="text-[13px] leading-[1.45] text-muted">{{ unitHelp() }}</p>
+        <mat-form-field class="max-w-64">
+          <mat-label>Overtime grace</mat-label>
+          <mat-select [value]="graceDraft()" (selectionChange)="graceDraft.set($event.value)">
+            @for (c of graceChoices(); track c.value) {
+              <mat-option [value]="c.value">{{ c.label }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
+        <p class="text-[13px] leading-[1.45] text-muted">{{ graceHelp() }}</p>
         <div
           class="grid grid-cols-[minmax(0,1fr)_minmax(0,9rem)] items-center gap-x-3 gap-y-2"
           role="group"
@@ -239,6 +252,15 @@ export class TypeDetail {
   protected readonly unitMinutes = linkedSignal(() => String(this.savedUnit() % 60));
   /** The drafted unit in minutes; null while what is typed is not a whole count. */
   private readonly draftUnit = computed(() => unitFromParts(this.unitHours(), this.unitMinutes()));
+  /** Overtime allowed free past the booked end when a session ends on this type. */
+  protected readonly graceDraft = linkedSignal(() => this.type().overtimeGraceMinutes);
+  protected readonly graceChoices = computed(() => minuteChoices(this.type().overtimeGraceMinutes));
+  protected readonly graceHelp = computed(() => {
+    const g = this.graceDraft();
+    return g === 0
+      ? 'Past the booked end, every extra minute is billed. The live price stops at the booked end until staff extend.'
+      : `Ended up to ${g} min past the booked end: only the booked time is billed. Later than that: the whole time played.`;
+  });
   protected readonly unitHelp = computed(() => {
     const per = perLabel(this.draftUnit() ?? this.savedUnit());
     return this.type().durationModel === 'unit'
@@ -250,6 +272,7 @@ export class TypeDetail {
     const b = this.saved();
     const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
     for (const k of keys) if ((a[k] ?? '').trim() !== (b[k] ?? '').trim()) return true;
+    if (this.graceDraft() !== this.type().overtimeGraceMinutes) return true;
     return this.draftUnit() !== this.savedUnit();
   });
   protected readonly hasStandard = computed(() =>
@@ -271,6 +294,7 @@ export class TypeDetail {
 
   protected discard(): void {
     this.draft.set(this.saved());
+    this.graceDraft.set(this.type().overtimeGraceMinutes);
     this.unitHours.set(String(Math.floor(this.savedUnit() / 60)));
     this.unitMinutes.set(String(this.savedUnit() % 60));
     this.error.set('');
@@ -311,10 +335,13 @@ export class TypeDetail {
         pricePaise: rupees * 100,
       });
     }
+    const grace = this.graceDraft();
+    const graceChanged = grace !== t.overtimeGraceMinutes;
     this.busy.set(true);
     this.error.set('');
     try {
-      await this.store.saveRates(changes);
+      if (graceChanged) await this.store.saveType({ ...t, overtimeGraceMinutes: grace });
+      if (changes.length) await this.store.saveRates(changes);
       this.say(`${t.name} prices saved · new sessions use them`);
     } catch (e) {
       this.error.set(toAppError(e).message);

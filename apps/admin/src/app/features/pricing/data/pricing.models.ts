@@ -15,6 +15,11 @@ export interface StationType {
   readonly durationModel: DurationModel;
   readonly sortOrder: number;
   readonly active: boolean;
+  /**
+   * Overtime allowed free past a session's booked end when it ends on this type: within it only
+   * the booked time is billed, past it the whole actual time. 0 = every overtime minute.
+   */
+  readonly overtimeGraceMinutes: number;
   /** Stations offering it (not disabled). */
   readonly stations: number;
 }
@@ -81,6 +86,8 @@ export interface TypeInput {
   readonly durationModel: DurationModel;
   readonly sortOrder: number;
   readonly active: boolean;
+  /** Absent: the server keeps the saved grace (0 for a new type). */
+  readonly overtimeGraceMinutes?: number;
 }
 
 /** A price to set (`pricePaise`) or remove (null) on the active card. */

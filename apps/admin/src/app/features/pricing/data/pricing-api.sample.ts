@@ -37,6 +37,7 @@ function type(id: string, code: string, name: string, o: Partial<StationType> = 
     id,
     code,
     name,
+    overtimeGraceMinutes: 0,
     usesControllers: false,
     usesGames: false,
     durationModel: 'hourly',
@@ -197,7 +198,9 @@ export class SamplePricingApi extends PricingApi {
       hours: this.hours,
       holidays: [...this.holidays],
       policy: this.policy,
-      rules: [...this.rules].sort((a, b) => a.priority - b.priority || a.name.localeCompare(b.name)),
+      rules: [...this.rules].sort(
+        (a, b) => a.priority - b.priority || a.name.localeCompare(b.name),
+      ),
       discounts: [...this.discounts],
       discountOptions: this.discountOptions,
     };
@@ -287,7 +290,12 @@ export class SamplePricingApi extends PricingApi {
     const existing = this.types.find((x) => x.id === t.id);
     if (existing && existing.code !== code) throw this.error('code_locked');
     if (this.types.some((x) => x.id !== t.id && x.code === code)) throw this.error('duplicate');
-    const next: StationType = { ...t, code, stations: existing?.stations ?? 0 };
+    const next: StationType = {
+      ...t,
+      code,
+      overtimeGraceMinutes: t.overtimeGraceMinutes ?? existing?.overtimeGraceMinutes ?? 0,
+      stations: existing?.stations ?? 0,
+    };
     this.types = existing
       ? this.types.map((x) => (x.id === t.id ? next : x))
       : [...this.types, next];

@@ -19,11 +19,17 @@ abstract class Activity with _$Activity {
     required DurationModel durationModel,
     @Default(0) int sortOrder,
     @Default(true) bool active,
+
+    /// Overtime allowed free past a session's booked end when it ends on this
+    /// type: within it only the booked time is billed, past it the whole
+    /// actual time. 0 = every overtime minute is billed.
+    @Default(0) int overtimeGraceMinutes,
   }) = _Activity;
 
   /// The pricing-only view of this activity used by the engine.
   ActivitySpec get spec => ActivitySpec(
         code: code,
         durationModel: durationModel,
+        overtimeGraceMinutes: overtimeGraceMinutes,
       );
 }

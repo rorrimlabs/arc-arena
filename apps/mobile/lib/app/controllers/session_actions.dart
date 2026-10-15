@@ -670,9 +670,21 @@ class SessionActions {
           : overtimeBillUntil(
               lastEnd: last,
               scheduledEnd: session.scheduledEndAt,
-              graceMinutes: session.snapshot.policy.overtimeGraceMinutes,
+              graceMinutes: overtimeGraceFor(session, segments),
             ),
     );
+  }
+
+  /// The overtime grace of the type the session ends on (its latest segment),
+  /// from its frozen snapshot; 0 when none. `_pr_session_bill` reads the same.
+  int overtimeGraceFor(Session session, List<SessionSegment> segments) {
+    if (segments.isEmpty) return 0;
+    var last = segments.first;
+    for (final s in segments) {
+      if (!s.startedAt.isBefore(last.startedAt)) last = s;
+    }
+    return session.snapshot.activity(last.activityCode)?.overtimeGraceMinutes ??
+        0;
   }
 
   Future<Result<Session>> end(

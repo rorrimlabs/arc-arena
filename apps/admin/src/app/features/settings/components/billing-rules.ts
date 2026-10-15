@@ -102,18 +102,6 @@ import { PricingStore } from '../../pricing/data/pricing-store';
             <mat-hint>Under this, the session is free</mat-hint>
           </mat-form-field>
           <mat-form-field>
-            <mat-label>Overtime grace</mat-label>
-            <mat-select [formField]="f.overtimeGraceMinutes">
-              @for (c of overtimeChoices(); track c.value) {
-                <mat-option [value]="c.value">{{ c.label }}</mat-option>
-              }
-            </mat-select>
-            <mat-hint
-              >Past the booked end: within this, only the booked time is billed; beyond it, the
-              whole time is. None = every extra minute is billed.</mat-hint
-            >
-          </mat-form-field>
-          <mat-form-field>
             <mat-label>Minimum charge</mat-label>
             <mat-select [formField]="f.minimumChargeMinutes">
               @for (c of minimumChoices(); track c.value) {
@@ -252,9 +240,6 @@ export class BillingRules {
   });
   /** Each list offers the floor app's choices plus the saved value, so it always shows. */
   protected readonly graceChoices = computed(() => minuteChoices(this.saved().graceMinutes));
-  protected readonly overtimeChoices = computed(() =>
-    minuteChoices(this.saved().overtimeGraceMinutes),
-  );
   protected readonly minimumChoices = computed(() =>
     minuteChoices(this.saved().minimumChargeMinutes),
   );

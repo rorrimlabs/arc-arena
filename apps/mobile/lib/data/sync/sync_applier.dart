@@ -274,6 +274,9 @@ class SyncApplier {
               durationModel: r['duration_model'] as String,
               sortOrder: Value(r['sort_order'] as int),
               active: Value(r['active'] as bool),
+              // Absent from an older server: no grace.
+              overtimeGraceMinutes:
+                  Value((r['overtime_grace_minutes'] as int?) ?? 0),
             ));
       case 'pricing_rules':
         await _db.into(_db.pricingRules).insertOnConflictUpdate(PricingRuleRow(
@@ -360,7 +363,7 @@ class SyncApplier {
           'minimum_charge_minutes', 'early_exit', 'rounding_scope',
           'late_arrival', 'vr_unit_rounding', 'money_rounding_paise',
           'money_rounding_dir', 'payment_timing', 'allow_extend_past_close',
-          'cleaning_gap_minutes', 'group_billing_mode', 'overtime_grace_minutes',
+          'cleaning_gap_minutes', 'group_billing_mode',
         ];
         await _db.into(_db.billingPolicies).insertOnConflictUpdate(
             BillingPolicyRow(

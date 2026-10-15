@@ -16,6 +16,7 @@ create table "public"."activities" (
   "uses_controllers"    boolean                  not null default false,
   "uses_games"          boolean                  not null default false,
   "duration_model"      text                     not null default 'hourly'::text,
+  "overtime_grace_minutes" integer                not null default 0,
   "sort_order"          integer                  not null default 0,
   "active"              boolean                  not null default true,
   "created_at"          timestamp with time zone not null default now(),
@@ -26,6 +27,8 @@ create table "public"."activities" (
   constraint "activities_arena_id_code_key" unique (arena_id, code),
   constraint "activities_duration_model_check"
     check ((duration_model = ANY (ARRAY['hourly'::text, 'unit'::text, 'flat_hourly'::text]))),
+  constraint "activities_overtime_grace_minutes_check"
+    check ((overtime_grace_minutes >= 0 and overtime_grace_minutes <= 240)),
   constraint "activities_pkey" primary key (id),
   constraint "activities_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade
@@ -40,6 +43,8 @@ comment on column public.activities.code is 'Stable business code, unique per ar
 comment on column public.activities.uses_controllers is 'True when sessions of this activity hold physical controllers (pads), so controller counts, allocations and borrowing apply.';
 
 comment on column public.activities.uses_games is 'True when a game is picked for sessions of this activity (app flag; not checked server-side).';
+
+comment on column public.activities.overtime_grace_minutes is 'Overtime allowed free past a single session''s booked end (0–240) when it ends on this type: ended within it, the session is billed to its booked end; past it, the whole actual time. 0 = every overtime minute is billed. Part of the pricing snapshot; applied by _pr_session_bill and SegmentBilling.';
 
 comment on column public.activities.duration_model is 'How time is billed: hourly (by time, per billing_policies.billing_unit), unit (whole units of rates.unit_minutes, per billing_policies.vr_unit_rounding) or flat_hourly (priced like hourly by the server pricer).';
 

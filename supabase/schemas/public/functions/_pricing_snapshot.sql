@@ -23,7 +23,7 @@ create or replace function public._pricing_snapshot (
         'price_paise', price_paise)) from sync_v_rates
         where arena_id = p_arena and band = 'standard'), '[]'::jsonb),
     'activities', coalesce((select jsonb_agg(jsonb_build_object('code', code,
-        'duration_model', duration_model))
+        'duration_model', duration_model, 'overtime_grace_minutes', overtime_grace_minutes))
         from activities where arena_id = p_arena), '[]'::jsonb),
     'policy', coalesce((select jsonb_build_object('billing_unit', billing_unit,
         'block_rounding', block_rounding, 'grace_minutes', grace_minutes,
@@ -32,8 +32,7 @@ create or replace function public._pricing_snapshot (
         'vr_unit_rounding', vr_unit_rounding, 'money_rounding_paise', money_rounding_paise,
         'money_rounding_dir', money_rounding_dir, 'payment_timing', payment_timing,
         'allow_extend_past_close', allow_extend_past_close,
-        'cleaning_gap_minutes', cleaning_gap_minutes, 'group_billing_mode', group_billing_mode,
-        'overtime_grace_minutes', overtime_grace_minutes)
+        'cleaning_gap_minutes', cleaning_gap_minutes, 'group_billing_mode', group_billing_mode)
         from billing_policies where arena_id = p_arena and active order by created_at limit 1),
         _pr_policy('{}'::jsonb)),
     -- BusinessHours.current() when the owner never saved hours.

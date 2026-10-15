@@ -125,6 +125,7 @@ class LocalCatalogRepository implements CatalogRepository {
         .map((a) => ActivitySpec(
               code: a.code,
               durationModel: DurationModel.fromCode(a.durationModel),
+              overtimeGraceMinutes: a.overtimeGraceMinutes,
             ))
         .toList();
 

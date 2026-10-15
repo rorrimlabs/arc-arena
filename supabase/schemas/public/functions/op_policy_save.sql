@@ -4,8 +4,7 @@
 -- Payload: policy {billing_unit, block_rounding, grace_minutes, minimum_charge_minutes,
 --   early_exit, rounding_scope, late_arrival, vr_unit_rounding, money_rounding_paise,
 --   money_rounding_dir, payment_timing, allow_extend_past_close, cleaning_gap_minutes,
---   group_billing_mode? (default 'per_system'), overtime_grace_minutes? (0–240; absent keeps the
---   saved value, so an older client cannot reset it)}; every other listed field is overwritten.
+--   group_billing_mode? (default 'per_system')}; every listed field is overwritten.
 -- Checks / errors: forbidden; invalid_payload / invalid (bad values, constraint failures).
 -- Writes: billing_policies (the oldest active one; a 'Default' row is created if none; _sync_apply
 --   then retires the previous price list into pricing_catalog_history). Returns: {}.
@@ -38,7 +37,6 @@ begin
       allow_extend_past_close = (j->>'allow_extend_past_close')::boolean,
       cleaning_gap_minutes = (j->>'cleaning_gap_minutes')::int,
       group_billing_mode = coalesce(j->>'group_billing_mode', 'per_system'),
-      overtime_grace_minutes = coalesce((j->>'overtime_grace_minutes')::int, overtime_grace_minutes),
       updated_at = statement_timestamp()
     where id = v_id;
   return '{}'::jsonb;

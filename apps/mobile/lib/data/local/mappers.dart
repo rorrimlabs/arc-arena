@@ -36,6 +36,7 @@ Activity activityFromRow(ActivityRow r) => Activity(
       durationModel: DurationModel.fromCode(r.durationModel),
       sortOrder: r.sortOrder,
       active: r.active,
+      overtimeGraceMinutes: r.overtimeGraceMinutes,
     );
 
 Resource resourceFromRow(ResourceRow r, List<String> activityCodes) => Resource(

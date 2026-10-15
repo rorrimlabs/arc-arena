@@ -25,7 +25,6 @@ class BillingPolicy {
     this.allowExtendPastClose = false, // #18
     this.cleaningGapMinutes = 0, // #23
     this.groupBillingMode = GroupBillingMode.perSystem, // #24
-    this.overtimeGraceMinutes = 0,
   });
 
   /// The documented MVP defaults.
@@ -51,13 +50,6 @@ class BillingPolicy {
   /// How a group spanning several systems is billed (group feature §9).
   final GroupBillingMode groupBillingMode;
 
-  /// Overtime allowed free past a single session's booked end (0–240 min):
-  /// ended within it, the session is billed to its booked end; past it, the
-  /// whole actual time is billed. 0 = every overtime minute is billed.
-  /// Applied by [SegmentBilling] through `overtimeBillUntil` and on the
-  /// server by `_pr_session_bill`.
-  final int overtimeGraceMinutes;
-
   BillingPolicy copyWith({
     BillingUnit? billingUnit,
     Rounding? blockRounding,
@@ -73,7 +65,6 @@ class BillingPolicy {
     bool? allowExtendPastClose,
     int? cleaningGapMinutes,
     GroupBillingMode? groupBillingMode,
-    int? overtimeGraceMinutes,
   }) =>
       BillingPolicy(
         billingUnit: billingUnit ?? this.billingUnit,
@@ -90,7 +81,6 @@ class BillingPolicy {
         allowExtendPastClose: allowExtendPastClose ?? this.allowExtendPastClose,
         cleaningGapMinutes: cleaningGapMinutes ?? this.cleaningGapMinutes,
         groupBillingMode: groupBillingMode ?? this.groupBillingMode,
-        overtimeGraceMinutes: overtimeGraceMinutes ?? this.overtimeGraceMinutes,
       );
 
   Map<String, dynamic> toJson() => {
@@ -108,7 +98,6 @@ class BillingPolicy {
         'allow_extend_past_close': allowExtendPastClose,
         'cleaning_gap_minutes': cleaningGapMinutes,
         'group_billing_mode': groupBillingMode.code,
-        'overtime_grace_minutes': overtimeGraceMinutes,
       };
 
   factory BillingPolicy.fromJson(Map<String, dynamic> j) => BillingPolicy(
@@ -129,8 +118,6 @@ class BillingPolicy {
         groupBillingMode: j['group_billing_mode'] == null
             ? GroupBillingMode.perSystem
             : GroupBillingMode.fromCode(j['group_billing_mode'] as String),
-        // Snapshots captured before the overtime grace existed: no grace.
-        overtimeGraceMinutes: (j['overtime_grace_minutes'] as int?) ?? 0,
       );
 
   @override
@@ -149,8 +136,7 @@ class BillingPolicy {
       other.paymentTiming == paymentTiming &&
       other.allowExtendPastClose == allowExtendPastClose &&
       other.cleaningGapMinutes == cleaningGapMinutes &&
-      other.groupBillingMode == groupBillingMode &&
-      other.overtimeGraceMinutes == overtimeGraceMinutes;
+      other.groupBillingMode == groupBillingMode;
 
   @override
   int get hashCode => Object.hashAll([
@@ -168,6 +154,5 @@ class BillingPolicy {
         allowExtendPastClose,
         cleaningGapMinutes,
         groupBillingMode,
-        overtimeGraceMinutes,
       ]);
 }

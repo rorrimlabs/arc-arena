@@ -48,6 +48,11 @@ class Activities extends Table {
   IntColumn get sortOrder => integer().withDefault(const Constant(0))();
   BoolColumn get active => boolean().withDefault(const Constant(true))();
 
+  /// v17: overtime allowed free past a session's booked end when it ends on
+  /// this type (Activity.overtimeGraceMinutes). Part of the pricing snapshot.
+  IntColumn get overtimeGraceMinutes =>
+      integer().withDefault(const Constant(0))();
+
   @override
   Set<Column> get primaryKey => {id};
 }
@@ -643,7 +648,7 @@ class AppDatabase extends _$AppDatabase {
   /// Readable without constructing (and therefore without opening) the
   /// database, so the pre-open backup in `main()` can compare it against what
   /// is on disk and decide whether a migration is about to run.
-  static const expectedSchemaVersion = 16;
+  static const expectedSchemaVersion = 17;
 
   @override
   int get schemaVersion => expectedSchemaVersion;
@@ -802,6 +807,18 @@ class AppDatabase extends _$AppDatabase {
         // Re-applying the feed is idempotent (server rows are upserted).
         15: (m) async {
           await m.createTable(pricingRules);
+          await customStatement(
+            "UPDATE sync_meta SET value = '0' WHERE key = 'pull_cursor'",
+          );
+        },
+        // v16 -> v17: a station type's overtime grace. ADDITIVE — one column
+        // with a default (0 = every overtime minute billed, as before); no
+        // session, segment, charge or payment row is touched. A cloud device
+        // rewinds its pull cursor so the next sync re-reads the types with
+        // their grace: without it every new session's snapshot would carry 0
+        // and be refused once an owner sets one.
+        16: (m) async {
+          await m.addColumn(activities, activities.overtimeGraceMinutes);
           await customStatement(
             "UPDATE sync_meta SET value = '0' WHERE key = 'pull_cursor'",
           );

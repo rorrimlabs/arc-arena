@@ -26,7 +26,6 @@ create table "public"."billing_policies" (
   "allow_extend_past_close" boolean                  not null default false,
   "cleaning_gap_minutes"    integer                  not null default 0,
   "group_billing_mode"      text                     not null default 'per_system'::text,
-  "overtime_grace_minutes"  integer                  not null default 0,
   "created_at"              timestamp with time zone not null default now(),
   "updated_at"              timestamp with time zone not null default now(),
   "sync_xid"                xid8                     not null default pg_current_xact_id(),
@@ -44,8 +43,6 @@ create table "public"."billing_policies" (
     check ((group_billing_mode = ANY (ARRAY['per_system'::text, 'shared_controller_pool'::text]))),
   constraint "billing_policies_late_arrival_check"
     check ((late_arrival = ANY (ARRAY['actual'::text, 'planned'::text]))),
-  constraint "billing_policies_overtime_grace_minutes_check"
-    check ((overtime_grace_minutes >= 0 and overtime_grace_minutes <= 240)),
   constraint "billing_policies_money_rounding_dir_check"
     check ((money_rounding_dir = ANY (ARRAY['nearest'::text, 'up'::text]))),
   constraint "billing_policies_payment_timing_check"
@@ -86,8 +83,6 @@ comment on column public.billing_policies.money_rounding_dir is 'Direction of th
 comment on column public.billing_policies.payment_timing is 'When payment may be recorded: either, start or end. Snapshotted with the policy; not enforced server-side.';
 
 comment on column public.billing_policies.allow_extend_past_close is 'When false an extension stops at closing time (applied by the app''s session planner).';
-
-comment on column public.billing_policies.overtime_grace_minutes is 'Overtime allowed free past a single session''s booked end (0–240): ended within it, the session is billed to its booked end; past it, the whole actual time is billed. 0 = every overtime minute is billed. The actual end is always stored. Applied by _pr_session_bill and SegmentBilling.';
 
 comment on column public.billing_policies.cleaning_gap_minutes is 'Minutes a resource is held free after a session ends. Stored setting; not enforced server-side.';
 

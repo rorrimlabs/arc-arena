@@ -2,7 +2,8 @@
 --
 -- Permission: settings.
 -- Payload: id, code?, name, uses_controllers, uses_games, duration_model
--- ('hourly' | 'unit' | 'flat_hourly'), sort_order?, active?. A happy_hour_eligible key
+-- ('hourly' | 'unit' | 'flat_hourly'), sort_order?, active?, overtime_grace_minutes? (0–240;
+-- absent keeps the saved value, 0 for a new type, so an older client cannot reset it). A happy_hour_eligible key
 -- from older clients is ignored (happy hours are pricing rules).
 -- The code is the type's stable business key (segments, rates, bookings and
 -- pricing snapshots refer to it): 1–12 of A–Z, 0–9, _ after upper-casing, and it
@@ -74,16 +75,17 @@ begin
   end if;
 
   insert into activities(id, arena_id, code, name, uses_controllers, uses_games, duration_model,
-      sort_order, active)
+      sort_order, active, overtime_grace_minutes)
     values (v_id, p_arena, v_code, v_name, v_pads,
       coalesce((p->>'uses_games')::boolean, false),
       coalesce(p->>'duration_model', 'hourly'),
       coalesce((p->>'sort_order')::int, 0),
-      coalesce((p->>'active')::boolean, true))
+      coalesce((p->>'active')::boolean, true),
+      coalesce((p->>'overtime_grace_minutes')::int, v_old.overtime_grace_minutes, 0))
   on conflict (id) do update set
     name = excluded.name, uses_controllers = excluded.uses_controllers,
     uses_games = excluded.uses_games, duration_model = excluded.duration_model,
-    sort_order = excluded.sort_order,
+    sort_order = excluded.sort_order, overtime_grace_minutes = excluded.overtime_grace_minutes,
     active = excluded.active, updated_at = statement_timestamp()
   where activities.arena_id = p_arena;
   return '{}'::jsonb;

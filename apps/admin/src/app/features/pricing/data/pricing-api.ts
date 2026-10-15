@@ -207,6 +207,9 @@ export function typeOps(type: TypeInput): SyncOp[] {
         duration_model: type.durationModel,
         sort_order: type.sortOrder,
         active: type.active,
+        ...(type.overtimeGraceMinutes == null
+          ? {}
+          : { overtime_grace_minutes: type.overtimeGraceMinutes }),
       },
     },
   ];
@@ -315,6 +318,7 @@ class SupabasePricingApi extends PricingApi {
         durationModel: (t['duration_model'] as DurationModel) ?? 'hourly',
         sortOrder: Number(t['sort_order'] ?? 0),
         active: t['active'] !== false,
+        overtimeGraceMinutes: Number(t['overtime_grace_minutes'] ?? 0),
         stations: Number(t['stations'] ?? 0),
       })),
       rates: parseRates(d.rates),
