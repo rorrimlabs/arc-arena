@@ -37,6 +37,8 @@ Legend: 🟡 = pending owner confirmation · ✅ = fixed rule the spec already s
 | 25 | **Monday trading** | 🟡 `closed` (per the brief: open Tue–Sun) | open Mon–Sun | Settings → Opening hours |
 | 26 | Public holiday = closed, or open without happy hour? | 🟡 `open`, with a per-holiday "closed" switch; rules follow their holiday mode | always closed | Settings → Holidays |
 | 27 | Walk-in identity | 🟡 one customer record **per visit**, named "Walk-in", hidden from the member directory | a single shared "Walk-in" record | `CustomerRepository.createGuest` |
+| 28 | Booking vs a live session on the same resource (server check) | 🟡 checked on the floor app only; the server refuses booking-vs-booking overlaps | server refuses a booking that overlaps a live session (open-ended sessions: until when?) | `_booking_free` (docs/GENERALIZATION.md phase 5) |
+| 29 | Turf / court bookings: deposit or prepayment | 🟡 none; payment is taken on the checked-in session | deposit at booking, refundable or not | needs payments on bookings (phase 6) |
 
 > **#25 note (brief §8).** The brief states *"Operating hours: Tuesday–Sunday, 2 PM–11 PM. Monday is closed"*
 > and *"Happy Hours: Tuesday–Friday, 2 PM–5 PM"*. The earlier spec in this repo said open Mon–Sun with

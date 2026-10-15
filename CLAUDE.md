@@ -1,6 +1,6 @@
 # CLAUDE.md
 
-`arena_ops` — staff-first gaming-center operations app (404 Arena). Correctness of **timing, pricing and records** is the priority. Plan: `docs/PLAN.md`; unconfirmed business rules: `docs/OWNER_CONFIRMATION.md`; release/backup runbook: `docs/RELEASE.md`; sync design: `docs/SYNC.md`.
+`arena_ops` — staff-first gaming-center operations app (404 Arena). Correctness of **timing, pricing and records** is the priority. Plan: `docs/PLAN.md`; unconfirmed business rules: `docs/OWNER_CONFIRMATION.md`; release/backup runbook: `docs/RELEASE.md`; sync design: `docs/SYNC.md`; multi-venue design: `docs/GENERALIZATION.md`.
 
 **Dev = local Supabase only.** Both apps develop and get validated against the local stack (`supabase start`): admin `npm run dev`, floor app `--dart-define-from-file=dart_define.local.json` (`dart_define.local-android.json` on an Android emulator). Going live on the hosted project is manual (`docs/DEPLOY_SUPABASE.md`): never push, deploy or point a dev run at it.
 
