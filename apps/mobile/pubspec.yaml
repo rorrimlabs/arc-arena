@@ -49,6 +49,9 @@ dependencies:
   # so a reminder fires without any network at reminder time.
   flutter_local_notifications: ^19.0.0
   timezone: ^0.10.0
+  # Opens the iPhone's Settings page for this app ("app-settings:") when
+  # notifications were blocked. Already present transitively via supabase.
+  url_launcher: ^6.3.3
   excel: ^4.0.6
   share_plus: ^13.3.1
   path_provider: ^2.1.6

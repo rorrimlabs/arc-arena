@@ -2,8 +2,9 @@
 /// they ring with the app in the background or closed. These pin what keeps
 /// them right: an app restart puts them back after its clean-up, a session
 /// ended or extended on another device moves them (through sync → refresh),
-/// a station switch renames them, and a phone whose clock is off still rings
-/// at the arena's time.
+/// a station switch renames them, a phone whose clock is off still rings
+/// at the arena's time, and a change to this phone's alert settings applies
+/// at once — after a restart too.
 library;
 
 import 'package:arena_ops/app/auth/auth_controller.dart';
@@ -18,8 +19,10 @@ import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/notifications/notification_service.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/data/local/database.dart';
+import 'package:arena_ops/data/local/local_notification_settings_repository.dart';
 import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/entities/session.dart';
+import 'package:arena_ops/domain/notifications/notification_settings.dart';
 import 'package:arena_ops/domain/notifications/reminder_plan.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -33,13 +36,25 @@ class _Os implements NotificationService {
   final events = <String>[];
   final scheduled = <int, ReminderPlan>{};
 
+  /// What the phone answers about notifications.
+  bool? allowed = true;
+
   @override
   Future<void> init() async {}
   @override
   Future<bool> requestPermission() async {
     events.add('permission');
-    return true;
+    return allowed ?? false;
   }
+
+  @override
+  Future<bool?> notificationsAllowed() async => allowed;
+  @override
+  Future<bool?> exactAlarmsAllowed() async => true;
+  @override
+  Future<bool> requestExactAlarms() async => true;
+  @override
+  Future<bool> openSystemSettings() async => true;
 
   @override
   Future<void> schedule(ReminderPlan plan) async {
@@ -369,5 +384,133 @@ void main() {
       DateTime.utc(2026, 10, 2, 13, 5),
       reason: 'a phone running fast rings later by its own clock',
     );
+  });
+  group('alert settings', () {
+    Future<void> save(NotificationSettings next) async {
+      final r = await app.read(notificationSettingsActionsProvider).save(next);
+      expect(r.isOk, isTrue, reason: r.failureOrNull?.display);
+    }
+
+    test('turning one alert off cancels it at once; the others stay',
+        () async {
+      final s = await startOn(app);
+      os.events.clear();
+
+      await save(const NotificationSettings(alert1Min: false));
+
+      expect(os.events, contains('cancel ${sessionAlertId(s.id, 1)}'));
+      expect(os.scheduled.keys.toSet(),
+          {sessionAlertId(s.id, 0), sessionAlertId(s.id, 2)});
+    });
+
+    test('sound off: the alerts already set are set again without sound',
+        () async {
+      final s = await startOn(app);
+
+      await save(const NotificationSettings(soundEnabled: false));
+
+      for (final id in slots(s.id)) {
+        expect(os.scheduled[id]!.playSound, isFalse);
+        expect(os.scheduled[id]!.enableVibration, isTrue);
+      }
+      expect(os.scheduled[sessionAlertId(s.id, 2)]!.kind, AlertKind.timeUp);
+    });
+
+    test('timer alerts off: every alert still ahead is cancelled', () async {
+      final s = await startOn(app);
+      os.events.clear();
+
+      await save(const NotificationSettings(enabled: false));
+
+      for (final id in slots(s.id)) {
+        expect(os.events, contains('cancel $id'));
+      }
+      expect(os.scheduled, isEmpty);
+    });
+
+    test('turned off while the app was closed: after a restart the alert '
+        'set by the last run is cancelled', () async {
+      final s = await startOn(app);
+      app.dispose();
+      await LocalNotificationSettingsRepository(db)
+          .saveSettings(const NotificationSettings(alert5Min: false));
+      os.events.clear();
+
+      // 18:20 — the 5-min mark (18:55) is still ahead, set by the last run.
+      app = containerFor(FakeClock(start.add(const Duration(minutes: 20))));
+      await startReminders(app);
+
+      expect(os.events, contains('cancel ${sessionAlertId(s.id, 0)}'));
+      expect(os.scheduled.keys.toSet(),
+          {sessionAlertId(s.id, 1), sessionAlertId(s.id, 2)});
+    });
+
+    test('turned off after a restart, but already due: never cancelled (it '
+        'may be ringing, and cancelling clears it from the tray)', () async {
+      final s = await startOn(app);
+      app.dispose();
+      await LocalNotificationSettingsRepository(db)
+          .saveSettings(const NotificationSettings(alert5Min: false));
+      os.events.clear();
+
+      app = containerFor(FakeClock(
+          ist(2026, 10, 2, 18, 55).add(const Duration(milliseconds: 50))));
+      await startReminders(app);
+
+      expect(os.events, isNot(contains('cancel ${sessionAlertId(s.id, 0)}')));
+    });
+
+    test('an alert that already rang is not cancelled when it is turned off '
+        'after the end moved later', () async {
+      final s = await startOn(app); // ends 19:00
+      app.dispose();
+      // It rang at 19:00 (shown, so no longer pending with the phone)…
+      os.scheduled.remove(sessionAlertId(s.id, 2));
+      // …then the session was extended to 19:30 and time up turned off.
+      await (db.update(db.sessions)..where((t) => t.id.equals(s.id))).write(
+        SessionsCompanion(
+          scheduledEndAt:
+              Value(s.scheduledEndAt.add(const Duration(minutes: 30))),
+        ),
+      );
+      await LocalNotificationSettingsRepository(db)
+          .saveSettings(const NotificationSettings(alertAtEnd: false));
+      os.events.clear();
+
+      app = containerFor(FakeClock(ist(2026, 10, 2, 19, 2)));
+      await startReminders(app);
+
+      expect(os.events, isNot(contains('cancel ${sessionAlertId(s.id, 2)}')));
+    });
+
+    test('switching timer alerts back on asks a phone that blocks them',
+        () async {
+      await save(const NotificationSettings(enabled: false));
+      os.allowed = false;
+      os.events.clear();
+
+      await save(const NotificationSettings());
+
+      expect(os.events, contains('permission'));
+    });
+
+    test('the test alert rings like time up, 5 seconds from now, on the '
+        "device's clock", () async {
+      app.dispose();
+      app = containerFor(
+        OffsetClock(FakeClock(start), const Duration(minutes: 10)),
+      );
+      await LocalNotificationSettingsRepository(db).saveSettings(
+        const NotificationSettings(soundEnabled: false, ringUntilSeen: false),
+      );
+
+      await app.read(notificationSettingsActionsProvider).sendTestAlert();
+
+      final test = os.scheduled[testAlertId]!;
+      expect(test.kind, AlertKind.timeUp);
+      expect(test.playSound, isFalse);
+      expect(test.ringUntilSeen, isFalse);
+      expect(test.fireAtUtc, start.add(const Duration(seconds: 5)));
+    });
   });
 }

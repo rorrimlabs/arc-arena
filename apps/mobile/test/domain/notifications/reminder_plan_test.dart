@@ -1,4 +1,5 @@
 import 'package:arena_ops/domain/entities/booking.dart';
+import 'package:arena_ops/domain/notifications/notification_settings.dart';
 import 'package:arena_ops/domain/notifications/reminder_plan.dart';
 import 'package:arena_ops/domain/notifications/reminder_policy.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -91,5 +92,96 @@ void main() {
       expect(plans[1].fireAtUtc, start);
       expect(plans[1].id, reminderId('bk_123', 1));
     });
+  });
+  group('buildSessionAlerts', () {
+    // Ends 7:00 PM IST; now is 6:00 PM IST.
+    final end = start;
+    final now = start.subtract(const Duration(hours: 1));
+    List<ReminderPlan> alerts(NotificationSettings settings, {DateTime? at}) =>
+        buildSessionAlerts(
+          sessionId: 's1',
+          titleName: 'HEX (Rahul)',
+          scheduledEndAt: end,
+          now: at ?? now,
+          settings: settings,
+        );
+
+    test('5 min, 1 min and time up, in slot order, at the right times', () {
+      final plans = alerts(const NotificationSettings());
+      expect([for (final p in plans) p.id],
+          [for (var s = 0; s < 3; s++) sessionAlertId('s1', s)]);
+      expect([for (final p in plans) p.fireAtUtc], [
+        end.subtract(const Duration(minutes: 5)),
+        end.subtract(const Duration(minutes: 1)),
+        end,
+      ]);
+      expect([for (final p in plans) p.kind],
+          [AlertKind.warning, AlertKind.warning, AlertKind.timeUp]);
+      expect(plans.last.title, 'Time Expired: HEX (Rahul)');
+    });
+
+    test('nothing at all while timer alerts are off', () {
+      expect(alerts(const NotificationSettings(enabled: false)), isEmpty);
+    });
+
+    test('each slot follows its own switch', () {
+      final plans = alerts(const NotificationSettings(alert5Min: false));
+      expect([for (final p in plans) p.id],
+          [sessionAlertId('s1', 1), sessionAlertId('s1', 2)]);
+      expect(
+        alerts(const NotificationSettings(alertAtEnd: false))
+            .map((p) => p.kind),
+        everyElement(AlertKind.warning),
+      );
+    });
+
+    test('only time up rings until seen, and only when that is on', () {
+      final on = alerts(const NotificationSettings());
+      expect([for (final p in on) p.ringUntilSeen], [false, false, true]);
+      final off = alerts(const NotificationSettings(ringUntilSeen: false));
+      expect(off.map((p) => p.ringUntilSeen), everyElement(isFalse));
+    });
+
+    test('sound and vibration are carried to every alert', () {
+      final plans = alerts(const NotificationSettings(
+        soundEnabled: false,
+        vibrationEnabled: false,
+      ));
+      expect(plans.map((p) => p.playSound), everyElement(isFalse));
+      expect(plans.map((p) => p.enableVibration), everyElement(isFalse));
+    });
+
+    test('an alert whose time has passed is left out', () {
+      final plans = alerts(
+        const NotificationSettings(),
+        at: end.subtract(const Duration(minutes: 3)),
+      );
+      expect([for (final p in plans) p.id],
+          [sessionAlertId('s1', 1), sessionAlertId('s1', 2)]);
+    });
+
+    test('sessionAlertWanted needs the master switch and the slot', () {
+      const off = NotificationSettings(enabled: false);
+      expect([for (var s = 0; s < 3; s++) sessionAlertWanted(off, s)],
+          [false, false, false]);
+      const some = NotificationSettings(alert1Min: false);
+      expect([for (var s = 0; s < 3; s++) sessionAlertWanted(some, s)],
+          [true, false, true]);
+    });
+  });
+
+  test('the test alert rings like time up 5 seconds on, with the settings',
+      () {
+    final now = DateTime.utc(2026, 10, 10, 12);
+    final plan = buildTestAlert(
+      now: now,
+      settings: const NotificationSettings(vibrationEnabled: false),
+    );
+    expect(plan.id, testAlertId);
+    expect(plan.kind, AlertKind.timeUp);
+    expect(plan.fireAtUtc, now.add(const Duration(seconds: 5)));
+    expect(plan.enableVibration, isFalse);
+    expect(plan.playSound, isTrue);
+    expect(plan.ringUntilSeen, isTrue);
   });
 }

@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
@@ -10,6 +11,7 @@ import 'package:arena_ops/features/controllers/presentation/controller_board_scr
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
+import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
 import 'package:arena_ops/features/reports/presentation/session_log_screen.dart';
 import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
 import 'package:flutter/material.dart';
@@ -73,6 +75,8 @@ class MoreScreen extends ConsumerWidget {
     final canMembers = user?.can(Permission.members) ?? false;
     final cloud = ref.watch(cloudBindingProvider);
     final pending = ref.watch(syncStatusProvider).value?.pending ?? 0;
+    final alerts = ref.watch(notificationSettingsProvider).value;
+    final alertsAllowed = ref.watch(notificationAccessProvider).value?.allowed;
 
     return Scaffold(
       body: SafeArea(
@@ -131,6 +135,16 @@ class MoreScreen extends ConsumerWidget {
               ),
             ]),
             _Group('You', [
+              // This phone's own alerts: everyone's, staff included.
+              ArenaListRow(
+                icon: Icons.notifications_outlined,
+                title: 'Notifications',
+                subtitle: alerts == null
+                    ? 'Timer alerts on this phone'
+                    : timerAlertsSummary(alerts, allowed: alertsAllowed),
+                onTap: () =>
+                    _push(context, const NotificationSettingsScreen()),
+              ),
               if (cloud != null)
                 ArenaListRow(
                   icon: Icons.sync_rounded,

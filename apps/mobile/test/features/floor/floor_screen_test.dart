@@ -6,11 +6,14 @@ library;
 
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/data/local/database.dart';
+import 'package:arena_ops/data/local/local_booking_repository.dart';
 import 'package:arena_ops/data/local/local_catalog_repository.dart';
 import 'package:arena_ops/data/local/local_customer_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
+import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/features/floor/presentation/floor_screen.dart';
 import 'package:arena_ops/main.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -238,6 +241,40 @@ void main() {
     final after = await sessions.getById(s.session.id);
     expect(after!.paymentStatus, PaymentStatus.paid);
     expect((await sessions.paymentsFor(s.session.id)).single.amountPaise, 28000);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('bookings live on their own tab; the floor only shows Reserved',
+      (tester) async {
+    tester.view.physicalSize = const Size(1179, 9000);
+    tester.view.devicePixelRatio = 3.0;
+    addTearDown(tester.view.reset);
+
+    // HEX is booked from 7 PM; it is 6 PM.
+    await LocalBookingRepository(db, FakeClock(start)).create(Booking(
+      id: '',
+      partyName: 'Riya party',
+      activityCode: 'PS5',
+      resourceId: 'hex',
+      scheduledStart: start.add(const Duration(hours: 1)),
+      scheduledEnd: start.add(const Duration(hours: 2)),
+      status: BookingStatus.booked,
+      createdAt: start,
+      updatedAt: start,
+    ));
+    await openFloor(tester, FakeClock(start));
+
+    final floor = find.byType(FloorScreen);
+    expect(
+        find.descendant(of: floor, matching: find.byTooltip('Bookings')),
+        findsNothing,
+        reason: 'no bookings shortcut in the floor header');
+    expect(find.text('UPCOMING BOOKINGS'), findsNothing);
+    expect(find.text('Riya party'), findsNothing);
+    expect(find.text('Check in'), findsNothing);
+    // The station it holds still says so.
+    expect(find.text('RESERVED'), findsOneWidget);
 
     await disposeApp(tester);
   });

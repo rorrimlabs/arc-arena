@@ -227,7 +227,7 @@ void main() {
     expect(defaultPathFor(me), '/floor');
     expect(
       [for (final t in AppTab.all) if (t.visibleFor(me)) t.label],
-      ['Floor', 'More'],
+      ['Floor', 'Bookings', 'More'],
     );
     // The arena's catalog came down with the first download.
     expect(await phone.db!.select(phone.db!.resources).get(), isNotEmpty);

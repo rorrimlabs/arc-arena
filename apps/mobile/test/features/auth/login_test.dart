@@ -54,9 +54,9 @@ void main() {
     }
     await settle(tester);
 
-    // Signed in as owner → lands on Today with all five tabs.
+    // Signed in as owner → lands on Today with all six tabs.
     expect(find.text('Takings today'), findsOneWidget);
-    expect(find.byType(NavigationDestination), findsNWidgets(5));
+    expect(find.byType(NavigationDestination), findsNWidgets(6));
 
     await disposeApp(tester);
   });
@@ -71,8 +71,8 @@ void main() {
 
     // Staff home is the Floor.
     expect(find.text('New Session'), findsWidgets);
-    // Only Floor + More in the nav.
-    expect(find.byType(NavigationDestination), findsNWidgets(2));
+    // Only Floor + Bookings + More in the nav.
+    expect(find.byType(NavigationDestination), findsNWidgets(3));
     // "Floor" shows twice (screen header + nav label); "More" only in the nav.
     expect(find.text('Floor'), findsWidgets);
     expect(find.text('More'), findsOneWidget);

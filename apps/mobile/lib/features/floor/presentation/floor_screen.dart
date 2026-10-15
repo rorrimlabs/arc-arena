@@ -8,8 +8,6 @@ import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/services/session_timer.dart';
-import 'package:arena_ops/features/bookings/presentation/booking_screen.dart';
-import 'package:arena_ops/features/bookings/presentation/upcoming_bookings.dart';
 import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/end_session_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/extend_sheet.dart';
@@ -31,6 +29,9 @@ class FloorScreen extends ConsumerWidget {
   const FloorScreen({super.key});
 
   static const String path = '/floor';
+
+  /// The demo arena's label, shown over the floor app's screens in local mode.
+  static const String demoArenaLabel = '404 Arena · Koratty';
 
   void _newSession(BuildContext context, {Resource? resource}) {
     Navigator.of(context).push(
@@ -81,7 +82,6 @@ class FloorScreen extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final arena = context.arena;
     final active =
         ref.watch(activeSessionsProvider).value ?? const <ActiveSession>[];
     final activeGroups =
@@ -218,15 +218,8 @@ class FloorScreen extends ConsumerWidget {
             const ClockBanner(),
             ArenaScreenHeader(
               // The signed-in arena in cloud mode; the demo arena's label locally.
-              overline: ref.watch(cloudBindingProvider)?.arenaName ?? '404 Arena · Koratty',
+              overline: ref.watch(cloudBindingProvider)?.arenaName ?? demoArenaLabel,
               title: 'Floor',
-              trailing: IconButton(
-                tooltip: 'Bookings',
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const BookingScreen()),
-                ),
-                icon: Icon(Icons.event_available_outlined, color: arena.text),
-              ),
               status: _FloorStatus(
                 playing: {...byResource.keys, ...groupByResource.keys}.length,
                 total: resources.length,
@@ -272,10 +265,6 @@ class FloorScreen extends ConsumerWidget {
             const Padding(
               padding: EdgeInsets.symmetric(horizontal: AppSpacing.x5),
               child: AwaitingPayment(),
-            ),
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: AppSpacing.x5),
-              child: UpcomingBookings(),
             ),
           ],
         ),

@@ -1,3 +1,4 @@
+import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/main.dart';
 import 'package:flutter/material.dart';
@@ -32,7 +33,13 @@ void main() {
     await tester.pumpWidget(app());
     await settle(tester);
 
-    expect(find.byTooltip('Bookings'), findsOneWidget);
+    // In the header: the nav bar's Bookings tab carries the same tooltip.
+    expect(
+        find.descendant(
+          of: find.byType(ArenaScreenHeader),
+          matching: find.byTooltip('Bookings'),
+        ),
+        findsOneWidget);
     expect(find.byTooltip('Notifications'), findsOneWidget);
 
     // Upcoming bookings section with its empty state (no bookings seeded). It's

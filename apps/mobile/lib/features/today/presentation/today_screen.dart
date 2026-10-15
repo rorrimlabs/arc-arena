@@ -118,7 +118,6 @@ class TodayScreen extends ConsumerWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x5),
               child: UpcomingBookings(
-                showHeader: false,
                 emptyState: _BookingsEmpty(onNew: openBookings),
               ),
             ),

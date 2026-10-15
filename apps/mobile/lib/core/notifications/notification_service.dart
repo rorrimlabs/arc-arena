@@ -4,15 +4,18 @@
 ///
 /// Scheduling is handed to the OS, so a booking reminder fires at the right time
 /// **with no network** — and survives the app being closed. The payloads come
-/// from the pure `buildBookingReminders` builder; this layer only talks to the
+/// from the pure `buildBookingReminders` / `buildSessionAlerts` builders and
+/// how each rings from the pure [alertStyleFor]; this layer only talks to the
 /// platform.
 library;
 
+import 'package:arena_ops/core/notifications/alert_channels.dart';
 import 'package:arena_ops/domain/notifications/reminder_plan.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:timezone/timezone.dart' as tz;
+import 'package:url_launcher/url_launcher.dart';
 
 abstract interface class NotificationService {
   /// Initialise the platform plugin. Safe to call more than once.
@@ -20,6 +23,23 @@ abstract interface class NotificationService {
 
   /// Ask the OS for permission to post notifications. Returns whether granted.
   Future<bool> requestPermission();
+
+  /// Whether the phone lets this app show notifications now; null when the
+  /// platform does not say.
+  Future<bool?> notificationsAllowed();
+
+  /// Whether Android lets this app ring at the exact minute ("Alarms &
+  /// reminders"); off, alerts may come a few minutes late. Null on iOS, where
+  /// it does not apply.
+  Future<bool?> exactAlarmsAllowed();
+
+  /// Opens Android's "Alarms & reminders" page for this app. Returns whether
+  /// exact alarms are allowed afterwards.
+  Future<bool> requestExactAlarms();
+
+  /// Opens this app's notification settings in the phone's Settings, for a
+  /// permission that can no longer be asked for. Returns whether it opened.
+  Future<bool> openSystemSettings();
 
   /// Schedule one notification. Re-scheduling the same [ReminderPlan.id]
   /// replaces the previous one (no duplicates).
@@ -51,6 +71,14 @@ class NoopNotificationService implements NotificationService {
   @override
   Future<bool> requestPermission() async => false;
   @override
+  Future<bool?> notificationsAllowed() async => null;
+  @override
+  Future<bool?> exactAlarmsAllowed() async => null;
+  @override
+  Future<bool> requestExactAlarms() async => false;
+  @override
+  Future<bool> openSystemSettings() async => false;
+  @override
   Future<void> schedule(ReminderPlan plan) async {}
   @override
   Future<void> showInstant(ReminderPlan plan) async {}
@@ -65,25 +93,13 @@ class NoopNotificationService implements NotificationService {
 /// Real implementation backed by `flutter_local_notifications`.
 class LocalNotificationService implements NotificationService {
   LocalNotificationService([FlutterLocalNotificationsPlugin? plugin])
-      : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
+    : _plugin = plugin ?? FlutterLocalNotificationsPlugin();
 
   final FlutterLocalNotificationsPlugin _plugin;
   bool _ready = false;
 
-  static const bookingChannelId = 'booking_reminders';
-  static const bookingChannelName = 'Booking reminders';
-  static const bookingChannelDescription =
-      'Reminders before a booked session starts.';
-
-  static const sessionChannelVibrateId = 'session_alerts_vibrate';
-  static const sessionChannelVibrateName = 'Session Timer Alerts (Vibrate)';
-  static const sessionChannelVibrateDesc =
-      'Alerts for session timers with vibration (5m, 1m, and expired).';
-
-  static const sessionChannelNoVibrateId = 'session_alerts_no_vibrate';
-  static const sessionChannelNoVibrateName = 'Session Timer Alerts (Sound Only)';
-  static const sessionChannelNoVibrateDesc =
-      'Alerts for session timers with sound only (5m, 1m, and expired).';
+  /// MainActivity.kt: opens this app's notification settings on Android.
+  static const _systemSettings = MethodChannel('arena_ops/system_settings');
 
   @override
   Future<void> init() async {
@@ -101,120 +117,172 @@ class LocalNotificationService implements NotificationService {
     );
     await _plugin.initialize(settings);
 
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
+    final android = _android;
     if (android != null) {
-      await android.createNotificationChannel(
-        const AndroidNotificationChannel(
-          bookingChannelId,
-          bookingChannelName,
-          description: bookingChannelDescription,
-          importance: Importance.max,
-          playSound: true,
-        ),
-      );
-      await android.createNotificationChannel(
-        AndroidNotificationChannel(
-          sessionChannelVibrateId,
-          sessionChannelVibrateName,
-          description: sessionChannelVibrateDesc,
-          importance: Importance.max,
-          enableVibration: true,
-          vibrationPattern: Int64List.fromList([0, 500, 250, 500]),
-          playSound: true,
-        ),
-      );
-      await android.createNotificationChannel(
-        const AndroidNotificationChannel(
-          sessionChannelNoVibrateId,
-          sessionChannelNoVibrateName,
-          description: sessionChannelNoVibrateDesc,
-          importance: Importance.max,
-          enableVibration: false,
-          playSound: true,
-        ),
-      );
+      for (final channel in AlertChannels.all) {
+        await android.createNotificationChannel(_androidChannel(channel));
+      }
+      for (final id in AlertChannels.obsoleteIds) {
+        await android.deleteNotificationChannel(id);
+      }
     }
 
     _ready = true;
   }
 
+  AndroidFlutterLocalNotificationsPlugin? get _android => _plugin
+      .resolvePlatformSpecificImplementation<
+        AndroidFlutterLocalNotificationsPlugin
+      >();
+
+  IOSFlutterLocalNotificationsPlugin? get _ios => _plugin
+      .resolvePlatformSpecificImplementation<
+        IOSFlutterLocalNotificationsPlugin
+      >();
+
+  /// Sound and vibration are fixed when a channel is first created, so each
+  /// [AlertChannel] is created exactly as it must ring.
+  static AndroidNotificationChannel _androidChannel(AlertChannel c) =>
+      AndroidNotificationChannel(
+        c.id,
+        c.name,
+        description: c.description,
+        importance: Importance.max,
+        playSound: c.sound,
+        enableVibration: c.vibrate,
+        vibrationPattern: c.vibrate ? Int64List.fromList(c.pattern) : null,
+        audioAttributesUsage: c.alarm
+            ? AudioAttributesUsage.alarm
+            : AudioAttributesUsage.notification,
+      );
+
   @override
   Future<bool> requestPermission() async {
-    await init();
-    final ios = _plugin.resolvePlatformSpecificImplementation<
-        IOSFlutterLocalNotificationsPlugin>();
-    if (ios != null) {
-      return await ios.requestPermissions(
-            alert: true,
-            badge: true,
-            sound: true,
-          ) ??
-          false;
+    try {
+      await init();
+      final ios = _ios;
+      if (ios != null) {
+        return await ios.requestPermissions(
+              alert: true,
+              badge: true,
+              sound: true,
+            ) ??
+            false;
+      }
+      return await _android?.requestNotificationsPermission() ?? false;
+    } catch (e) {
+      debugPrint('notification permission request failed: $e');
+      return false;
     }
-    final android = _plugin.resolvePlatformSpecificImplementation<
-        AndroidFlutterLocalNotificationsPlugin>();
-    if (android != null) {
-      return await android.requestNotificationsPermission() ?? false;
+  }
+
+  @override
+  Future<bool?> notificationsAllowed() async {
+    try {
+      await init();
+      final ios = _ios;
+      if (ios != null) return (await ios.checkPermissions())?.isEnabled;
+      return await _android?.areNotificationsEnabled();
+    } catch (e) {
+      debugPrint('notification permission check failed: $e');
+      return null;
     }
-    return false;
+  }
+
+  @override
+  Future<bool?> exactAlarmsAllowed() async {
+    try {
+      await init();
+      return await _android?.canScheduleExactNotifications();
+    } catch (e) {
+      debugPrint('exact alarm check failed: $e');
+      return null;
+    }
+  }
+
+  @override
+  Future<bool> requestExactAlarms() async {
+    try {
+      await init();
+      return await _android?.requestExactAlarmsPermission() ?? false;
+    } catch (e) {
+      debugPrint('exact alarm request failed: $e');
+      return false;
+    }
+  }
+
+  @override
+  Future<bool> openSystemSettings() async {
+    try {
+      return switch (defaultTargetPlatform) {
+        // This app's page in Settings; Notifications is its first row.
+        TargetPlatform.iOS => await launchUrl(Uri.parse('app-settings:')),
+        TargetPlatform.android =>
+          await _systemSettings.invokeMethod<bool>(
+                'openNotificationSettings',
+              ) ??
+              false,
+        _ => false,
+      };
+    } catch (e) {
+      debugPrint('opening notification settings failed: $e');
+      return false;
+    }
   }
 
   NotificationDetails _detailsFor(ReminderPlan plan) {
-    final bool isSession = plan.sessionId != null || plan.channelId != null;
-    final String channelId = plan.channelId ??
-        (isSession
-            ? (plan.enableVibration
-                ? sessionChannelVibrateId
-                : sessionChannelNoVibrateId)
-            : bookingChannelId);
-
-    final String channelName = isSession
-        ? (plan.enableVibration
-            ? sessionChannelVibrateName
-            : sessionChannelNoVibrateName)
-        : bookingChannelName;
-
-    final String channelDesc = isSession
-        ? (plan.enableVibration
-            ? sessionChannelVibrateDesc
-            : sessionChannelNoVibrateDesc)
-        : bookingChannelDescription;
-
+    final style = alertStyleFor(plan);
+    final c = style.channel;
     return NotificationDetails(
       android: AndroidNotificationDetails(
-        channelId,
-        channelName,
-        channelDescription: channelDesc,
+        c.id,
+        c.name,
+        channelDescription: c.description,
         importance: Importance.max,
-        priority: Priority.high,
-        playSound: plan.playSound,
-        enableVibration: plan.enableVibration,
-        vibrationPattern: plan.enableVibration
-            ? Int64List.fromList([0, 500, 250, 500])
+        priority: style.alarm ? Priority.max : Priority.high,
+        // Android 7 and older read these from the notification itself.
+        playSound: c.sound,
+        enableVibration: c.vibrate,
+        vibrationPattern: c.vibrate ? Int64List.fromList(c.pattern) : null,
+        audioAttributesUsage: c.alarm
+            ? AudioAttributesUsage.alarm
+            : AudioAttributesUsage.notification,
+        category: style.alarm ? AndroidNotificationCategory.alarm : null,
+        visibility: style.alarm ? NotificationVisibility.public : null,
+        additionalFlags: style.insistent
+            ? Int32List.fromList(const [androidFlagInsistent])
             : null,
       ),
+      // Shown and heard with the app open too (AppDelegate sets the
+      // notification centre delegate).
       iOS: DarwinNotificationDetails(
         presentAlert: true,
+        presentBanner: true,
+        presentList: true,
         presentBadge: true,
-        presentSound: plan.playSound,
+        presentSound: c.sound,
       ),
     );
   }
 
   @override
   Future<void> schedule(ReminderPlan plan) async {
-    await init();
+    try {
+      await init();
+    } catch (e) {
+      debugPrint('notification schedule failed: $e');
+      return;
+    }
     final when = tz.TZDateTime.from(plan.fireAtUtc.toUtc(), tz.UTC);
     Future<void> zoned(AndroidScheduleMode mode) => _plugin.zonedSchedule(
-          plan.id,
-          plan.title,
-          plan.body,
-          when,
-          _detailsFor(plan),
-          androidScheduleMode: mode,
-          payload: plan.bookingId.isNotEmpty ? plan.bookingId : plan.sessionId,
-        );
+      plan.id,
+      plan.title,
+      plan.body,
+      when,
+      _detailsFor(plan),
+      androidScheduleMode: mode,
+      payload: plan.bookingId.isNotEmpty ? plan.bookingId : plan.sessionId,
+    );
     try {
       await zoned(AndroidScheduleMode.exactAllowWhileIdle);
     } on PlatformException catch (e) {
@@ -278,7 +346,9 @@ class LocalNotificationService implements NotificationService {
   Future<List<int>> pendingIds() async {
     await init();
     try {
-      return [for (final p in await _plugin.pendingNotificationRequests()) p.id];
+      return [
+        for (final p in await _plugin.pendingNotificationRequests()) p.id,
+      ];
     } catch (e) {
       debugPrint('notification pending list failed: $e');
       return const [];

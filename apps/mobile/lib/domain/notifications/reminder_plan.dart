@@ -8,8 +8,21 @@ library;
 
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/domain/entities/booking.dart';
+import 'package:arena_ops/domain/notifications/notification_settings.dart';
 import 'package:arena_ops/domain/notifications/reminder_policy.dart';
 import 'package:meta/meta.dart';
+
+/// What a notification is for, which decides how the phone rings it.
+enum AlertKind {
+  /// A booking about to start.
+  booking,
+
+  /// A session's 5- or 1-minute warning: rings once.
+  warning,
+
+  /// A session's time is up: an alarm, which can keep ringing until seen.
+  timeUp,
+}
 
 @immutable
 class ReminderPlan {
@@ -20,9 +33,10 @@ class ReminderPlan {
     required this.fireAtUtc,
     required this.title,
     required this.body,
-    this.channelId,
+    this.kind = AlertKind.booking,
     this.enableVibration = true,
     this.playSound = true,
+    this.ringUntilSeen = false,
   });
 
   /// Stable notification id (deterministic from the booking/session id + slot),
@@ -34,22 +48,26 @@ class ReminderPlan {
   final DateTime fireAtUtc;
   final String title;
   final String body;
-  final String? channelId;
+  final AlertKind kind;
   final bool enableVibration;
   final bool playSound;
 
+  /// Keeps sounding until opened or cleared (only ever on a [AlertKind.timeUp]).
+  final bool ringUntilSeen;
+
   /// The same notification at another instant.
   ReminderPlan at(DateTime fireAtUtc) => ReminderPlan(
-        id: id,
-        bookingId: bookingId,
-        sessionId: sessionId,
-        fireAtUtc: fireAtUtc,
-        title: title,
-        body: body,
-        channelId: channelId,
-        enableVibration: enableVibration,
-        playSound: playSound,
-      );
+    id: id,
+    bookingId: bookingId,
+    sessionId: sessionId,
+    fireAtUtc: fireAtUtc,
+    title: title,
+    body: body,
+    kind: kind,
+    enableVibration: enableVibration,
+    playSound: playSound,
+    ringUntilSeen: ringUntilSeen,
+  );
 
   @override
   bool operator ==(Object other) =>
@@ -60,20 +78,24 @@ class ReminderPlan {
       other.fireAtUtc == fireAtUtc &&
       other.title == title &&
       other.body == body &&
+      other.kind == kind &&
       other.enableVibration == enableVibration &&
-      other.playSound == playSound;
+      other.playSound == playSound &&
+      other.ringUntilSeen == ringUntilSeen;
 
   @override
   int get hashCode => Object.hash(
-        id,
-        bookingId,
-        sessionId,
-        fireAtUtc,
-        title,
-        body,
-        enableVibration,
-        playSound,
-      );
+    id,
+    bookingId,
+    sessionId,
+    fireAtUtc,
+    title,
+    body,
+    kind,
+    enableVibration,
+    playSound,
+    ringUntilSeen,
+  );
 
   @override
   String toString() =>
@@ -132,93 +154,129 @@ List<ReminderPlan> buildBookingReminders({
 
   final leadAt = startUtc.subtract(Duration(minutes: policy.leadMinutes));
   if (leadAt.isAfter(now)) {
-    plans.add(ReminderPlan(
-      id: reminderId(booking.id, 0),
-      bookingId: booking.id,
-      fireAtUtc: leadAt,
-      title: 'Booking in ${policy.leadMinutes} min',
-      body: summary,
-    ));
+    plans.add(
+      ReminderPlan(
+        id: reminderId(booking.id, 0),
+        bookingId: booking.id,
+        fireAtUtc: leadAt,
+        title: 'Booking in ${policy.leadMinutes} min',
+        body: summary,
+      ),
+    );
   }
 
   if (policy.alsoAtStart && startUtc.isAfter(now)) {
-    plans.add(ReminderPlan(
-      id: reminderId(booking.id, 1),
-      bookingId: booking.id,
-      fireAtUtc: startUtc,
-      title: 'Booking starting now',
-      body: summary,
-    ));
+    plans.add(
+      ReminderPlan(
+        id: reminderId(booking.id, 1),
+        bookingId: booking.id,
+        fireAtUtc: startUtc,
+        title: 'Booking starting now',
+        body: summary,
+      ),
+    );
   }
 
   return plans;
 }
 
+/// When session alert [slot] rings for a session due to end at
+/// [scheduledEndAt]: slot 0 = 5 min before, slot 1 = 1 min before, slot 2 =
+/// the end itself.
+DateTime sessionAlertTime(DateTime scheduledEndAt, int slot) {
+  final endUtc = scheduledEndAt.toUtc();
+  return switch (slot) {
+    0 => endUtc.subtract(const Duration(minutes: 5)),
+    1 => endUtc.subtract(const Duration(minutes: 1)),
+    _ => endUtc,
+  };
+}
+
+/// Whether [settings] want session alert [slot] at all (the master switch,
+/// then that slot's own).
+bool sessionAlertWanted(NotificationSettings settings, int slot) =>
+    settings.enabled &&
+    switch (slot) {
+      0 => settings.alert5Min,
+      1 => settings.alert1Min,
+      _ => settings.alertAtEnd,
+    };
+
 /// Builds local notification alerts for an active session (spec §23, timer alerts).
 /// Slot 0: 5 minutes before scheduled end
 /// Slot 1: 1 minute before scheduled end (spec: "1 min mune alert")
-/// Slot 2: At scheduled end / Expired (spec: "സമയം കഴിഞ്ഞു")
+/// Slot 2: At scheduled end / Expired (spec: "സമയം കഴിഞ്ഞു") — the alarm, the
+/// only one that may keep ringing until seen.
+/// Nothing at all while [NotificationSettings.enabled] is off.
 List<ReminderPlan> buildSessionAlerts({
   required String sessionId,
   required String titleName,
   required DateTime scheduledEndAt,
   required DateTime now,
-  bool vibrationEnabled = true,
-  bool soundEnabled = true,
-  bool alert5Min = true,
-  bool alert1Min = true,
-  bool alertAtEnd = true,
+  NotificationSettings settings = const NotificationSettings(),
 }) {
   final plans = <ReminderPlan>[];
-  final endUtc = scheduledEndAt.toUtc();
-  final endLabel = IstTime.format12(endUtc);
+  final endLabel = IstTime.format12(scheduledEndAt.toUtc());
+
+  /// [slot], if it is wanted and its time is still ahead.
+  void add(int slot, String title, String body) {
+    final at = sessionAlertTime(scheduledEndAt, slot);
+    if (!sessionAlertWanted(settings, slot) || !at.isAfter(now)) return;
+    final timeUp = slot == 2;
+    plans.add(
+      ReminderPlan(
+        id: sessionAlertId(sessionId, slot),
+        sessionId: sessionId,
+        fireAtUtc: at,
+        title: title,
+        body: body,
+        kind: timeUp ? AlertKind.timeUp : AlertKind.warning,
+        enableVibration: settings.vibrationEnabled,
+        playSound: settings.soundEnabled,
+        ringUntilSeen: timeUp && settings.ringUntilSeen,
+      ),
+    );
+  }
 
   // Slot 0: 5 min before
-  if (alert5Min) {
-    final fiveMinAt = endUtc.subtract(const Duration(minutes: 5));
-    if (fiveMinAt.isAfter(now)) {
-      plans.add(ReminderPlan(
-        id: sessionAlertId(sessionId, 0),
-        sessionId: sessionId,
-        fireAtUtc: fiveMinAt,
-        title: '5 min remaining: $titleName',
-        body: 'Session ends at $endLabel. Prepare to extend or wrap up.',
-        enableVibration: vibrationEnabled,
-        playSound: soundEnabled,
-      ));
-    }
-  }
-
+  add(
+    0,
+    '5 min remaining: $titleName',
+    'Session ends at $endLabel. Prepare to extend or wrap up.',
+  );
   // Slot 1: 1 min before (specifically required by user)
-  if (alert1Min) {
-    final oneMinAt = endUtc.subtract(const Duration(minutes: 1));
-    if (oneMinAt.isAfter(now)) {
-      plans.add(ReminderPlan(
-        id: sessionAlertId(sessionId, 1),
-        sessionId: sessionId,
-        fireAtUtc: oneMinAt,
-        title: '1 min remaining: $titleName',
-        body: 'Session ends in 1 minute ($endLabel)! Final reminder.',
-        enableVibration: vibrationEnabled,
-        playSound: soundEnabled,
-      ));
-    }
-  }
-
+  add(
+    1,
+    '1 min remaining: $titleName',
+    'Session ends in 1 minute ($endLabel)! Final reminder.',
+  );
   // Slot 2: At scheduled end / Expired (specifically required by user)
-  if (alertAtEnd) {
-    if (endUtc.isAfter(now)) {
-      plans.add(ReminderPlan(
-        id: sessionAlertId(sessionId, 2),
-        sessionId: sessionId,
-        fireAtUtc: endUtc,
-        title: 'Time Expired: $titleName',
-        body: 'Session time has ended ($endLabel). Ready for checkout.',
-        enableVibration: vibrationEnabled,
-        playSound: soundEnabled,
-      ));
-    }
-  }
-
+  add(
+    2,
+    'Time Expired: $titleName',
+    'Session time has ended ($endLabel). Ready for checkout.',
+  );
   return plans;
 }
+
+/// The id of the settings screen's test alert: fixed, so a second tap
+/// replaces the first instead of stacking two.
+const int testAlertId = 0x7ffffff0;
+
+/// A test alert [delay] from [now] that rings exactly like a session's "time
+/// up" with [settings] (sound, vibration, ringing until seen) — so the person
+/// can lock the phone and hear what the floor will hear.
+ReminderPlan buildTestAlert({
+  required DateTime now,
+  required NotificationSettings settings,
+  Duration delay = const Duration(seconds: 5),
+}) => ReminderPlan(
+  id: testAlertId,
+  fireAtUtc: now.toUtc().add(delay),
+  title: 'Test alert',
+  body: 'This is how "time up" rings on this phone.',
+  kind: AlertKind.timeUp,
+  enableVibration: settings.vibrationEnabled,
+  playSound: settings.soundEnabled,
+  ringUntilSeen: settings.ringUntilSeen,
+);

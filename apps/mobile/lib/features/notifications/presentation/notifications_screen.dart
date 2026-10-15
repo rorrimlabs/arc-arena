@@ -8,6 +8,7 @@ import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/domain/notifications/reminder_policy.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/bookings/presentation/booking_screen.dart';
+import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -43,7 +44,17 @@ class NotificationsScreen extends ConsumerWidget {
     };
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Notifications')),
+      appBar: AppBar(
+        title: const Text('Notifications'),
+        actions: [
+          IconButton(
+            tooltip: 'Alert settings',
+            icon: const Icon(Icons.tune_rounded),
+            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
+                builder: (_) => const NotificationSettingsScreen())),
+          ),
+        ],
+      ),
       body: ListView(
         padding: const EdgeInsets.fromLTRB(
             AppSpacing.x5, AppSpacing.sm, AppSpacing.x5, AppSpacing.xxl),

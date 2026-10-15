@@ -29,6 +29,14 @@ class _RecordingService implements NotificationService {
   @override
   Future<bool> requestPermission() async => true;
   @override
+  Future<bool?> notificationsAllowed() async => true;
+  @override
+  Future<bool?> exactAlarmsAllowed() async => true;
+  @override
+  Future<bool> requestExactAlarms() async => true;
+  @override
+  Future<bool> openSystemSettings() async => false;
+  @override
   Future<void> schedule(ReminderPlan plan) async => scheduled.add(plan);
   @override
   Future<void> showInstant(ReminderPlan plan) async => scheduled.add(plan);

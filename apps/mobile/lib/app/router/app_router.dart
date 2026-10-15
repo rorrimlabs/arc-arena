@@ -3,6 +3,7 @@ import 'package:arena_ops/app/router/app_shell.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/features/auth/presentation/login_screen.dart';
+import 'package:arena_ops/features/bookings/presentation/bookings_screen.dart';
 import 'package:arena_ops/features/floor/presentation/floor_screen.dart';
 import 'package:arena_ops/features/money/presentation/money_screen.dart';
 import 'package:arena_ops/features/more/presentation/more_screen.dart';
@@ -12,10 +13,10 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-/// Five bottom tabs (design nav): Today · Floor · Money · Reports · More.
+/// Six bottom tabs: Today · Floor · Bookings · Money · Reports · More.
 /// Which ones show depends on the signed-in user's role (owners see Money /
-/// Reports / Today; staff see Floor + More). Customers ("Members") and the
-/// Games library live under More.
+/// Reports / Today; staff see Floor + Bookings + More). Customers ("Members")
+/// and the Games library live under More.
 final goRouterProvider = Provider<GoRouter>((ref) {
   // Re-run redirect whenever the signed-in user changes (sign in / out).
   final refresh = ValueNotifier<int>(0);
@@ -60,6 +61,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             GoRoute(
               path: FloorScreen.path,
               builder: (context, state) => const FloorScreen(),
+            ),
+          ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: BookingsScreen.path,
+              builder: (context, state) => const BookingsScreen(),
             ),
           ]),
           StatefulShellBranch(routes: [
@@ -126,10 +133,12 @@ class AppTab {
         TodayScreen.path, 0, requiresOwner: true),
     AppTab('Floor', Icons.grid_view_outlined, Icons.grid_view_rounded,
         FloorScreen.path, 1),
-    AppTab('Money', Icons.payments_outlined, Icons.payments, MoneyScreen.path, 2,
+    AppTab('Bookings', Icons.event_available_outlined, Icons.event_available,
+        BookingsScreen.path, 2),
+    AppTab('Money', Icons.payments_outlined, Icons.payments, MoneyScreen.path, 3,
         requires: Permission.money),
     AppTab('Reports', Icons.leaderboard_outlined, Icons.leaderboard,
-        ReportsScreen.path, 3, requires: Permission.reports),
-    AppTab('More', Icons.more_horiz, Icons.more_horiz, MoreScreen.path, 4),
+        ReportsScreen.path, 4, requires: Permission.reports),
+    AppTab('More', Icons.more_horiz, Icons.more_horiz, MoreScreen.path, 5),
   ];
 }

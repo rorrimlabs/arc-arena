@@ -22,20 +22,41 @@ create extension "btree_gist" schema "extensions";
 create sequence "public"."sync_tombstones_id_seq" as bigint increment by 1 minvalue 1 maxvalue
   9223372036854775807 START with 1 cache 1 no cycle;
 
+revoke all on sequence "public"."sync_tombstones_id_seq" from "anon", "authenticated";
+
+create table "public"."accessory_kinds" (
+  "id"                   uuid                     not null default gen_random_uuid(),
+  "arena_id"             uuid                     not null,
+  "name"                 text                     not null,
+  "counts_as_controller" boolean                  not null default false,
+  "sort_order"           integer                  not null default 0,
+  "active"               boolean                  not null default true,
+  "created_at"           timestamp with time zone not null default now(),
+  "updated_at"           timestamp with time zone not null default now(),
+  "sync_xid"             xid8                     not null default pg_current_xact_id(),
+  constraint "accessory_kinds_name_check"
+    check (((char_length(name) >= 1) AND (char_length(name) <= 40))),
+  constraint "accessory_kinds_pkey" primary key (id)
+);
+
+alter table "public"."accessory_kinds"
+  enable row level security;
+
+revoke all on table "public"."accessory_kinds" from "anon";
+
 create table "public"."activities" (
-  "id"                  uuid                     not null default gen_random_uuid(),
-  "arena_id"            uuid                     not null,
-  "code"                text                     not null,
-  "name"                text                     not null,
-  "uses_controllers"    boolean                  not null default false,
-  "uses_games"          boolean                  not null default false,
-  "duration_model"      text                     not null default 'hourly'::text,
-  "happy_hour_eligible" boolean                  not null default true,
-  "sort_order"          integer                  not null default 0,
-  "active"              boolean                  not null default true,
-  "created_at"          timestamp with time zone not null default now(),
-  "updated_at"          timestamp with time zone not null default now(),
-  "sync_xid"            xid8                     not null default pg_current_xact_id(),
+  "id"               uuid                     not null default gen_random_uuid(),
+  "arena_id"         uuid                     not null,
+  "code"             text                     not null,
+  "name"             text                     not null,
+  "uses_controllers" boolean                  not null default false,
+  "uses_games"       boolean                  not null default false,
+  "duration_model"   text                     not null default 'hourly'::text,
+  "sort_order"       integer                  not null default 0,
+  "active"           boolean                  not null default true,
+  "created_at"       timestamp with time zone not null default now(),
+  "updated_at"       timestamp with time zone not null default now(),
+  "sync_xid"         xid8                     not null default pg_current_xact_id(),
   constraint "activities_arena_id_code_key" unique (arena_id, code),
   constraint "activities_duration_model_check"
     check ((duration_model = ANY (ARRAY['hourly'::text, 'unit'::text, 'flat_hourly'::text]))),
@@ -44,6 +65,8 @@ create table "public"."activities" (
 
 alter table "public"."activities"
   enable row level security;
+
+revoke all on table "public"."activities" from "anon";
 
 create table "public"."arenas" (
   "id"         uuid                     not null default gen_random_uuid(),
@@ -62,6 +85,8 @@ create table "public"."arenas" (
 alter table "public"."arenas"
   enable row level security;
 
+revoke all on table "public"."arenas" from "anon";
+
 create table "public"."audit_log" (
   "id"          uuid                     not null default gen_random_uuid(),
   "arena_id"    uuid                     not null,
@@ -78,6 +103,43 @@ create table "public"."audit_log" (
 
 alter table "public"."audit_log"
   enable row level security;
+
+revoke all on table "public"."audit_log" from "anon";
+
+create table "public"."bill_discounts" (
+  "id"           uuid                     not null default gen_random_uuid(),
+  "arena_id"     uuid                     not null,
+  "session_id"   uuid,
+  "group_id"     uuid,
+  "discount_id"  uuid,
+  "source"       text                     not null,
+  "name"         text                     not null,
+  "code"         text,
+  "value_kind"   text                     not null,
+  "value"        bigint                   not null,
+  "base_paise"   bigint                   not null,
+  "amount_paise" bigint                   not null,
+  "reason"       text,
+  "applied_by"   uuid,
+  "applied_at"   timestamp with time zone not null,
+  "created_at"   timestamp with time zone not null default now(),
+  "sync_xid"     xid8                     not null default pg_current_xact_id(),
+  constraint "bill_discounts_amount_check"
+    check (((amount_paise >= 0) AND (amount_paise <= base_paise))),
+  constraint "bill_discounts_manual_check"
+    check (((source = 'manual'::text) = (discount_id IS NULL))),
+  constraint "bill_discounts_one_bill_check" check (((session_id IS NULL) <> (group_id IS NULL))),
+  constraint "bill_discounts_pkey" primary key (id),
+  constraint "bill_discounts_source_check"
+    check ((source = ANY (ARRAY['preset'::text, 'coupon'::text, 'manual'::text]))),
+  constraint "bill_discounts_value_kind_check"
+    check ((value_kind = ANY (ARRAY['percent'::text, 'flat'::text])))
+);
+
+alter table "public"."bill_discounts"
+  enable row level security;
+
+revoke all on table "public"."bill_discounts" from "anon";
 
 create table "public"."billing_policies" (
   "id"                      uuid                     not null default gen_random_uuid(),
@@ -127,6 +189,8 @@ create table "public"."billing_policies" (
 alter table "public"."billing_policies"
   enable row level security;
 
+revoke all on table "public"."billing_policies" from "anon";
+
 create table "public"."bookings" (
   "id"                     uuid                     not null default gen_random_uuid(),
   "arena_id"               uuid                     not null,
@@ -159,6 +223,8 @@ create table "public"."bookings" (
 alter table "public"."bookings"
   enable row level security;
 
+revoke all on table "public"."bookings" from "anon";
+
 create table "public"."controller_allocations" (
   "id"            uuid                     not null default gen_random_uuid(),
   "arena_id"      uuid                     not null,
@@ -189,6 +255,8 @@ create table "public"."controller_allocations" (
 alter table "public"."controller_allocations"
   enable row level security;
 
+revoke all on table "public"."controller_allocations" from "anon";
+
 create table "public"."controller_moves" (
   "id"               uuid                     not null default gen_random_uuid(),
   "arena_id"         uuid                     not null,
@@ -209,6 +277,8 @@ create table "public"."controller_moves" (
 alter table "public"."controller_moves"
   enable row level security;
 
+revoke all on table "public"."controller_moves" from "anon";
+
 create table "public"."controllers" (
   "id"                  uuid                     not null default gen_random_uuid(),
   "arena_id"            uuid                     not null,
@@ -219,6 +289,8 @@ create table "public"."controllers" (
   "notes"               text,
   "loan_return_to"      text,
   "loan_session_ref"    text,
+  "kind_id"             uuid,
+  "created_at"          timestamp with time zone not null default now(),
   "updated_at"          timestamp with time zone not null default now(),
   "sync_xid"            xid8                     not null default pg_current_xact_id(),
   constraint "controllers_pkey" primary key (id),
@@ -230,6 +302,8 @@ create table "public"."controllers" (
 
 alter table "public"."controllers"
   enable row level security;
+
+revoke all on table "public"."controllers" from "anon";
 
 create table "public"."customers" (
   "id"            uuid                     not null default gen_random_uuid(),
@@ -250,6 +324,51 @@ create table "public"."customers" (
 alter table "public"."customers"
   enable row level security;
 
+revoke all on table "public"."customers" from "anon";
+
+create table "public"."discounts" (
+  "id"                 uuid                     not null default gen_random_uuid(),
+  "arena_id"           uuid                     not null,
+  "kind"               text                     not null,
+  "name"               text                     not null,
+  "code"               text,
+  "value_kind"         text                     not null,
+  "value"              bigint                   not null,
+  "max_discount_paise" bigint,
+  "min_bill_paise"     bigint,
+  "activity_codes"     text[]                   not null default '{}'::text[],
+  "valid_from"         timestamp with time zone,
+  "valid_until"        timestamp with time zone,
+  "max_uses"           integer,
+  "active"             boolean                  not null default true,
+  "created_at"         timestamp with time zone not null default now(),
+  "updated_at"         timestamp with time zone not null default now(),
+  "sync_xid"           xid8                     not null default pg_current_xact_id(),
+  constraint "discounts_code_check"
+    check
+    ((((kind = 'coupon'::text) AND (code ~ '^[A-Z0-9_-]{3,20}$'::text)) OR ((kind = 'preset'::text)
+    AND (code IS NULL)))),
+  constraint "discounts_kind_check" check ((kind = ANY (ARRAY['preset'::text, 'coupon'::text]))),
+  constraint "discounts_max_discount_check"
+    check (((max_discount_paise IS NULL) OR (max_discount_paise >= 1))),
+  constraint "discounts_max_uses_check" check (((max_uses IS NULL) OR (max_uses >= 1))),
+  constraint "discounts_min_bill_check" check (((min_bill_paise IS NULL) OR (min_bill_paise >= 0))),
+  constraint "discounts_name_check"
+    check (((char_length(name) >= 1) AND (char_length(name) <= 40))),
+  constraint "discounts_pkey" primary key (id),
+  constraint "discounts_valid_check"
+    check (((valid_from IS NULL) OR (valid_until IS NULL) OR (valid_from < valid_until))),
+  constraint "discounts_value_check"
+    check
+    ((((value_kind = 'percent'::text) AND (value >= 1) AND (value <= 100)) OR ((value_kind =
+    'flat'::text) AND (value >= 1) AND (value <= 100000000))))
+);
+
+alter table "public"."discounts"
+  enable row level security;
+
+revoke all on table "public"."discounts" from "anon";
+
 create table "public"."game_categories" (
   "id"         uuid                     not null default gen_random_uuid(),
   "arena_id"   uuid                     not null,
@@ -264,6 +383,8 @@ create table "public"."game_categories" (
 
 alter table "public"."game_categories"
   enable row level security;
+
+revoke all on table "public"."game_categories" from "anon";
 
 create table "public"."game_controls" (
   "id"          uuid                     not null default gen_random_uuid(),
@@ -285,6 +406,8 @@ create table "public"."game_controls" (
 alter table "public"."game_controls"
   enable row level security;
 
+revoke all on table "public"."game_controls" from "anon";
+
 create table "public"."game_resources" (
   "arena_id"    uuid                     not null,
   "game_id"     uuid                     not null,
@@ -302,6 +425,8 @@ create table "public"."game_resources" (
 
 alter table "public"."game_resources"
   enable row level security;
+
+revoke all on table "public"."game_resources" from "anon";
 
 create table "public"."games" (
   "id"                uuid                     not null default gen_random_uuid(),
@@ -332,6 +457,8 @@ create table "public"."games" (
 alter table "public"."games"
   enable row level security;
 
+revoke all on table "public"."games" from "anon";
+
 create table "public"."group_assignments" (
   "id"               uuid                     not null default gen_random_uuid(),
   "arena_id"         uuid                     not null,
@@ -357,6 +484,8 @@ create table "public"."group_assignments" (
 
 alter table "public"."group_assignments"
   enable row level security;
+
+revoke all on table "public"."group_assignments" from "anon";
 
 create table "public"."group_charges" (
   "id"               uuid                     not null default gen_random_uuid(),
@@ -386,6 +515,8 @@ create table "public"."group_charges" (
 alter table "public"."group_charges"
   enable row level security;
 
+revoke all on table "public"."group_charges" from "anon";
+
 create table "public"."group_extensions" (
   "id"                 uuid                     not null default gen_random_uuid(),
   "arena_id"           uuid                     not null,
@@ -406,6 +537,8 @@ create table "public"."group_extensions" (
 
 alter table "public"."group_extensions"
   enable row level security;
+
+revoke all on table "public"."group_extensions" from "anon";
 
 create table "public"."group_payments" (
   "id"           uuid                     not null default gen_random_uuid(),
@@ -430,6 +563,8 @@ create table "public"."group_payments" (
 
 alter table "public"."group_payments"
   enable row level security;
+
+revoke all on table "public"."group_payments" from "anon";
 
 create table "public"."group_sessions" (
   "id"                         uuid                     not null default gen_random_uuid(),
@@ -467,6 +602,8 @@ create table "public"."group_sessions" (
 alter table "public"."group_sessions"
   enable row level security;
 
+revoke all on table "public"."group_sessions" from "anon";
+
 create table "public"."holidays" (
   "id"         uuid                     not null default gen_random_uuid(),
   "arena_id"   uuid                     not null,
@@ -482,6 +619,8 @@ create table "public"."holidays" (
 
 alter table "public"."holidays"
   enable row level security;
+
+revoke all on table "public"."holidays" from "anon";
 
 create table "public"."payments" (
   "id"           uuid                     not null default gen_random_uuid(),
@@ -508,6 +647,8 @@ create table "public"."payments" (
 alter table "public"."payments"
   enable row level security;
 
+revoke all on table "public"."payments" from "anon";
+
 create table "public"."pricing_catalog_history" (
   "arena_id"   uuid                     not null,
   "canon"      jsonb                    not null,
@@ -516,6 +657,52 @@ create table "public"."pricing_catalog_history" (
 
 alter table "public"."pricing_catalog_history"
   enable row level security;
+
+revoke all on table "public"."pricing_catalog_history" from "anon", "authenticated";
+
+create table "public"."pricing_rules" (
+  "id"             uuid                     not null default gen_random_uuid(),
+  "arena_id"       uuid                     not null,
+  "name"           text                     not null,
+  "priority"       integer                  not null default 0,
+  "active"         boolean                  not null default true,
+  "days"           smallint[]               not null,
+  "start_min"      integer                  not null,
+  "end_min"        integer                  not null,
+  "holiday_mode"   text                     not null default 'any'::text,
+  "valid_from"     date,
+  "valid_until"    date,
+  "activity_codes" text[]                   not null default '{}'::text[],
+  "adjust_kind"    text                     not null,
+  "adjust_value"   integer                  not null,
+  "created_at"     timestamp with time zone not null default now(),
+  "updated_at"     timestamp with time zone not null default now(),
+  "sync_xid"       xid8                     not null default pg_current_xact_id(),
+  constraint "pricing_rules_adjust_check"
+    check
+    ((((adjust_kind = 'percent'::text) AND (adjust_value >= '-100'::integer) AND (adjust_value <=
+    500) AND (adjust_value <> 0)) OR
+    ((adjust_kind = 'per_hour'::text) AND (adjust_value >= '-10000000'::integer) AND (adjust_value
+    <= 10000000) AND (adjust_value <> 0)))),
+  constraint "pricing_rules_days_check"
+    check
+    (((cardinality(days) >= 1) AND (days <@ ARRAY[(1)::smallint, (2)::smallint, (3)::smallint,
+    (4)::smallint, (5)::smallint, (6)::smallint, (7)::smallint]))),
+  constraint "pricing_rules_holiday_mode_check"
+    check ((holiday_mode = ANY (ARRAY['any'::text, 'only'::text, 'skip'::text]))),
+  constraint "pricing_rules_name_check"
+    check (((char_length(name) >= 1) AND (char_length(name) <= 40))),
+  constraint "pricing_rules_pkey" primary key (id),
+  constraint "pricing_rules_valid_check"
+    check (((valid_from IS NULL) OR (valid_until IS NULL) OR (valid_from <= valid_until))),
+  constraint "pricing_rules_window_check"
+    check (((start_min >= 0) AND (start_min < end_min) AND (end_min <= 1440)))
+);
+
+alter table "public"."pricing_rules"
+  enable row level security;
+
+revoke all on table "public"."pricing_rules" from "anon";
 
 create table "public"."rate_bands" (
   "id"         uuid                     not null default gen_random_uuid(),
@@ -532,6 +719,8 @@ create table "public"."rate_bands" (
 alter table "public"."rate_bands"
   enable row level security;
 
+revoke all on table "public"."rate_bands" from "anon";
+
 create table "public"."rate_cards" (
   "id"             uuid                     not null default gen_random_uuid(),
   "arena_id"       uuid                     not null,
@@ -546,6 +735,8 @@ create table "public"."rate_cards" (
 
 alter table "public"."rate_cards"
   enable row level security;
+
+revoke all on table "public"."rate_cards" from "anon";
 
 create table "public"."rates" (
   "id"               uuid                     not null default gen_random_uuid(),
@@ -569,6 +760,8 @@ create table "public"."rates" (
 alter table "public"."rates"
   enable row level security;
 
+revoke all on table "public"."rates" from "anon";
+
 create table "public"."resource_activities" (
   "id"          uuid                     not null default gen_random_uuid(),
   "arena_id"    uuid                     not null,
@@ -583,6 +776,8 @@ create table "public"."resource_activities" (
 
 alter table "public"."resource_activities"
   enable row level security;
+
+revoke all on table "public"."resource_activities" from "anon";
 
 create table "public"."resources" (
   "id"           uuid                     not null default gen_random_uuid(),
@@ -607,6 +802,8 @@ create table "public"."resources" (
 
 alter table "public"."resources"
   enable row level security;
+
+revoke all on table "public"."resources" from "anon";
 
 create table "public"."session_charges" (
   "id"               uuid                     not null default gen_random_uuid(),
@@ -636,6 +833,8 @@ create table "public"."session_charges" (
 alter table "public"."session_charges"
   enable row level security;
 
+revoke all on table "public"."session_charges" from "anon";
+
 create table "public"."session_extensions" (
   "id"                 uuid                     not null default gen_random_uuid(),
   "arena_id"           uuid                     not null,
@@ -656,6 +855,8 @@ create table "public"."session_extensions" (
 
 alter table "public"."session_extensions"
   enable row level security;
+
+revoke all on table "public"."session_extensions" from "anon";
 
 create table "public"."session_segments" (
   "id"               uuid                     not null default gen_random_uuid(),
@@ -680,6 +881,8 @@ create table "public"."session_segments" (
 
 alter table "public"."session_segments"
   enable row level security;
+
+revoke all on table "public"."session_segments" from "anon";
 
 create table "public"."sessions" (
   "id"                  uuid                     not null default gen_random_uuid(),
@@ -714,6 +917,8 @@ create table "public"."sessions" (
 alter table "public"."sessions"
   enable row level security;
 
+revoke all on table "public"."sessions" from "anon";
+
 create table "public"."settings" (
   "arena_id"   uuid                     not null,
   "key"        text                     not null,
@@ -725,6 +930,8 @@ create table "public"."settings" (
 
 alter table "public"."settings"
   enable row level security;
+
+revoke all on table "public"."settings" from "anon";
 
 create table "public"."staff_invites" (
   "id"          uuid                     not null default gen_random_uuid(),
@@ -753,6 +960,8 @@ create table "public"."staff_invites" (
 alter table "public"."staff_invites"
   enable row level security;
 
+revoke all on table "public"."staff_invites" from "anon", "authenticated";
+
 create table "public"."staff_profiles" (
   "id"         uuid                     not null default gen_random_uuid(),
   "arena_id"   uuid                     not null,
@@ -773,6 +982,8 @@ create table "public"."staff_profiles" (
 alter table "public"."staff_profiles"
   enable row level security;
 
+revoke all on table "public"."staff_profiles" from "anon";
+
 create table "public"."sync_ops" (
   "op_id"         uuid                     not null,
   "arena_id"      uuid                     not null,
@@ -792,6 +1003,8 @@ create table "public"."sync_ops" (
 alter table "public"."sync_ops"
   enable row level security;
 
+revoke all on table "public"."sync_ops" from "anon", "authenticated";
+
 create table "public"."sync_tombstones" (
   "id"         bigint
     not null default nextval('public.sync_tombstones_id_seq'::regclass),
@@ -805,6 +1018,8 @@ create table "public"."sync_tombstones" (
 
 alter table "public"."sync_tombstones"
   enable row level security;
+
+revoke all on table "public"."sync_tombstones" from "anon", "authenticated";
 
 alter table "public"."pricing_catalog_history"
   add column "canon_md5" text generated always as (md5((canon)::text)) stored not null;
@@ -945,6 +1160,178 @@ create or replace function private.app_is_owner (
   );
 $function$;
 
+create or replace function private.arena_activity (
+  p_arena    uuid,
+  p_resource uuid,
+  p_customer uuid,
+  p_since    timestamp with time zone,
+  p_limit    integer                  default 6
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_out jsonb;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read play history';
+  end if;
+  if (p_resource is null) = (p_customer is null) then
+    raise exception 'invalid' using hint = 'one of station or member';
+  end if;
+
+  with pl as (
+    select 'single' as kind, g.session_id as bill_id, s.status, s.customer_id, g.resource_id,
+           g.game_id, g.started_at, s.billed_amount_paise as billed
+      from session_segments g join sessions s on s.id = g.session_id
+     where g.arena_id = p_arena and (g.started_at >= p_since or g.ended_at is null)
+       and (g.resource_id = p_resource or s.customer_id = p_customer)
+    union all
+    select 'group', a.group_id, gs.status, gs.primary_customer_id, a.resource_id, a.game_id,
+           a.started_at, gs.billed_amount_paise
+      from group_assignments a join group_sessions gs on gs.id = a.group_id
+     where a.arena_id = p_arena and (a.started_at >= p_since or a.ended_at is null)
+       and (a.resource_id = p_resource or gs.primary_customer_id = p_customer)
+  ), latest as (
+    select distinct on (kind, bill_id) * from pl order by kind, bill_id, started_at desc
+  )
+  select jsonb_build_object(
+    'bills', coalesce((select jsonb_agg(jsonb_build_object('bill_id', l.bill_id, 'kind', l.kind,
+        'started_at', l.started_at, 'status', l.status, 'billed_paise', l.billed,
+        'customer', case when c.is_guest then null else c.name end, 'station', r.name,
+        'game', gm.name) order by l.started_at desc, l.bill_id)
+        from (select * from latest order by started_at desc, bill_id
+               limit least(greatest(coalesce(p_limit, 6), 1), 50)) l
+        left join customers c on c.id = l.customer_id
+        left join resources r on r.id = l.resource_id
+        left join games gm on gm.id = l.game_id), '[]'::jsonb),
+    'games', case when p_customer is null then '[]'::jsonb else coalesce((
+        select jsonb_agg(jsonb_build_object('game_id', t.game_id, 'name', gm.name,
+            'minutes', round(t.minutes)) order by t.minutes desc, gm.name)
+          from (select game_id, sum(minutes) as minutes from _plays(p_arena, p_since)
+                 where customer_id = p_customer and game_id is not null group by game_id) t
+          join games gm on gm.id = t.game_id), '[]'::jsonb) end)
+    into v_out;
+  return v_out;
+end;
+$function$;
+
+create or replace function private.arena_discount_usage (
+  p_arena    uuid,
+  p_discount uuid,
+  p_limit    integer default 40,
+  p_cursor   text    default null::text
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare
+  v_limit int := least(greatest(coalesce(p_limit, 40), 1), 100);
+  v_rows  jsonb;
+  v_at    timestamptz := nullif(split_part(coalesce(p_cursor, ''), '|', 1), '')::timestamptz;
+  v_id    uuid := nullif(split_part(coalesce(p_cursor, ''), '|', 2), '')::uuid;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read sales';
+  end if;
+  if not exists (select 1 from discounts where id = p_discount and arena_id = p_arena) then
+    raise exception 'not_found' using hint = 'discount';
+  end if;
+
+  select coalesce(jsonb_agg(x.j || jsonb_build_object('cursor', x.at::text || '|' || x.id)
+                            order by x.at desc, x.id desc), '[]'::jsonb) into v_rows
+    from (select d.id, d.applied_at as at, jsonb_build_object(
+              'bill_id', coalesce(d.session_id, d.group_id),
+              'kind', case when d.session_id is not null then 'single' else 'group' end,
+              'at', d.applied_at, 'customer', c.name,
+              'billed_paise', coalesce(s.billed_amount_paise, g.billed_amount_paise),
+              'amount_paise', d.amount_paise, 'base_paise', d.base_paise,
+              'status', coalesce(s.status, g.status), 'by', sp.name) as j
+            from bill_discounts d
+            left join sessions s on s.id = d.session_id
+            left join group_sessions g on g.id = d.group_id
+            left join customers c on c.id = coalesce(s.customer_id, g.primary_customer_id)
+            left join staff_profiles sp on sp.arena_id = d.arena_id and sp.user_id = d.applied_by
+           where d.arena_id = p_arena and d.discount_id = p_discount
+             and (v_at is null or (d.applied_at, d.id) < (v_at, coalesce(v_id, 'ffffffff-ffff-ffff-ffff-ffffffffffff'::uuid)))
+           order by d.applied_at desc, d.id desc
+           limit v_limit + 1) x;
+
+  return jsonb_build_object(
+    'uses', (select count(*) from bill_discounts where discount_id = p_discount),
+    'active_uses', (select count(*) from bill_discounts d
+                      left join sessions s on s.id = d.session_id
+                      left join group_sessions g on g.id = d.group_id
+                     where d.discount_id = p_discount and coalesce(s.status, g.status) <> 'voided'),
+    'rows', (select coalesce(jsonb_agg(r - 'cursor' order by n), '[]'::jsonb)
+               from jsonb_array_elements(v_rows) with ordinality x(r, n) where n <= v_limit),
+    'next', case when jsonb_array_length(v_rows) > v_limit
+                 then v_rows->(v_limit - 1)->>'cursor' end);
+end;
+$function$;
+
+create or replace function private.arena_game_fans (
+  p_arena uuid,
+  p_game  uuid,
+  p_since timestamp with time zone,
+  p_limit integer                  default 4
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_out jsonb;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read game figures';
+  end if;
+  select coalesce(jsonb_agg(jsonb_build_object('customer_id', x.customer_id, 'name', x.name,
+      'sessions', x.bills, 'minutes', round(x.minutes)) order by x.minutes desc, x.name), '[]'::jsonb)
+    into v_out
+    from (select t.customer_id, c.name, t.bills, t.minutes
+            from (select customer_id, count(distinct (kind, bill_id)) as bills, sum(minutes) as minutes
+                    from _plays(p_arena, coalesce(p_since, now() - interval '30 days'))
+                   where game_id = p_game group by customer_id) t
+            join customers c on c.id = t.customer_id and not c.is_guest
+           order by t.minutes desc, c.name
+           limit least(greatest(coalesce(p_limit, 4), 1), 20)) x;
+  return v_out;
+end;
+$function$;
+
+create or replace function private.arena_game_stats (
+  p_arena uuid,
+  p_since timestamp with time zone
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_out jsonb;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read game figures';
+  end if;
+  select coalesce(jsonb_object_agg(game_id, jsonb_build_object(
+      'minutes_30', round(minutes), 'sessions_30', bills, 'playing_now', now_playing)), '{}'::jsonb)
+    into v_out
+    from (select game_id, sum(minutes) as minutes, count(distinct (kind, bill_id)) as bills,
+                 count(*) filter (where ended_at is null and bill_status = 'active') as now_playing
+            from _plays(p_arena, coalesce(p_since, now() - interval '30 days'))
+           where game_id is not null group by game_id) t;
+  return v_out;
+end;
+$function$;
+
 create or replace function private.arena_invites (
   p_arena uuid
 )
@@ -971,6 +1358,149 @@ begin
 end;
 $function$;
 
+create or replace function private.arena_members (
+  p_arena    uuid,
+  p_since    timestamp with time zone,
+  p_since_30 timestamp with time zone,
+  p_search   text                     default null::text,
+  p_limit    integer                  default 50,
+  p_offset   integer                  default 0
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare
+  v_q      text := nullif(lower(btrim(coalesce(p_search, ''))), '');
+  v_digits text := nullif(regexp_replace(coalesce(p_search, ''), '\D', '', 'g'), '');
+  v_out    jsonb;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read members';
+  end if;
+
+  with m as (
+    select c.* from customers c
+     where c.arena_id = p_arena and not c.is_guest
+       and (v_q is null or position(v_q in lower(c.name)) > 0
+            or (v_digits is not null
+                and position(v_digits in regexp_replace(coalesce(c.phone, ''), '\D', '', 'g')) > 0))
+  ), b as (
+    select s.customer_id as cid, s.started_at, s.billed_amount_paise as billed from sessions s
+     where s.arena_id = p_arena and s.status <> 'voided' and (s.started_at >= p_since or s.status = 'active')
+    union all
+    select g.primary_customer_id, g.started_at, g.billed_amount_paise from group_sessions g
+     where g.arena_id = p_arena and g.status <> 'voided' and (g.started_at >= p_since or g.status = 'active')
+  ), pl as (
+    select customer_id, sum(minutes) as minutes from _plays(p_arena, p_since) group by customer_id
+  ), s as (
+    select m.id, m.name, m.phone, m.birth_year, m.created_at,
+           (select count(*) from b where b.cid = m.id) as visits,
+           coalesce((select round(pl.minutes) from pl where pl.customer_id = m.id), 0) as minutes,
+           coalesce((select sum(b.billed) from b where b.cid = m.id and b.started_at >= p_since_30), 0)
+             as spent,
+           greatest(m.last_visit_at, (select max(b.started_at) from b where b.cid = m.id)) as last_visit
+      from m
+  )
+  select jsonb_build_object(
+    'total', (select count(*) from s),
+    'rows', coalesce((select jsonb_agg(jsonb_build_object('id', id, 'name', name, 'phone', phone,
+        'birth_year', birth_year, 'created_at', created_at, 'visits', visits, 'minutes', minutes,
+        'spent_30_paise', spent, 'last_visit', last_visit) order by last_visit desc nulls last, name, id)
+        from (select * from s order by last_visit desc nulls last, name, id
+               limit least(greatest(coalesce(p_limit, 50), 1), 200)
+               offset greatest(coalesce(p_offset, 0), 0)) p), '[]'::jsonb))
+    into v_out;
+  return v_out;
+end;
+$function$;
+
+create or replace function private.arena_overview (
+  p_arena     uuid,
+  p_from      timestamp with time zone,
+  p_to        timestamp with time zone,
+  p_prev_from timestamp with time zone,
+  p_prev_to   timestamp with time zone,
+  p_bucket    text,
+  p_today     timestamp with time zone
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_out jsonb;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read sales';
+  end if;
+  if p_from is null or p_to is null or p_to <= p_from or p_to - p_from > interval '400 days'
+     or p_prev_from is null or p_prev_to is null or p_prev_to < p_prev_from
+     or p_prev_to - p_prev_from > interval '400 days'
+     or p_bucket is null or p_bucket not in ('hour', 'day', 'month') then
+    raise exception 'invalid_range' using hint = 'up to 400 days; bucket hour, day or month';
+  end if;
+
+  with cur as (
+    select x as b, (x->>'at')::timestamptz as at from _sales(p_arena, p_from, p_to) x
+  ), live as (
+    select b, at from cur where b->>'status' <> 'voided'
+  ), prev as (
+    select x as b from _sales(p_arena, p_prev_from, p_prev_to) x where x->>'status' <> 'voided'
+  )
+  select jsonb_build_object(
+    'totals', (select jsonb_build_object(
+        'takings_paise', coalesce(sum((b->>'paid_paise')::bigint), 0),
+        'bills', count(*),
+        'minutes', coalesce(sum(_bill_minutes(b)), 0),
+        'discount_paise', coalesce(sum((b->>'discount_paise')::bigint), 0),
+        'discounts', count(*) filter (where (b->>'discount_paise')::bigint > 0)) from live),
+    'previous', (select jsonb_build_object(
+        'takings_paise', coalesce(sum((b->>'paid_paise')::bigint), 0),
+        'bills', count(*),
+        'minutes', coalesce(sum(_bill_minutes(b)), 0)) from prev),
+    'buckets', coalesce((select jsonb_agg(jsonb_build_object('start', k, 'paise', paise) order by k)
+        from (select date_trunc(p_bucket, at at time zone 'Asia/Kolkata') at time zone 'Asia/Kolkata' as k,
+                     sum((b->>'paid_paise')::bigint) as paise
+                from live group by 1) t), '[]'::jsonb),
+    'methods', coalesce((select jsonb_object_agg(m, jsonb_build_object('paise', paise, 'bills', bills))
+        from (select e.key as m, sum(e.value::bigint) as paise,
+                     count(*) filter (where e.value::bigint > 0) as bills
+                from live, jsonb_each_text(b->'methods') e group by e.key) t), '{}'::jsonb),
+    'by_type', coalesce((select jsonb_object_agg(code, paise)
+        from (select activity_code as code, sum(amount_paise) as paise from (
+                select ch.activity_code, ch.amount_paise from session_charges ch
+                  join sessions s on s.id = ch.session_id
+                 where ch.arena_id = p_arena and s.status <> 'voided'
+                   and ch.segment_start >= p_from and ch.segment_start < p_to
+                union all
+                select ch.activity_code, ch.amount_paise from group_charges ch
+                  join group_sessions g on g.id = ch.group_id
+                 where ch.arena_id = p_arena and g.status <> 'voided'
+                   and ch.segment_start >= p_from and ch.segment_start < p_to) c
+              group by activity_code) t), '{}'::jsonb),
+    'top_games', coalesce((select jsonb_agg(jsonb_build_object('name', name, 'minutes', round(minutes))
+                             order by minutes desc, name)
+        from (select g.value as name,
+                     sum(_bill_minutes(b)::numeric / jsonb_array_length(b->'games')) as minutes
+                from live, jsonb_array_elements_text(b->'games') g
+               group by g.value order by 2 desc, 1 limit 5) t), '[]'::jsonb),
+    'by_staff', coalesce((select jsonb_agg(jsonb_build_object('name', name, 'bills', bills, 'paise', paise)
+                            order by paise desc, name)
+        from (select b->>'started_by' as name, count(*) as bills,
+                     sum((b->>'paid_paise')::bigint) as paise
+                from live where b->>'started_by' is not null group by 1) t), '[]'::jsonb),
+    'latest', coalesce((select jsonb_agg(b order by at desc, b->>'id' desc)
+        from (select b, at from cur where at >= p_today order by at desc, b->>'id' desc limit 8) t),
+        '[]'::jsonb))
+  into v_out;
+  return v_out;
+end;
+$function$;
+
 create or replace function private.arena_pricing (
   p_arena uuid
 )
@@ -989,7 +1519,7 @@ begin
       select jsonb_agg(jsonb_build_object(
           'id', a.id, 'code', a.code, 'name', a.name,
           'uses_controllers', a.uses_controllers, 'uses_games', a.uses_games,
-          'duration_model', a.duration_model, 'happy_hour_eligible', a.happy_hour_eligible,
+          'duration_model', a.duration_model,
           'sort_order', a.sort_order, 'active', a.active,
           'stations', (select count(*) from resource_activities ra
                          join resources r on r.id = ra.resource_id
@@ -1001,8 +1531,8 @@ begin
           'controller_count', v.controller_count, 'unit_minutes', v.unit_minutes,
           'price_paise', v.price_paise)
         order by v.activity_code, v.band, v.controller_count nulls first)
-        from sync_v_rates v where v.arena_id = p_arena), '[]'::jsonb),
-    'hours', _pricing_snapshot(p_arena)->'hours');
+        from sync_v_rates v where v.arena_id = p_arena and v.band = 'standard'), '[]'::jsonb),
+    'hours', jsonb_build_object('open', _pricing_snapshot(p_arena)->'hours'->'open'));
 end;
 $function$;
 
@@ -1045,7 +1575,13 @@ begin
           order by e.created_at)
           from session_extensions e
           left join staff_profiles sp on sp.arena_id = e.arena_id and sp.user_id = e.created_by
-         where e.session_id = p_id), '[]'::jsonb));
+         where e.session_id = p_id), '[]'::jsonb),
+      'rule', (
+        select _pr_rule(s.pricing_snapshot, g.activity_code, s.started_at)
+          from sessions s
+          join lateral (select activity_code from session_segments
+                         where session_id = s.id order by idx limit 1) g on true
+         where s.id = p_id));
   else
     v_bill := v_bill || jsonb_build_object(
       'lines', coalesce((
@@ -1067,7 +1603,13 @@ begin
           order by e.created_at)
           from group_extensions e
           left join staff_profiles sp on sp.arena_id = e.arena_id and sp.user_id = e.created_by
-         where e.group_id = p_id), '[]'::jsonb));
+         where e.group_id = p_id), '[]'::jsonb),
+      'rule', (
+        select _pr_rule(gs.pricing_snapshot, g.activity_code, gs.started_at)
+          from group_sessions gs
+          join lateral (select activity_code from group_assignments
+                         where group_id = gs.id order by player_number, idx limit 1) g on true
+         where gs.id = p_id));
   end if;
 
   return v_bill || jsonb_build_object(
@@ -1152,6 +1694,57 @@ begin
       join auth.users u on u.id = s.user_id
       left join per p on p.created_by = s.user_id
      where s.arena_id = p_arena), '[]'::jsonb);
+end;
+$function$;
+
+create or replace function private.arena_station_stats (
+  p_arena uuid,
+  p_today timestamp with time zone,
+  p_since timestamp with time zone,
+  p_to    timestamp with time zone
+)
+  returns jsonb
+  language plpgsql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_out jsonb;
+begin
+  if not private.app_is_owner(p_arena) then
+    raise exception 'forbidden' using errcode = '42501', hint = 'only an owner can read station figures';
+  end if;
+  if p_since is null or p_today is null or p_to is null or p_to <= p_since
+     or p_to - p_since > interval '400 days' then
+    raise exception 'invalid_range' using hint = 'up to 400 days';
+  end if;
+
+  with ch as (
+    select ch.resource_id, ch.segment_start, ch.amount_paise from session_charges ch
+      join sessions s on s.id = ch.session_id
+     where ch.arena_id = p_arena and s.status <> 'voided'
+       and ch.segment_start >= p_since and ch.segment_start < p_to
+    union all
+    select ch.resource_id, ch.segment_start, ch.amount_paise from group_charges ch
+      join group_sessions g on g.id = ch.group_id
+     where ch.arena_id = p_arena and g.status <> 'voided'
+       and ch.segment_start >= p_since and ch.segment_start < p_to
+  ), pl as (
+    select * from _plays(p_arena, p_since)
+  )
+  select coalesce(jsonb_object_agg(r.id, jsonb_build_object(
+      'billed_today', coalesce((select sum(amount_paise) from ch
+                                 where ch.resource_id = r.id and ch.segment_start >= p_today), 0),
+      'sessions_today', (select count(distinct (pl.kind, pl.bill_id)) from pl
+                          where pl.resource_id = r.id and pl.started_at >= p_today),
+      'minutes_30', coalesce((select round(sum(pl.minutes)) from pl
+                               where pl.resource_id = r.id and pl.started_at >= p_since), 0),
+      'billed_30', coalesce((select sum(amount_paise) from ch where ch.resource_id = r.id), 0),
+      'accessories', (select count(*) from controllers c
+                       where c.home_resource_id = r.id and c.status <> 'retired'))), '{}'::jsonb)
+    into v_out
+    from resources r where r.arena_id = p_arena;
+  return v_out;
 end;
 $function$;
 
@@ -1530,6 +2123,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_active_card"(uuid) from public, "anon", "authenticated";
+
 create or replace function public._activity_id (
   p_arena uuid,
   p_code  text
@@ -1548,6 +2143,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_activity_id"(uuid, text) from public, "anon", "authenticated";
+
 create or replace function public._assert_known_perms (
   p_perms text[]
 )
@@ -1563,6 +2160,8 @@ begin
   end if;
 end;
 $function$;
+
+revoke all on function "public"."_assert_known_perms"(text[]) from public, "anon", "authenticated";
 
 create or replace function public._assert_same_arena()
   returns trigger
@@ -1594,6 +2193,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_assert_same_arena"() from public, "anon", "authenticated";
+
 create or replace function public._assert_settings_holder (
   p_arena uuid
 )
@@ -1611,6 +2212,8 @@ begin
   end if;
 end;
 $function$;
+
+revoke all on function "public"."_assert_settings_holder"(uuid) from public, "anon", "authenticated";
 
 create or replace function public._assert_snapshot (
   p_arena uuid,
@@ -1638,6 +2241,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_assert_snapshot"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public._band_id (
   p_arena uuid,
   p_code  text
@@ -1657,6 +2262,22 @@ begin
   return v;
 end;
 $function$;
+
+revoke all on function "public"."_band_id"(uuid, text) from public, "anon", "authenticated";
+
+create or replace function public._bill_minutes (
+  b jsonb
+)
+  returns bigint
+  language sql
+  immutable
+  set search_path to 'public'
+  AS $function$
+  select greatest(0, round(extract(epoch from (
+    coalesce(b->>'ended_at', b->>'at')::timestamptz - (b->>'started_at')::timestamptz)) / 60))::bigint;
+$function$;
+
+revoke all on function "public"."_bill_minutes"(jsonb) from public, "anon", "authenticated";
 
 create or replace function public._booking_free (
   p_arena    uuid,
@@ -1681,6 +2302,11 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."_booking_free"(uuid, uuid, uuid, timestamp with time zone, timestamp
+    with time zone)
+  from public, "anon", "authenticated";
+
 create or replace function public._create_arena_with_owner (
   p_user       uuid,
   p_arena_name text,
@@ -1701,6 +2327,141 @@ begin
   return v_arena;
 end;
 $function$;
+
+revoke all
+  on function "public"."_create_arena_with_owner"(uuid, text, text)
+  from public, "anon", "authenticated";
+
+create or replace function public._discount_apply (
+  p_arena   uuid,
+  p_disc    jsonb,
+  p_bill    jsonb,
+  p_at      timestamp with time zone,
+  p_session uuid,
+  p_group   uuid
+)
+  returns bigint
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare
+  v_sub    bigint := (p_bill->>'subtotal')::bigint;
+  v_d      discounts%rowtype;
+  v_manual jsonb := p_disc->'manual';
+  v_reason text := nullif(btrim(coalesce(p_disc->>'reason', '')), '');
+  v_opts   jsonb;
+  v_source text; v_name text; v_code text; v_vkind text; v_value bigint;
+  v_base   bigint; v_amount bigint; v_max int; v_uses int;
+begin
+  if v_manual is not null then
+    perform _need(p_arena, 'discount');
+    v_vkind := v_manual->>'value_kind';
+    v_value := (v_manual->>'value')::bigint;
+    if v_value is null or not ((v_vkind = 'percent' and v_value between 1 and 100)
+                               or (v_vkind = 'flat' and v_value >= 1)) then
+      raise exception 'invalid_discount';
+    end if;
+    v_source := 'manual'; v_name := 'Manual discount'; v_base := v_sub;
+  else
+    if p_disc ? 'code' then
+      select * into v_d from discounts
+       where arena_id = p_arena and kind = 'coupon' and code = upper(btrim(p_disc->>'code')) for update;
+      if not found then raise exception 'coupon_unknown'; end if;
+    else
+      select * into v_d from discounts
+       where arena_id = p_arena and id = (p_disc->>'discount_id')::uuid for update;
+      if not found then raise exception 'not_found' using hint = 'discount'; end if;
+    end if;
+    if not v_d.active then raise exception 'discount_inactive'; end if;
+    if v_d.valid_from is not null and p_at < v_d.valid_from then
+      raise exception 'discount_not_started' using hint = v_d.valid_from::text;
+    end if;
+    if v_d.valid_until is not null and p_at > v_d.valid_until then
+      raise exception 'coupon_expired' using hint = v_d.valid_until::text;
+    end if;
+    if v_d.max_uses is not null then
+      select count(*) into v_uses from bill_discounts b
+        left join sessions s on s.id = b.session_id
+        left join group_sessions g on g.id = b.group_id
+       where b.discount_id = v_d.id and coalesce(s.status, g.status) <> 'voided';
+      if v_uses >= v_d.max_uses then raise exception 'coupon_used_up'; end if;
+    end if;
+    if v_d.min_bill_paise is not null and v_sub < v_d.min_bill_paise then
+      raise exception 'discount_min_bill' using hint = v_d.min_bill_paise::text;
+    end if;
+    v_base := case when cardinality(v_d.activity_codes) = 0 then v_sub
+                   else coalesce((select sum(value::bigint) from jsonb_each_text(p_bill->'by_activity')
+                                   where key = any(v_d.activity_codes)), 0) end;
+    if v_base <= 0 and cardinality(v_d.activity_codes) > 0 then
+      raise exception 'discount_scope';
+    end if;
+    v_source := v_d.kind; v_name := v_d.name; v_code := v_d.code;
+    v_vkind := v_d.value_kind; v_value := v_d.value;
+  end if;
+
+  v_amount := case when v_vkind = 'percent' then _pr_div(v_base * v_value, 100) else v_value end;
+  if v_d.max_discount_paise is not null then v_amount := least(v_amount, v_d.max_discount_paise); end if;
+  v_amount := greatest(0, least(v_amount, v_base));
+
+  if v_source = 'manual' then
+    select json into v_opts from settings where arena_id = p_arena and key = 'discount_options';
+    if not private.app_has_perm(p_arena, 'settings') then
+      v_max := coalesce((v_opts->>'manual_max_percent')::int, 0);
+      if v_amount > _pr_div(v_sub * v_max, 100) then
+        raise exception 'discount_over_limit' using hint = v_max::text || '%';
+      end if;
+    end if;
+    if coalesce((v_opts->>'reason_required')::boolean, false) and v_reason is null then
+      raise exception 'discount_reason_required';
+    end if;
+  end if;
+
+  if (p_disc->>'amount_paise')::bigint is distinct from v_amount then
+    perform _price_mismatch('discount', v_amount, (p_disc->>'amount_paise')::bigint);
+  end if;
+
+  insert into bill_discounts(id, arena_id, session_id, group_id, discount_id, source, name, code,
+      value_kind, value, base_paise, amount_paise, reason, applied_by, applied_at)
+    values (coalesce(nullif(p_disc->>'id', '')::uuid, gen_random_uuid()), p_arena, p_session, p_group,
+      v_d.id, v_source, v_name, v_code, v_vkind, v_value, v_base, v_amount, v_reason, auth.uid(), p_at);
+  return v_amount;
+end;
+$function$;
+
+revoke all
+  on function "public"."_discount_apply"(uuid, jsonb, jsonb, timestamp with time zone, uuid, uuid)
+  from public, "anon", "authenticated";
+
+create or replace function public._discount_options (
+  p jsonb
+)
+  returns jsonb
+  language plpgsql
+  immutable
+  set search_path to 'public'
+  AS $function$
+begin
+  if p is null or jsonb_typeof(p) <> 'object'
+     or exists (select 1 from jsonb_object_keys(p) k
+                 where k not in ('manual_max_percent', 'reason_required')) then
+    raise exception 'invalid_discount_options'
+      using hint = 'an object of manual_max_percent and reason_required';
+  end if;
+  if jsonb_typeof(p->'manual_max_percent') is distinct from 'number'
+     or (p->>'manual_max_percent')::numeric % 1 <> 0
+     or (p->>'manual_max_percent')::numeric not between 0 and 100 then
+    raise exception 'invalid_discount_options' using hint = 'manual_max_percent: whole 0–100';
+  end if;
+  if jsonb_typeof(p->'reason_required') is distinct from 'boolean' then
+    raise exception 'invalid_discount_options' using hint = 'reason_required: true or false';
+  end if;
+  return jsonb_build_object('manual_max_percent', (p->>'manual_max_percent')::int,
+    'reason_required', (p->>'reason_required')::boolean);
+end;
+$function$;
+
+revoke all on function "public"."_discount_options"(jsonb) from public, "anon", "authenticated";
 
 create or replace function public._floor_options (
   p jsonb
@@ -1758,6 +2519,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_floor_options"(jsonb) from public, "anon", "authenticated";
+
 create or replace function public._free_pads_at (
   p_arena    uuid,
   p_resource uuid
@@ -1770,9 +2533,12 @@ create or replace function public._free_pads_at (
   AS $function$
   select count(*)::int from controllers c
    where c.arena_id = p_arena and c.current_resource_id = p_resource and c.status = 'usable'
+     and _is_pad(c.kind_id)
      and not exists (select 1 from controller_allocations a
                       where a.controller_id = c.id and a.ended_at is null);
 $function$;
+
+revoke all on function "public"."_free_pads_at"(uuid, uuid) from public, "anon", "authenticated";
 
 create or replace function public._game_max_players (
   p_game uuid
@@ -1785,6 +2551,8 @@ create or replace function public._game_max_players (
   AS $function$
   select coalesce((select max_local_players from games where id = p_game), 1);
 $function$;
+
+revoke all on function "public"."_game_max_players"(uuid) from public, "anon", "authenticated";
 
 create or replace function public._game_playable (
   p_game     uuid,
@@ -1806,6 +2574,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_game_playable"(uuid, uuid) from public, "anon", "authenticated";
+
 create or replace function public._group_active (
   p_arena uuid,
   p_group uuid
@@ -1822,6 +2592,8 @@ begin
   if v_status <> 'active' then raise exception 'not_active' using hint = v_status; end if;
 end;
 $function$;
+
+revoke all on function "public"."_group_active"(uuid, uuid) from public, "anon", "authenticated";
 
 create or replace function public._group_assignable (
   p_arena          uuid,
@@ -1891,6 +2663,11 @@ begin
 end;
 $function$;
 
+revoke all
+  on function
+    "public"."_group_assignable"(uuid, uuid, uuid, text, uuid, integer, integer, integer, integer)
+  from public, "anon", "authenticated";
+
 create or replace function public._group_lock (
   p_arena       uuid,
   p_assignments jsonb,
@@ -1920,6 +2697,10 @@ begin
   end if;
 end;
 $function$;
+
+revoke all
+  on function "public"."_group_lock"(uuid, jsonb, uuid[])
+  from public, "anon", "authenticated";
 
 create or replace function public._group_place (
   p_arena          uuid,
@@ -1962,6 +2743,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."_group_place"(uuid, uuid, jsonb, timestamp with time zone, integer, integer)
+  from public, "anon", "authenticated";
+
 create or replace function public._inventory_tracked (
   p_arena uuid
 )
@@ -1971,8 +2756,26 @@ create or replace function public._inventory_tracked (
   security definer
   set search_path to 'public'
   AS $function$
-  select exists (select 1 from controllers where arena_id = p_arena and status <> 'retired');
+  select exists (select 1 from controllers
+                  where arena_id = p_arena and status <> 'retired' and _is_pad(kind_id));
 $function$;
+
+revoke all on function "public"."_inventory_tracked"(uuid) from public, "anon", "authenticated";
+
+create or replace function public._is_pad (
+  p_kind uuid
+)
+  returns boolean
+  language sql
+  stable
+  security definer
+  set search_path to 'public'
+  AS $function$
+  select p_kind is null
+      or coalesce((select k.counts_as_controller from accessory_kinds k where k.id = p_kind), false);
+$function$;
+
+revoke all on function "public"."_is_pad"(uuid) from public, "anon", "authenticated";
 
 create or replace function public._jsonb_uuids (
   p jsonb
@@ -1986,6 +2789,8 @@ create or replace function public._jsonb_uuids (
     from jsonb_array_elements_text(coalesce(p, '[]'::jsonb)) value;
 $function$;
 
+revoke all on function "public"."_jsonb_uuids"(jsonb) from public, "anon", "authenticated";
+
 create or replace function public._known_perms()
   returns text[]
   language sql
@@ -1994,6 +2799,8 @@ create or replace function public._known_perms()
   AS $function$
   select array['start','bill','discount','members','stations','money','reports','settings'];
 $function$;
+
+revoke all on function "public"."_known_perms"() from public, "anon", "authenticated";
 
 create or replace function public._lock_pads (
   p_arena uuid,
@@ -2011,6 +2818,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_lock_pads"(uuid, uuid[]) from public, "anon", "authenticated";
+
 create or replace function public._lock_resources (
   p_arena uuid,
   p_ids   uuid[]
@@ -2026,6 +2835,8 @@ begin
     order by id for update;
 end;
 $function$;
+
+revoke all on function "public"."_lock_resources"(uuid, uuid[]) from public, "anon", "authenticated";
 
 create or replace function public._mode_ok (
   p_arena    uuid,
@@ -2047,6 +2858,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_mode_ok"(uuid, uuid, text) from public, "anon", "authenticated";
+
 create or replace function public._need (
   p_arena uuid,
   p_perm  text
@@ -2063,6 +2876,8 @@ begin
   end if;
 end;
 $function$;
+
+revoke all on function "public"."_need"(uuid, text) from public, "anon", "authenticated";
 
 create or replace function public._pad_allocate (
   p_arena      uuid,
@@ -2086,7 +2901,7 @@ create or replace function public._pad_allocate (
   AS $function$
 declare
   v_now timestamptz := statement_timestamp();
-  v_a jsonb; v_cid uuid; v_status text; v_loc uuid;
+  v_a jsonb; v_cid uuid; v_status text; v_loc uuid; v_kind uuid;
   v_ids uuid[] := _pad_ids(p_allocs);
 begin
   if coalesce(array_length(v_ids, 1), 0) = 0 then return; end if;
@@ -2095,9 +2910,10 @@ begin
   end if;
   for v_a in select value from jsonb_array_elements(p_allocs) loop
     v_cid := (v_a->>'controller_id')::uuid;
-    select status, current_resource_id into v_status, v_loc
+    select status, current_resource_id, kind_id into v_status, v_loc, v_kind
       from controllers where id = v_cid and arena_id = p_arena;
     if not found then raise exception 'controller_missing'; end if;
+    if not _is_pad(v_kind) then raise exception 'not_a_controller'; end if;
     if v_status <> 'usable' then raise exception 'controller_unusable' using hint = v_status; end if;
     if v_loc <> p_resource then raise exception 'controller_elsewhere'; end if;
     if exists (select 1 from controller_allocations where controller_id = v_cid and ended_at is null) then
@@ -2118,6 +2934,12 @@ begin
 end;
 $function$;
 
+revoke all
+  on function
+    "public"."_pad_allocate"(uuid, jsonb, text, uuid, uuid, uuid, uuid, integer, text, uuid, text,
+    uuid, timestamp with time zone)
+  from public, "anon", "authenticated";
+
 create or replace function public._pad_borrow (
   p_arena       uuid,
   p_moves       jsonb,
@@ -2134,14 +2956,15 @@ declare
   v_now  timestamptz := statement_timestamp();
   v_m    jsonb;
   v_cid  uuid;
-  v_status text; v_loc uuid; v_home uuid; v_return boolean;
+  v_status text; v_loc uuid; v_home uuid; v_kind uuid; v_return boolean;
   v_skipped int := 0;
 begin
   for v_m in select value from jsonb_array_elements(coalesce(p_moves, '[]'::jsonb)) loop
     v_cid := (v_m->>'controller_id')::uuid;
-    select status, current_resource_id, home_resource_id into v_status, v_loc, v_home
+    select status, current_resource_id, home_resource_id, kind_id into v_status, v_loc, v_home, v_kind
       from controllers where id = v_cid and arena_id = p_arena;
     if not found then raise exception 'controller_missing'; end if;
+    if not _is_pad(v_kind) then raise exception 'not_a_controller'; end if;
     if v_loc = p_resource then v_skipped := v_skipped + 1; continue; end if;
     if v_status <> 'usable' then raise exception 'controller_unusable' using hint = v_status; end if;
     if exists (select 1 from controller_allocations where controller_id = v_cid and ended_at is null) then
@@ -2167,6 +2990,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."_pad_borrow"(uuid, jsonb, uuid, text, timestamp with time zone)
+  from public, "anon", "authenticated";
+
 create or replace function public._pad_ids (
   p jsonb
 )
@@ -2178,6 +3005,8 @@ create or replace function public._pad_ids (
   select coalesce(array_agg((e->>'controller_id')::uuid), '{}')
     from jsonb_array_elements(coalesce(p, '[]'::jsonb)) e;
 $function$;
+
+revoke all on function "public"."_pad_ids"(jsonb) from public, "anon", "authenticated";
 
 create or replace function public._pad_origins (
   p_arena uuid,
@@ -2192,6 +3021,8 @@ create or replace function public._pad_origins (
   select coalesce(array_agg(distinct current_resource_id), '{}')
     from controllers where arena_id = p_arena and id = any(p_ids);
 $function$;
+
+revoke all on function "public"."_pad_origins"(uuid, uuid[]) from public, "anon", "authenticated";
 
 create or replace function public._payment_status (
   p_billed bigint,
@@ -2209,6 +3040,49 @@ create or replace function public._payment_status (
     else 'unpaid' end;
 $function$;
 
+revoke all
+  on function "public"."_payment_status"(bigint, bigint)
+  from public, "anon", "authenticated";
+
+create or replace function public._plays (
+  p_arena uuid,
+  p_since timestamp with time zone
+)
+  returns table (
+    kind          text,
+    bill_id       uuid,
+    bill_status   text,
+    customer_id   uuid,
+    resource_id   uuid,
+    activity_code text,
+    game_id       uuid,
+    started_at    timestamp with time zone,
+    ended_at      timestamp with time zone,
+    minutes       numeric
+  )
+  language sql
+  stable
+  set search_path to 'public'
+  AS $function$
+  select 'single', g.session_id, s.status, s.customer_id, g.resource_id, g.activity_code, g.game_id,
+         g.started_at, g.ended_at,
+         greatest(0, extract(epoch from (coalesce(g.ended_at, now()) - g.started_at)) / 60)
+    from session_segments g join sessions s on s.id = g.session_id
+   where g.arena_id = p_arena and s.status <> 'voided'
+     and (g.started_at >= p_since or g.ended_at is null)
+  union all
+  select 'group', a.group_id, gs.status, gs.primary_customer_id, a.resource_id, a.activity_code,
+         a.game_id, a.started_at, a.ended_at,
+         greatest(0, extract(epoch from (coalesce(a.ended_at, now()) - a.started_at)) / 60)
+    from group_assignments a join group_sessions gs on gs.id = a.group_id
+   where a.arena_id = p_arena and gs.status <> 'voided'
+     and (a.started_at >= p_since or a.ended_at is null);
+$function$;
+
+revoke all
+  on function "public"."_plays"(uuid, timestamp with time zone)
+  from public, "anon", "authenticated";
+
 create or replace function public._pr_ceil_step (
   v    bigint,
   step integer
@@ -2221,6 +3095,10 @@ create or replace function public._pr_ceil_step (
   AS $function$
   select case when step <= 1 then v else ((v + step - 1) / step) * step end;
 $function$;
+
+revoke all
+  on function "public"."_pr_ceil_step"(bigint, integer)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_charge_key (
   p_act    text,
@@ -2245,6 +3123,11 @@ create or replace function public._pr_charge_key (
     p_played, p_billed, p_um, p_price, p_amount);
 $function$;
 
+revoke all
+  on function "public"."_pr_charge_key"(text, uuid, integer, text, timestamp
+    with time zone, timestamp with time zone, bigint, bigint, integer, bigint, bigint)
+  from public, "anon", "authenticated";
+
 create or replace function public._pr_div (
   n bigint,
   d bigint
@@ -2258,6 +3141,8 @@ create or replace function public._pr_div (
   select (2 * n + d) / (2 * d);
 $function$;
 
+revoke all on function "public"."_pr_div"(bigint, bigint) from public, "anon", "authenticated";
+
 create or replace function public._pr_group_bill (
   p_group    uuid,
   p_open_end timestamp with time zone
@@ -2270,7 +3155,7 @@ create or replace function public._pr_group_bill (
   AS $function$
 declare
   g group_sessions; v_snap jsonb; pol jsonb; r uuid; part jsonb; q jsonb; v_act text;
-  v_sub bigint := 0; v_keys text[] := '{}';
+  v_sub bigint := 0; v_keys text[] := '{}'; v_by jsonb := '{}'::jsonb; v_k text;
 begin
   select * into g from group_sessions where id = p_group;
   v_snap := g.pricing_snapshot;
@@ -2281,9 +3166,11 @@ begin
      where group_id = p_group and controller_count is not null
      order by player_number, idx limit 1;
     if g.purchased_controller_count > 0 and v_act is not null and p_open_end > g.started_at then
-      q := _pr_quote(v_snap, v_act, g.purchased_controller_count, g.started_at, p_open_end);
+      q := _pr_quote(v_snap, v_act, g.purchased_controller_count, g.started_at, p_open_end,
+        g.started_at);
       if q is not null then
         v_sub := v_sub + (q->>'subtotal')::bigint;
+        v_by := jsonb_set(v_by, array[v_act], to_jsonb(coalesce((v_by->>v_act)::bigint, 0) + (q->>'subtotal')::bigint));
         v_keys := v_keys || _pr_keys(q, v_act, null, g.purchased_controller_count);
       end if;
     end if;
@@ -2292,36 +3179,20 @@ begin
     part := _pr_sweep(v_snap, p_group, r, p_open_end, g.billing_mode = 'shared_controller_pool');
     v_sub := v_sub + (part->>'subtotal')::bigint;
     v_keys := v_keys || array(select jsonb_array_elements_text(part->'keys'));
+    for v_k in select jsonb_object_keys(part->'by_activity') loop
+      v_by := jsonb_set(v_by, array[v_k], to_jsonb(coalesce((v_by->>v_k)::bigint, 0) + (part->'by_activity'->>v_k)::bigint));
+    end loop;
   end loop;
   return jsonb_build_object('subtotal', v_sub,
     'total', _pr_money(v_sub, (pol->>'money_rounding_paise')::int, pol->>'money_rounding_dir'),
-    'keys', to_jsonb(coalesce((select array_agg(k order by k) from unnest(v_keys) k), '{}')));
+    'keys', to_jsonb(coalesce((select array_agg(k order by k) from unnest(v_keys) k), '{}')),
+    'by_activity', v_by);
 end;
 $function$;
 
-create or replace function public._pr_happy (
-  s jsonb,
-  d date
-)
-  returns tstzrange
-  language plpgsql
-  immutable
-  set search_path to 'public', 'extensions'
-  AS $function$
-declare
-  w jsonb := s->'hours'->'happy'->(extract(isodow from d)::int::text);
-  -- IST midnight of d as an instant: d 00:00 UTC minus 5h30 (fixed offset, no DST).
-  midnight timestamptz := (d::timestamp at time zone 'UTC') - interval '330 minutes';
-begin
-  if coalesce(s->'holidays', '[]'::jsonb) ? d::text
-     or coalesce(s->'closed_days', '[]'::jsonb) ? d::text then
-    return null;
-  end if;
-  if w is null or jsonb_typeof(w) <> 'object' then return null; end if;
-  return tstzrange(midnight + make_interval(mins => (w->>'start')::int),
-                   midnight + make_interval(mins => (w->>'end')::int), '[)');
-end;
-$function$;
+revoke all
+  on function "public"."_pr_group_bill"(uuid, timestamp with time zone)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_ist_date (
   t timestamp with time zone
@@ -2334,6 +3205,10 @@ create or replace function public._pr_ist_date (
   AS $function$
   select ((t at time zone 'UTC') + interval '330 minutes')::date;
 $function$;
+
+revoke all
+  on function "public"."_pr_ist_date"(timestamp with time zone)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_keys (
   q     jsonb,
@@ -2353,6 +3228,10 @@ create or replace function public._pr_keys (
     from jsonb_array_elements(q->'lines') l;
 $function$;
 
+revoke all
+  on function "public"."_pr_keys"(jsonb, text, uuid, integer)
+  from public, "anon", "authenticated";
+
 create or replace function public._pr_money (
   v    bigint,
   step integer,
@@ -2368,6 +3247,10 @@ create or replace function public._pr_money (
               when dir = 'up' then _pr_ceil_step(v, step)
               else _pr_round_step(v, step) end;
 $function$;
+
+revoke all
+  on function "public"."_pr_money"(bigint, integer, text)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_policy (
   s jsonb
@@ -2385,12 +3268,15 @@ create or replace function public._pr_policy (
     || coalesce(s->'policy', '{}'::jsonb);
 $function$;
 
+revoke all on function "public"."_pr_policy"(jsonb) from public, "anon", "authenticated";
+
 create or replace function public._pr_quote (
-  s       jsonb,
-  p_act   text,
-  p_cc    integer,
-  p_start timestamp with time zone,
-  p_end   timestamp with time zone
+  s         jsonb,
+  p_act     text,
+  p_cc      integer,
+  p_start   timestamp with time zone,
+  p_end     timestamp with time zone,
+  p_rule_at timestamp with time zone default null::timestamp with time zone
 )
   returns jsonb
   language plpgsql
@@ -2401,19 +3287,20 @@ declare
   pol jsonb := _pr_policy(s);
   v_act jsonb;
   v_total bigint; v_min bigint; v_bend timestamptz;
-  v_pts timestamptz[]; v_d date; v_hw tstzrange; v_mid timestamptz; v_band text;
-  bs timestamptz[] := '{}'; be timestamptz[] := '{}'; bb text[] := '{}';
-  n int := 0; i int;
+  bs timestamptz[]; be timestamptz[]; bb text[];
+  n int; i int;
   v_rate jsonb; v_price bigint; v_um int; v_us bigint; v_sec bigint; v_played bigint;
   v_num bigint; v_den bigint; v_billed bigint; v_units bigint; v_block int;
   v_sum_num bigint := 0; v_common bigint; v_mixed boolean := false; v_seg_sum bigint := 0;
   v_amount bigint; v_sub bigint;
   v_lines jsonb := '[]'::jsonb;
+  v_rule jsonb;
 begin
   if p_end < p_start then return null; end if;
   select a into v_act from jsonb_array_elements(coalesce(s->'activities', '[]'::jsonb)) a
    where a->>'code' = p_act limit 1;
   if v_act is null then return null; end if;
+  v_rule := _pr_rule(s, p_act, coalesce(p_rule_at, p_start));
 
   v_total := _pr_secs(p_start, p_end);
   -- Grace: free when under the grace period.
@@ -2424,42 +3311,14 @@ begin
   v_min := (pol->>'minimum_charge_minutes')::int * 60;
   v_bend := case when v_total < v_min then p_start + make_interval(secs => v_min) else p_end end;
 
-  -- Band segments: split at every happy-hour boundary, label by midpoint, merge.
-  if not coalesce((v_act->>'happy_eligible')::boolean, false) then
-    bs := array[p_start]; be := array[v_bend]; bb := array['standard']; n := 1;
-  else
-    v_pts := array[p_start, v_bend];
-    v_d := _pr_ist_date(p_start);
-    while v_d <= _pr_ist_date(v_bend) loop
-      v_hw := _pr_happy(s, v_d);
-      if v_hw is not null then
-        if lower(v_hw) > p_start and lower(v_hw) < v_bend then v_pts := v_pts || lower(v_hw); end if;
-        if upper(v_hw) > p_start and upper(v_hw) < v_bend then v_pts := v_pts || upper(v_hw); end if;
-      end if;
-      v_d := v_d + 1;
-    end loop;
-    select array_agg(distinct x order by x) into v_pts from unnest(v_pts) x;
-    for i in 1 .. coalesce(array_length(v_pts, 1), 0) - 1 loop
-      continue when v_pts[i + 1] <= v_pts[i];
-      v_mid := v_pts[i] + (v_pts[i + 1] - v_pts[i]) / 2;
-      v_hw := _pr_happy(s, _pr_ist_date(v_mid));
-      v_band := case when v_hw is not null and v_hw @> v_mid then 'happy' else 'standard' end;
-      if n > 0 and bb[n] = v_band then
-        be[n] := v_pts[i + 1];
-      else
-        n := n + 1; bs[n] := v_pts[i]; be[n] := v_pts[i + 1]; bb[n] := v_band;
-      end if;
-    end loop;
-  end if;
+  -- One billed piece at the standard band (lines keep the band for the charge rows).
+  bs := array[p_start]; be := array[v_bend]; bb := array['standard']; n := 1;
 
   for i in 1 .. n loop
     v_rate := _pr_rate(s, p_act, bb[i], p_cc);
-    if v_rate is null and bb[i] = 'happy' then
-      v_rate := _pr_rate(s, p_act, 'standard', p_cc);   -- happy → standard fallback
-    end if;
     if v_rate is null then return null; end if;
-    v_price := (v_rate->>'price_paise')::bigint;
     v_um := (v_rate->>'unit_minutes')::int;
+    v_price := _pr_rule_price((v_rate->>'price_paise')::bigint, v_um, v_rule);
     v_us := v_um::bigint * 60;
     v_sec := _pr_secs(bs[i], be[i]);
     -- Played time counts only the real [p_start, p_end]; the billed piece may run past p_end.
@@ -2503,9 +3362,17 @@ begin
                 else _pr_div(v_sum_num, coalesce(v_common, 1)) end;
   return jsonb_build_object('subtotal', v_sub,
     'amount', _pr_money(v_sub, (pol->>'money_rounding_paise')::int, pol->>'money_rounding_dir'),
-    'lines', v_lines);
+    'lines', v_lines)
+    || case when v_rule is null then '{}'::jsonb
+            else jsonb_build_object('rule', jsonb_build_object('name', v_rule->>'name',
+              'adjust_kind', v_rule->>'adjust_kind', 'adjust_value', (v_rule->>'adjust_value')::int)) end;
 end;
 $function$;
+
+revoke all
+  on function "public"."_pr_quote"(jsonb, text, integer, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_rate (
   s      jsonb,
@@ -2524,6 +3391,10 @@ create or replace function public._pr_rate (
    order by n limit 1;
 $function$;
 
+revoke all
+  on function "public"."_pr_rate"(jsonb, text, text, integer)
+  from public, "anon", "authenticated";
+
 create or replace function public._pr_round_step (
   v    bigint,
   step integer
@@ -2536,6 +3407,69 @@ create or replace function public._pr_round_step (
   AS $function$
   select case when step <= 1 then v else ((v + step / 2) / step) * step end;
 $function$;
+
+revoke all
+  on function "public"."_pr_round_step"(bigint, integer)
+  from public, "anon", "authenticated";
+
+create or replace function public._pr_rule (
+  s     jsonb,
+  p_act text,
+  p_at  timestamp with time zone
+)
+  returns jsonb
+  language sql
+  immutable
+  set search_path to 'public', 'extensions'
+  AS $function$
+  with t as (
+    select _pr_ist_date(p_at) as d,
+           floor(extract(epoch from (p_at at time zone 'UTC') + interval '330 minutes'
+              - _pr_ist_date(p_at)::timestamp) / 60)::int as m
+  )
+  select r from t, jsonb_array_elements(coalesce(s->'rules', '[]'::jsonb)) r
+   where r->'days' @> to_jsonb(extract(isodow from t.d)::int)
+     and t.m >= (r->>'start_min')::int and t.m < (r->>'end_min')::int
+     and (r->>'valid_from' is null or t.d >= (r->>'valid_from')::date)
+     and (r->>'valid_until' is null or t.d <= (r->>'valid_until')::date)
+     and case r->>'holiday_mode'
+           when 'only' then coalesce(s->'holidays', '[]'::jsonb) ? t.d::text
+           when 'skip' then not coalesce(s->'holidays', '[]'::jsonb) ? t.d::text
+           else true end
+     and (jsonb_array_length(coalesce(r->'activity_codes', '[]'::jsonb)) = 0
+          or r->'activity_codes' ? p_act)
+   order by (r->>'priority')::int, r->>'name' collate "C", r->>'id' collate "C"
+   limit 1;
+$function$;
+
+revoke all
+  on function "public"."_pr_rule"(jsonb, text, timestamp with time zone)
+  from public, "anon", "authenticated";
+
+create or replace function public._pr_rule_price (
+  p_price        bigint,
+  p_unit_minutes integer,
+  r              jsonb
+)
+  returns bigint
+  language sql
+  immutable
+  set search_path to 'public', 'extensions'
+  AS $function$
+  select case
+    when r is null then p_price
+    when r->>'adjust_kind' = 'percent'
+      then greatest(0, _pr_div(p_price * (100 + (r->>'adjust_value')::int), 100))
+    -- floor((2n + d) / 2d): half-up also for a negative (discount) value, where _pr_div's
+    -- integer division would truncate toward zero.
+    else greatest(0, p_price + floor((2 * (r->>'adjust_value')::bigint * p_unit_minutes + 60)::numeric
+                                     / 120)::bigint)
+  end;
+$function$;
+
+revoke all
+  on function "public"."_pr_rule_price"(bigint, integer, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_secs (
   s timestamp with time zone,
@@ -2550,6 +3484,10 @@ create or replace function public._pr_secs (
   select trunc(extract(epoch from e) - extract(epoch from s))::bigint;
 $function$;
 
+revoke all
+  on function "public"."_pr_secs"(timestamp with time zone, timestamp with time zone)
+  from public, "anon", "authenticated";
+
 create or replace function public._pr_session_bill (
   p_session  uuid,
   p_open_end timestamp with time zone
@@ -2561,23 +3499,29 @@ create or replace function public._pr_session_bill (
   set search_path to 'public'
   AS $function$
 declare
-  v_snap jsonb; seg record; q jsonb;
-  v_sub bigint := 0; v_keys text[] := '{}'; pol jsonb;
+  v_snap jsonb; v_started timestamptz; seg record; q jsonb;
+  v_sub bigint := 0; v_keys text[] := '{}'; pol jsonb; v_by jsonb := '{}'::jsonb;
 begin
-  select pricing_snapshot into v_snap from sessions where id = p_session;
+  select pricing_snapshot, started_at into v_snap, v_started from sessions where id = p_session;
   pol := _pr_policy(v_snap);
   for seg in select * from session_segments where session_id = p_session order by idx loop
     q := _pr_quote(v_snap, seg.activity_code, seg.controller_count, seg.started_at,
-      coalesce(seg.ended_at, p_open_end));
+      coalesce(seg.ended_at, p_open_end), v_started);   -- pricing rule judged at the session start
     continue when q is null;     -- no rate: contributes nothing (device warns)
     v_sub := v_sub + (q->>'subtotal')::bigint;
+    v_by := jsonb_set(v_by, array[seg.activity_code], to_jsonb(coalesce((v_by->>seg.activity_code)::bigint, 0) + (q->>'subtotal')::bigint));
     v_keys := v_keys || _pr_keys(q, seg.activity_code, seg.resource_id, seg.controller_count);
   end loop;
   return jsonb_build_object('subtotal', v_sub,
     'total', _pr_money(v_sub, (pol->>'money_rounding_paise')::int, pol->>'money_rounding_dir'),
-    'keys', to_jsonb(coalesce((select array_agg(k order by k) from unnest(v_keys) k), '{}')));
+    'keys', to_jsonb(coalesce((select array_agg(k order by k) from unnest(v_keys) k), '{}')),
+    'by_activity', v_by);
 end;
 $function$;
+
+revoke all
+  on function "public"."_pr_session_bill"(uuid, timestamp with time zone)
+  from public, "anon", "authenticated";
 
 create or replace function public._pr_sweep (
   v_snap           jsonb,
@@ -2595,9 +3539,10 @@ create or replace function public._pr_sweep (
 declare
   ws timestamptz[]; we timestamptz[]; wc int[]; wa text[];
   v_pts timestamptz[]; i int; j int; s timestamptz; e timestamptz;
-  v_cc int; v_act text; v_n int; q jsonb;
-  v_sub bigint := 0; v_keys text[] := '{}';
+  v_cc int; v_act text; v_n int; q jsonb; v_started timestamptz;
+  v_sub bigint := 0; v_keys text[] := '{}'; v_by jsonb := '{}'::jsonb;
 begin
+  select started_at into v_started from group_sessions where id = p_group;
   -- Windows in the device's list order (player, then index); empty ones dropped.
   select coalesce(array_agg(started_at order by player_number, idx), '{}'),
          coalesce(array_agg(coalesce(ended_at, p_open_end) order by player_number, idx), '{}'),
@@ -2622,14 +3567,19 @@ begin
       end if;
     end loop;
     continue when v_n = 0;
-    q := _pr_quote(v_snap, v_act, nullif(v_cc, 0), s, e);
+    q := _pr_quote(v_snap, v_act, nullif(v_cc, 0), s, e, v_started);   -- rule judged at the group start
     continue when q is null;     -- misconfigured rate: excluded, as on the device
     v_sub := v_sub + (q->>'subtotal')::bigint;
+    v_by := jsonb_set(v_by, array[v_act], to_jsonb(coalesce((v_by->>v_act)::bigint, 0) + (q->>'subtotal')::bigint));
     v_keys := v_keys || _pr_keys(q, v_act, p_res, nullif(v_cc, 0));
   end loop;
-  return jsonb_build_object('subtotal', v_sub, 'keys', to_jsonb(v_keys));
+  return jsonb_build_object('subtotal', v_sub, 'keys', to_jsonb(v_keys), 'by_activity', v_by);
 end;
 $function$;
+
+revoke all
+  on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean)
+  from public, "anon", "authenticated";
 
 create or replace function public._price_mismatch (
   p_what   text,
@@ -2648,6 +3598,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."_price_mismatch"(text, bigint, bigint)
+  from public, "anon", "authenticated";
+
 create or replace function public._pricing_canon (
   s jsonb
 )
@@ -2664,7 +3618,7 @@ create or replace function public._pricing_canon (
                  (r->>'unit_minutes')::int, (r->>'price_paise')::bigint)
         from jsonb_array_elements(coalesce(s->'rates', '[]'::jsonb)) r), '[]'::jsonb),
     'activities', coalesce((select jsonb_agg(jsonb_build_object('code', a->>'code',
-        'model', a->>'duration_model', 'happy', (a->>'happy_eligible')::boolean)
+        'model', a->>'duration_model')
         order by a->>'code', a->>'duration_model')
         from jsonb_array_elements(coalesce(s->'activities', '[]'::jsonb)) a), '[]'::jsonb),
     'policy', _pr_policy(s),
@@ -2673,12 +3627,28 @@ create or replace function public._pricing_canon (
              then jsonb_build_object('start', (s->'hours'->kind->(d::text)->>'start')::int,
                                      'end', (s->'hours'->kind->(d::text)->>'end')::int)
              else 'null'::jsonb end) from generate_series(1, 7) d))
-        from unnest(array['open', 'happy']) kind),
+        from unnest(array['open']) kind),
     'holidays', coalesce((select jsonb_agg(distinct x order by x)
         from jsonb_array_elements_text(coalesce(s->'holidays', '[]'::jsonb)) x), '[]'::jsonb),
     'closed_days', coalesce((select jsonb_agg(distinct x order by x)
-        from jsonb_array_elements_text(coalesce(s->'closed_days', '[]'::jsonb)) x), '[]'::jsonb));
+        from jsonb_array_elements_text(coalesce(s->'closed_days', '[]'::jsonb)) x), '[]'::jsonb))
+  -- Rules only when the snapshot has any, so a rule-free canon is unchanged.
+  || coalesce((select jsonb_build_object('rules', jsonb_agg(jsonb_build_object(
+        'id', r->>'id', 'name', r->>'name', 'priority', (r->>'priority')::int,
+        'days', (select jsonb_agg(distinct d::int order by d::int)
+                   from jsonb_array_elements_text(r->'days') d),
+        'start_min', (r->>'start_min')::int, 'end_min', (r->>'end_min')::int,
+        'holiday_mode', r->>'holiday_mode', 'valid_from', r->>'valid_from',
+        'valid_until', r->>'valid_until',
+        'activity_codes', coalesce((select jsonb_agg(distinct c order by c)
+                   from jsonb_array_elements_text(r->'activity_codes') c), '[]'::jsonb),
+        'adjust_kind', r->>'adjust_kind', 'adjust_value', (r->>'adjust_value')::int)
+        order by (r->>'priority')::int, r->>'name' collate "C", r->>'id' collate "C"))
+        from jsonb_array_elements(coalesce(s->'rules', '[]'::jsonb)) r
+        having count(*) > 0), '{}'::jsonb);
 $function$;
+
+revoke all on function "public"."_pricing_canon"(jsonb) from public, "anon", "authenticated";
 
 create or replace function public._pricing_grace()
   returns interval
@@ -2688,6 +3658,8 @@ create or replace function public._pricing_grace()
   AS $function$
   select interval '72 hours';
 $function$;
+
+revoke all on function "public"."_pricing_grace"() from public, "anon", "authenticated";
 
 create or replace function public._pricing_snapshot (
   p_arena uuid
@@ -2702,9 +3674,10 @@ create or replace function public._pricing_snapshot (
     'rate_card_name', 'Current',
     'rates', coalesce((select jsonb_agg(jsonb_build_object('activity_code', activity_code,
         'band', band, 'controller_count', controller_count, 'unit_minutes', unit_minutes,
-        'price_paise', price_paise)) from sync_v_rates where arena_id = p_arena), '[]'::jsonb),
+        'price_paise', price_paise)) from sync_v_rates
+        where arena_id = p_arena and band = 'standard'), '[]'::jsonb),
     'activities', coalesce((select jsonb_agg(jsonb_build_object('code', code,
-        'duration_model', duration_model, 'happy_eligible', happy_hour_eligible))
+        'duration_model', duration_model))
         from activities where arena_id = p_arena), '[]'::jsonb),
     'policy', coalesce((select jsonb_build_object('billing_unit', billing_unit,
         'block_rounding', block_rounding, 'grace_minutes', grace_minutes,
@@ -2720,13 +3693,24 @@ create or replace function public._pricing_snapshot (
     'hours', coalesce((select json from settings where arena_id = p_arena and key = 'business_hours'),
       '{"open":{"1":null,"2":{"start":840,"end":1380},"3":{"start":840,"end":1380},
                 "4":{"start":840,"end":1380},"5":{"start":840,"end":1380},
-                "6":{"start":840,"end":1380},"7":{"start":840,"end":1380}},
-        "happy":{"1":null,"2":{"start":840,"end":1020},"3":{"start":840,"end":1020},
-                 "4":{"start":840,"end":1020},"5":{"start":840,"end":1020},"6":null,"7":null}}'::jsonb),
+                "6":{"start":840,"end":1380},"7":{"start":840,"end":1380}}}'::jsonb),
     'holidays', coalesce((select jsonb_agg(day::text) from holidays where arena_id = p_arena), '[]'::jsonb),
     'closed_days', coalesce((select jsonb_agg(day::text) from holidays
-        where arena_id = p_arena and closed), '[]'::jsonb));
+        where arena_id = p_arena and closed), '[]'::jsonb))
+  -- Active pricing rules, only when there are any: an arena without rules keeps
+  -- exactly the snapshot (and canon) floor apps built before rules produce.
+  || coalesce((select jsonb_build_object('rules', jsonb_agg(jsonb_build_object(
+        'id', r.id, 'name', r.name, 'priority', r.priority, 'days', to_jsonb(r.days),
+        'start_min', r.start_min, 'end_min', r.end_min, 'holiday_mode', r.holiday_mode,
+        'valid_from', r.valid_from, 'valid_until', r.valid_until,
+        'activity_codes', to_jsonb(r.activity_codes), 'adjust_kind', r.adjust_kind,
+        'adjust_value', r.adjust_value)
+        order by r.priority, r.name collate "C", r.id::text collate "C"))
+        from pricing_rules r where r.arena_id = p_arena and r.active
+        having count(*) > 0), '{}'::jsonb);
 $function$;
+
+revoke all on function "public"."_pricing_snapshot"(uuid) from public, "anon", "authenticated";
 
 create or replace function public._rupees (
   p bigint
@@ -2738,6 +3722,8 @@ create or replace function public._rupees (
   AS $function$
   select '₹' || to_char(p / 100.0, 'FM999999990.00');
 $function$;
+
+revoke all on function "public"."_rupees"(bigint) from public, "anon", "authenticated";
 
 create or replace function public._sales (
   p_arena uuid,
@@ -2767,7 +3753,8 @@ create or replace function public._sales (
       'billed_paise', s.billed_amount_paise, 'paid_paise', pay.net,
       'refunded_paise', pay.refunded, 'methods', pay.methods, 'payments', pay.ledger,
       'started_by', sp.name, 'void_reason', s.void_reason,
-      'voided_at', vd.at, 'voided_by', vd.by)
+      'voided_at', vd.at, 'voided_by', vd.by,
+      'discount_paise', coalesce(dsc.amount, 0), 'discount', dsc.j)
     from sessions s
     cross join lateral (select coalesce(s.actual_ended_at, s.updated_at) as at) b
     join customers c on c.id = s.customer_id
@@ -2824,6 +3811,16 @@ create or replace function public._sales (
          and l.action = 'void'
        order by l.created_at limit 1
     ) vd on true
+    left join lateral (
+      select d.amount_paise as amount,
+             jsonb_build_object('source', d.source, 'name', d.name, 'code', d.code,
+               'discount_id', d.discount_id, 'value_kind', d.value_kind, 'value', d.value,
+               'base_paise', d.base_paise, 'amount_paise', d.amount_paise, 'reason', d.reason,
+               'by', sd.name) as j
+        from bill_discounts d
+        left join staff_profiles sd on sd.arena_id = d.arena_id and sd.user_id = d.applied_by
+       where d.session_id = s.id
+    ) dsc on true
    where s.arena_id = p_arena and s.status <> 'active'
      and (case when p_id is null then b.at >= p_from and b.at < p_to else s.id = p_id end)
   union all
@@ -2844,7 +3841,8 @@ create or replace function public._sales (
       'billed_paise', gs.billed_amount_paise, 'paid_paise', pay.net,
       'refunded_paise', pay.refunded, 'methods', pay.methods, 'payments', pay.ledger,
       'started_by', sp.name, 'void_reason', gs.void_reason,
-      'voided_at', vd.at, 'voided_by', vd.by)
+      'voided_at', vd.at, 'voided_by', vd.by,
+      'discount_paise', coalesce(dsc.amount, 0), 'discount', dsc.j)
     from group_sessions gs
     cross join lateral (select coalesce(gs.actual_ended_at, gs.updated_at) as at) b
     join customers c on c.id = gs.primary_customer_id
@@ -2900,9 +3898,23 @@ create or replace function public._sales (
          and l.action = 'void'
        order by l.created_at limit 1
     ) vd on true
+    left join lateral (
+      select d.amount_paise as amount,
+             jsonb_build_object('source', d.source, 'name', d.name, 'code', d.code,
+               'discount_id', d.discount_id, 'value_kind', d.value_kind, 'value', d.value,
+               'base_paise', d.base_paise, 'amount_paise', d.amount_paise, 'reason', d.reason,
+               'by', sd.name) as j
+        from bill_discounts d
+        left join staff_profiles sd on sd.arena_id = d.arena_id and sd.user_id = d.applied_by
+       where d.group_id = gs.id
+    ) dsc on true
    where gs.arena_id = p_arena and gs.status <> 'active'
      and (case when p_id is null then b.at >= p_from and b.at < p_to else gs.id = p_id end);
 $function$;
+
+revoke all
+  on function "public"."_sales"(uuid, timestamp with time zone, timestamp with time zone, uuid)
+  from public, "anon", "authenticated";
 
 create or replace function public._same_ids (
   a uuid[],
@@ -2917,6 +3929,8 @@ create or replace function public._same_ids (
        = coalesce((select array_agg(distinct x order by x) from unnest(b) x), '{}');
 $function$;
 
+revoke all on function "public"."_same_ids"(uuid[], uuid[]) from public, "anon", "authenticated";
+
 create or replace function public._seed_arena_catalog (
   v_arena uuid
 )
@@ -2927,18 +3941,18 @@ create or replace function public._seed_arena_catalog (
   AS $function$
 declare
   v_ps5 uuid; v_vr uuid; v_pool uuid; v_lounge uuid;
-  v_std uuid; v_happy uuid; v_card uuid;
+  v_std uuid; v_card uuid;
   c_football uuid; c_fighting uuid; c_wrestling uuid; c_racing uuid;
   c_action uuid; c_shooter uuid; c_sports uuid; c_vr uuid; v_eafc uuid;
 begin
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'PS5','PlayStation 5', true, true, 'hourly', true, 1) returning id into v_ps5;
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'VR','VR (PSVR2)', false, true, 'unit', false, 2) returning id into v_vr;
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'POOL','Pool', false, false, 'hourly', true, 3) returning id into v_pool;
-  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible, sort_order)
-    values (v_arena,'LOUNGE','Private Lounge', false, false, 'flat_hourly', false, 4) returning id into v_lounge;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'PS5','PlayStation 5', true, true, 'hourly', 1) returning id into v_ps5;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'VR','VR (PSVR2)', false, true, 'unit', 2) returning id into v_vr;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'POOL','Pool', false, false, 'hourly', 3) returning id into v_pool;
+  insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, sort_order)
+    values (v_arena,'LOUNGE','Private Lounge', false, false, 'flat_hourly', 4) returning id into v_lounge;
 
   insert into resources(arena_id,name,kind,sort_order) values
     (v_arena,'HEX','station',1),(v_arena,'VOID','station',2),(v_arena,'GHOST','station',3),
@@ -2952,15 +3966,14 @@ begin
        or (r.name = 'Private Lounge' and a.code = 'LOUNGE'));
 
   insert into rate_bands(arena_id,code,name) values (v_arena,'standard','Standard') returning id into v_std;
-  insert into rate_bands(arena_id,code,name) values (v_arena,'happy','Happy Hour') returning id into v_happy;
   insert into rate_cards(arena_id,name) values (v_arena,'Current') returning id into v_card;
   insert into rates(arena_id,rate_card_id,activity_id,band_id,controller_count,unit_minutes,price_paise) values
-    (v_arena,v_card,v_ps5,v_std,  1,60,15000),(v_arena,v_card,v_ps5,v_happy,1,60,12000),
-    (v_arena,v_card,v_ps5,v_std,  2,60,28000),(v_arena,v_card,v_ps5,v_happy,2,60,22000),
-    (v_arena,v_card,v_ps5,v_std,  3,60,39000),(v_arena,v_card,v_ps5,v_happy,3,60,31000),
-    (v_arena,v_card,v_ps5,v_std,  4,60,48000),(v_arena,v_card,v_ps5,v_happy,4,60,38000),
+    (v_arena,v_card,v_ps5,v_std,  1,60,15000),
+    (v_arena,v_card,v_ps5,v_std,  2,60,28000),
+    (v_arena,v_card,v_ps5,v_std,  3,60,39000),
+    (v_arena,v_card,v_ps5,v_std,  4,60,48000),
     (v_arena,v_card,v_vr,v_std,  null,30,20000),
-    (v_arena,v_card,v_pool,v_std, null,60,27500),(v_arena,v_card,v_pool,v_happy,null,60,22000),
+    (v_arena,v_card,v_pool,v_std, null,60,27500),
     (v_arena,v_card,v_lounge,v_std,null,60,200000);
   insert into billing_policies(arena_id,name) values (v_arena,'Default');
 
@@ -3030,6 +4043,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_seed_arena_catalog"(uuid) from public, "anon", "authenticated";
+
 create or replace function public._single_supply (
   p_arena         uuid,
   p_resource      uuid,
@@ -3072,6 +4087,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."_single_supply"(uuid, uuid, text, uuid, integer, integer, uuid, integer)
+  from public, "anon", "authenticated";
+
 create or replace function public._stale (
   p_current xid8,
   p_base    text
@@ -3083,6 +4102,8 @@ create or replace function public._stale (
   AS $function$
   select p_base is not null and p_base <> '' and p_current::text <> p_base;
 $function$;
+
+revoke all on function "public"."_stale"(xid8, text) from public, "anon", "authenticated";
 
 create or replace function public._station_free_for_single (
   p_resource uuid
@@ -3100,6 +4121,10 @@ begin
   end if;
 end;
 $function$;
+
+revoke all
+  on function "public"."_station_free_for_single"(uuid)
+  from public, "anon", "authenticated";
 
 create or replace function public._station_usable (
   p_arena    uuid,
@@ -3121,6 +4146,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."_station_usable"(uuid, uuid) from public, "anon", "authenticated";
+
 create or replace function public._sync_apply (
   p_arena uuid,
   p_kind  text,
@@ -3136,7 +4163,8 @@ begin
   -- A price-list change retires the previous catalog into
   -- pricing_catalog_history, so a session priced on it still validates.
   if p_kind in ('rate.upsert', 'rate.delete', 'policy.save', 'settings.save',
-                'holiday.upsert', 'holiday.delete', 'activity.upsert', 'activity.remove') then
+                'holiday.upsert', 'holiday.delete', 'activity.upsert', 'activity.remove',
+                'rule.upsert', 'rule.delete', 'rule.reorder') then
     v_before := _pricing_canon(_pricing_snapshot(p_arena));
   end if;
 
@@ -3160,6 +4188,8 @@ begin
       when 'controller.move'      then op_controller_move(p_arena, p)
       when 'controller.upsert'    then op_controller_upsert(p_arena, p)
       when 'controller.set_status' then op_controller_set_status(p_arena, p)
+      when 'accessory_kind.upsert' then op_accessory_kind_upsert(p_arena, p)
+      when 'accessory_kind.remove' then op_accessory_kind_remove(p_arena, p)
       when 'customer.create'      then op_customer_create(p_arena, p)
       when 'customer.update'      then op_customer_update(p_arena, p)
       when 'booking.create'       then op_booking_create(p_arena, p)
@@ -3181,6 +4211,12 @@ begin
       when 'settings.save'        then op_settings_save(p_arena, p)
       when 'holiday.upsert'       then op_holiday_upsert(p_arena, p)
       when 'holiday.delete'       then op_holiday_delete(p_arena, p)
+      when 'rule.upsert'          then op_rule_upsert(p_arena, p)
+      when 'rule.delete'          then op_rule_delete(p_arena, p)
+      when 'rule.reorder'         then op_rule_reorder(p_arena, p)
+      when 'discount.upsert'      then op_discount_upsert(p_arena, p)
+      when 'discount.set_active'  then op_discount_set_active(p_arena, p)
+      when 'discount.delete'      then op_discount_delete(p_arena, p)
       when 'staff.update'         then op_staff_update(p_arena, p)
       when 'arena.update'         then op_arena_update(p_arena, p)
       else null
@@ -3194,6 +4230,10 @@ begin
   return v_res;
 end;
 $function$;
+
+revoke all
+  on function "public"."_sync_apply"(uuid, text, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public._sync_sources()
   returns table (
@@ -3218,8 +4258,12 @@ create or replace function public._sync_sources()
     ('group_sessions','group_sessions'), ('group_assignments','group_assignments'),
     ('group_extensions','group_extensions'), ('group_charges','group_charges'),
     ('group_payments','group_payments'), ('controller_allocations','controller_allocations'),
-    ('controller_moves','controller_moves'), ('settings','settings')
+    ('controller_moves','controller_moves'), ('settings','settings'),
+    ('accessory_kinds','accessory_kinds'), ('pricing_rules','pricing_rules'),
+    ('discounts','discounts'), ('bill_discounts','bill_discounts')
 $function$;
+
+revoke all on function "public"."_sync_sources"() from public, "anon", "authenticated";
 
 create or replace function public._untracked_busy (
   p_arena    uuid,
@@ -3248,6 +4292,10 @@ create or replace function public._untracked_busy (
                           where ca.assignment_id = g.id and ca.ended_at is null));
 $function$;
 
+revoke all
+  on function "public"."_untracked_busy"(uuid, uuid, uuid[])
+  from public, "anon", "authenticated";
+
 create or replace function public._usable_pads_at (
   p_arena    uuid,
   p_resource uuid
@@ -3259,8 +4307,11 @@ create or replace function public._usable_pads_at (
   set search_path to 'public'
   AS $function$
   select count(*)::int from controllers
-   where arena_id = p_arena and current_resource_id = p_resource and status = 'usable';
+   where arena_id = p_arena and current_resource_id = p_resource and status = 'usable'
+     and _is_pad(kind_id);
 $function$;
+
+revoke all on function "public"."_usable_pads_at"(uuid, uuid) from public, "anon", "authenticated";
 
 create or replace function public._uses_controllers (
   p_arena    uuid,
@@ -3276,6 +4327,8 @@ create or replace function public._uses_controllers (
                     where arena_id = p_arena and code = p_activity), false);
 $function$;
 
+revoke all on function "public"."_uses_controllers"(uuid, text) from public, "anon", "authenticated";
+
 create or replace function public.accept_invite (
   p_invite uuid,
   p_token  text
@@ -3286,6 +4339,8 @@ create or replace function public.accept_invite (
   AS $function$
   select private.accept_invite(p_invite, p_token);
 $function$;
+
+revoke all on function "public"."accept_invite"(uuid, text) from public, "anon";
 
 create or replace function public.app_is_owner (
   p_arena uuid
@@ -3298,6 +4353,79 @@ create or replace function public.app_is_owner (
   select private.app_is_owner(p_arena);
 $function$;
 
+revoke all on function "public"."app_is_owner"(uuid) from public, "anon";
+
+create or replace function public.arena_activity (
+  p_arena    uuid,
+  p_resource uuid,
+  p_customer uuid,
+  p_since    timestamp with time zone,
+  p_limit    integer                  default 6
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_activity(p_arena, p_resource, p_customer, p_since, p_limit);
+$function$;
+
+revoke all
+  on function "public"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  from public, "anon";
+
+create or replace function public.arena_discount_usage (
+  p_arena    uuid,
+  p_discount uuid,
+  p_limit    integer default 40,
+  p_cursor   text    default null::text
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_discount_usage(p_arena, p_discount, p_limit, p_cursor);
+$function$;
+
+revoke all
+  on function "public"."arena_discount_usage"(uuid, uuid, integer, text)
+  from public, "anon";
+
+create or replace function public.arena_game_fans (
+  p_arena uuid,
+  p_game  uuid,
+  p_since timestamp with time zone,
+  p_limit integer                  default 4
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_game_fans(p_arena, p_game, p_since, p_limit);
+$function$;
+
+revoke all
+  on function "public"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  from public, "anon";
+
+create or replace function public.arena_game_stats (
+  p_arena uuid,
+  p_since timestamp with time zone
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_game_stats(p_arena, p_since);
+$function$;
+
+revoke all
+  on function "public"."arena_game_stats"(uuid, timestamp with time zone)
+  from public, "anon";
+
 create or replace function public.arena_invites (
   p_arena uuid
 )
@@ -3308,6 +4436,52 @@ create or replace function public.arena_invites (
   AS $function$
   select private.arena_invites(p_arena);
 $function$;
+
+revoke all on function "public"."arena_invites"(uuid) from public, "anon";
+
+create or replace function public.arena_members (
+  p_arena    uuid,
+  p_since    timestamp with time zone,
+  p_since_30 timestamp with time zone,
+  p_search   text                     default null::text,
+  p_limit    integer                  default 50,
+  p_offset   integer                  default 0
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_members(p_arena, p_since, p_since_30, p_search, p_limit, p_offset);
+$function$;
+
+revoke all
+  on function "public"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  from public, "anon";
+
+create or replace function public.arena_overview (
+  p_arena     uuid,
+  p_from      timestamp with time zone,
+  p_to        timestamp with time zone,
+  p_prev_from timestamp with time zone,
+  p_prev_to   timestamp with time zone,
+  p_bucket    text,
+  p_today     timestamp with time zone
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_overview(p_arena, p_from, p_to, p_prev_from, p_prev_to, p_bucket, p_today);
+$function$;
+
+revoke all
+  on function "public"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  from public, "anon";
 
 create or replace function public.arena_pricing (
   p_arena uuid
@@ -3320,6 +4494,8 @@ create or replace function public.arena_pricing (
   select private.arena_pricing(p_arena);
 $function$;
 
+revoke all on function "public"."arena_pricing"(uuid) from public, "anon";
+
 create or replace function public.arena_sale (
   p_arena uuid,
   p_id    uuid
@@ -3331,6 +4507,8 @@ create or replace function public.arena_sale (
   AS $function$
   select private.arena_sale(p_arena, p_id);
 $function$;
+
+revoke all on function "public"."arena_sale"(uuid, uuid) from public, "anon";
 
 create or replace function public.arena_sales (
   p_arena uuid,
@@ -3345,6 +4523,10 @@ create or replace function public.arena_sales (
   select private.arena_sales(p_arena, p_from, p_to);
 $function$;
 
+revoke all
+  on function "public"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
+  from public, "anon";
+
 create or replace function public.arena_staff (
   p_arena uuid
 )
@@ -3355,6 +4537,27 @@ create or replace function public.arena_staff (
   AS $function$
   select private.arena_staff(p_arena);
 $function$;
+
+revoke all on function "public"."arena_staff"(uuid) from public, "anon";
+
+create or replace function public.arena_station_stats (
+  p_arena uuid,
+  p_today timestamp with time zone,
+  p_since timestamp with time zone,
+  p_to    timestamp with time zone
+)
+  returns jsonb
+  language sql
+  stable
+  set search_path to ''
+  AS $function$
+  select private.arena_station_stats(p_arena, p_today, p_since, p_to);
+$function$;
+
+revoke all
+  on function "public"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  from public, "anon";
 
 create or replace function public.assert_controller_free_for_allocation()
   returns trigger
@@ -3374,6 +4577,10 @@ begin
   return new;
 end;
 $function$;
+
+revoke all
+  on function "public"."assert_controller_free_for_allocation"()
+  from public, "anon", "authenticated";
 
 create or replace function public.assert_resource_free_for_assignment()
   returns trigger
@@ -3408,6 +4615,10 @@ begin
   return new;
 end;
 $function$;
+
+revoke all
+  on function "public"."assert_resource_free_for_assignment"()
+  from public, "anon", "authenticated";
 
 create or replace function public.assert_resource_free_for_segment()
   returns trigger
@@ -3444,6 +4655,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."assert_resource_free_for_segment"()
+  from public, "anon", "authenticated";
+
 create or replace function public.bootstrap_owner (
   p_email      text,
   p_arena_name text,
@@ -3470,6 +4685,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."bootstrap_owner"(text, text, text)
+  from public, "anon", "authenticated";
+
 create or replace function public.create_my_arena (
   p_arena_name text,
   p_owner_name text
@@ -3480,6 +4699,8 @@ create or replace function public.create_my_arena (
   AS $function$
   select private.create_my_arena(p_arena_name, p_owner_name);
 $function$;
+
+revoke all on function "public"."create_my_arena"(text, text) from public, "anon";
 
 create or replace function public.invite_member (
   p_arena uuid,
@@ -3495,6 +4716,8 @@ create or replace function public.invite_member (
   select private.invite_member(p_arena, p_email, p_name, p_role, p_perms);
 $function$;
 
+revoke all on function "public"."invite_member"(uuid, text, text, text, text[]) from public, "anon";
+
 create or replace function public.my_arenas()
   returns jsonb
   language sql
@@ -3503,6 +4726,84 @@ create or replace function public.my_arenas()
   AS $function$
   select private.my_arenas();
 $function$;
+
+revoke all on function "public"."my_arenas"() from public, "anon";
+
+create or replace function public.op_accessory_kind_remove (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_id uuid := (p->>'id')::uuid;
+begin
+  perform _need(p_arena, 'settings');
+  if exists (select 1 from accessory_kinds where id = v_id and arena_id <> p_arena) then
+    raise exception 'not_found' using hint = 'accessory_kind';
+  end if;
+  perform 1 from accessory_kinds where id = v_id and arena_id = p_arena for update;
+  if not found then return jsonb_build_object('removed', 'deleted'); end if;
+
+  if exists (select 1 from controllers where kind_id = v_id) then
+    update accessory_kinds set active = false, updated_at = statement_timestamp() where id = v_id;
+    return jsonb_build_object('removed', 'retired');
+  end if;
+  delete from accessory_kinds where id = v_id;
+  return jsonb_build_object('removed', 'deleted');
+end;
+$function$;
+
+revoke all
+  on function "public"."op_accessory_kind_remove"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
+create or replace function public.op_accessory_kind_upsert (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare
+  v_id   uuid := (p->>'id')::uuid;
+  v_name text := btrim(coalesce(p->>'name', ''));
+  v_pad  boolean := coalesce((p->>'counts_as_controller')::boolean, false);
+  v_old  accessory_kinds%rowtype;
+begin
+  perform _need(p_arena, 'settings');
+  if char_length(v_name) not between 1 and 40 then
+    raise exception 'invalid_name' using hint = '1–40 characters';
+  end if;
+  if exists (select 1 from accessory_kinds where id = v_id and arena_id <> p_arena) then
+    raise exception 'not_found' using hint = 'accessory_kind';
+  end if;
+
+  select * into v_old from accessory_kinds where id = v_id and arena_id = p_arena for update;
+  if found and v_old.counts_as_controller <> v_pad and exists (
+       select 1 from controller_allocations a join controllers c on c.id = a.controller_id
+        where c.kind_id = v_id and a.ended_at is null) then
+    raise exception 'accessory_kind_busy';
+  end if;
+
+  insert into accessory_kinds(id, arena_id, name, counts_as_controller, sort_order, active)
+    values (v_id, p_arena, v_name, v_pad, coalesce((p->>'sort_order')::int, 0),
+      coalesce((p->>'active')::boolean, true))
+  on conflict (id) do update set
+    name = excluded.name, counts_as_controller = excluded.counts_as_controller,
+    sort_order = excluded.sort_order, active = excluded.active, updated_at = statement_timestamp()
+  where accessory_kinds.arena_id = p_arena;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all
+  on function "public"."op_accessory_kind_upsert"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_activity_remove (
   p_arena uuid,
@@ -3550,6 +4851,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_activity_remove"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_activity_upsert (
   p_arena uuid,
   p       jsonb
@@ -3565,8 +4870,22 @@ declare
   v_name text := btrim(coalesce(p->>'name', ''));
   v_pads boolean := coalesce((p->>'uses_controllers')::boolean, false);
   v_old  activities%rowtype;
+  v_base text;
+  v_n    int := 1;
 begin
   perform _need(p_arena, 'settings');
+  if v_code = '' then
+    select code into v_code from activities where id = v_id and arena_id = p_arena;
+    if v_code is null then
+      v_base := left(btrim(regexp_replace(upper(v_name), '[^A-Z0-9]+', '_', 'g'), '_'), 12);
+      if v_base = '' then v_base := 'TYPE'; end if;
+      v_code := v_base;
+      while exists (select 1 from activities where arena_id = p_arena and code = v_code) loop
+        v_n := v_n + 1;
+        v_code := left(v_base, 12 - char_length(v_n::text) - 1) || '_' || v_n;
+      end loop;
+    end if;
+  end if;
   if v_code !~ '^[A-Z0-9_]{1,12}$' then
     raise exception 'invalid_code' using hint = 'A–Z, 0–9 or _, up to 12';
   end if;
@@ -3592,22 +4911,25 @@ begin
   end if;
 
   insert into activities(id, arena_id, code, name, uses_controllers, uses_games, duration_model,
-      happy_hour_eligible, sort_order, active)
+      sort_order, active)
     values (v_id, p_arena, v_code, v_name, v_pads,
       coalesce((p->>'uses_games')::boolean, false),
       coalesce(p->>'duration_model', 'hourly'),
-      coalesce((p->>'happy_hour_eligible')::boolean, true),
       coalesce((p->>'sort_order')::int, 0),
       coalesce((p->>'active')::boolean, true))
   on conflict (id) do update set
     name = excluded.name, uses_controllers = excluded.uses_controllers,
     uses_games = excluded.uses_games, duration_model = excluded.duration_model,
-    happy_hour_eligible = excluded.happy_hour_eligible, sort_order = excluded.sort_order,
+    sort_order = excluded.sort_order,
     active = excluded.active, updated_at = statement_timestamp()
   where activities.arena_id = p_arena;
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_activity_upsert"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_arena_update (
   p_arena uuid,
@@ -3644,6 +4966,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_arena_update"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_booking_create (
   p_arena uuid,
   p       jsonb
@@ -3671,6 +4995,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_booking_create"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_booking_set_status (
   p_arena uuid,
   p       jsonb
@@ -3697,6 +5025,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_booking_set_status"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_booking_update (
   p_arena uuid,
@@ -3732,6 +5064,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_booking_update"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_controller_move (
   p_arena uuid,
@@ -3801,6 +5137,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_controller_move"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_controller_set_status (
   p_arena uuid,
   p       jsonb
@@ -3819,6 +5159,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_controller_set_status"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_controller_upsert (
   p_arena uuid,
   p       jsonb
@@ -3828,31 +5172,52 @@ create or replace function public.op_controller_upsert (
   security definer
   set search_path to 'public'
   AS $function$
-declare v_id uuid := (p->>'id')::uuid; v_loc uuid;
+declare
+  v_id      uuid := (p->>'id')::uuid;
+  v_has_kind boolean := p ? 'kind_id';
+  v_kind    uuid := nullif(p->>'kind_id', '')::uuid;
+  v_loc     uuid;
+  v_oldkind uuid;
+  v_held    boolean;
 begin
   perform _need(p_arena, 'settings');
   -- An id that belongs to another arena is "not found" here, never a silent no-op.
   if exists (select 1 from controllers where id = v_id and arena_id <> p_arena) then
     raise exception 'not_found' using hint = 'controller';
   end if;
-  select current_resource_id into v_loc from controllers where id = v_id and arena_id = p_arena for update;
-  if found and v_loc <> (p->>'current_resource_id')::uuid and exists (
-       select 1 from controller_allocations where controller_id = v_id and ended_at is null) then
-    raise exception 'controller_in_use';
+  select current_resource_id, kind_id into v_loc, v_oldkind
+    from controllers where id = v_id and arena_id = p_arena for update;
+  if found then
+    if not v_has_kind then v_kind := v_oldkind; end if;
+    v_held := exists (select 1 from controller_allocations where controller_id = v_id and ended_at is null);
+    if v_held and (v_loc <> (p->>'current_resource_id')::uuid or not _is_pad(v_kind)) then
+      raise exception 'controller_in_use';
+    end if;
+  end if;
+  if v_kind is not null and v_kind is distinct from v_oldkind
+     and not exists (select 1 from accessory_kinds where id = v_kind and active) then
+    if exists (select 1 from accessory_kinds where id = v_kind) then
+      raise exception 'kind_retired';
+    end if;
   end if;
   insert into controllers(id, arena_id, label, home_resource_id, current_resource_id, status,
-      notes, loan_return_to, loan_session_ref)
+      notes, loan_return_to, loan_session_ref, kind_id)
     values (v_id, p_arena, p->>'label', (p->>'home_resource_id')::uuid,
       (p->>'current_resource_id')::uuid, coalesce(p->>'status', 'usable'), p->>'notes',
-      p->>'loan_return_to', p->>'loan_session_ref')
+      p->>'loan_return_to', p->>'loan_session_ref', v_kind)
   on conflict (id) do update set label = excluded.label,
       home_resource_id = excluded.home_resource_id, current_resource_id = excluded.current_resource_id,
       status = excluded.status, notes = excluded.notes, loan_return_to = excluded.loan_return_to,
-      loan_session_ref = excluded.loan_session_ref, updated_at = statement_timestamp()
+      loan_session_ref = excluded.loan_session_ref, kind_id = excluded.kind_id,
+      updated_at = statement_timestamp()
     where controllers.arena_id = p_arena;
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_controller_upsert"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_customer_create (
   p_arena uuid,
@@ -3896,6 +5261,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_customer_create"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_customer_update (
   p_arena uuid,
   p       jsonb
@@ -3932,6 +5301,137 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_customer_update"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
+create or replace function public.op_discount_delete (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_id uuid := (p->>'id')::uuid; v_used int;
+begin
+  perform _need(p_arena, 'settings');
+  if exists (select 1 from discounts where id = v_id and arena_id <> p_arena) then
+    raise exception 'not_found' using hint = 'discount';
+  end if;
+  perform 1 from discounts where id = v_id and arena_id = p_arena for update;
+  if not found then return '{}'::jsonb; end if;
+  select count(*) into v_used from bill_discounts where discount_id = v_id;
+  if v_used > 0 then raise exception 'discount_used' using hint = v_used::text; end if;
+  delete from discounts where id = v_id;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all
+  on function "public"."op_discount_delete"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
+create or replace function public.op_discount_set_active (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+begin
+  perform _need(p_arena, 'settings');
+  update discounts set active = coalesce((p->>'active')::boolean, false),
+      updated_at = statement_timestamp()
+   where id = (p->>'id')::uuid and arena_id = p_arena;
+  if not found then raise exception 'not_found' using hint = 'discount'; end if;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all
+  on function "public"."op_discount_set_active"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
+create or replace function public.op_discount_upsert (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare
+  v_id    uuid := (p->>'id')::uuid;
+  v_kind  text := p->>'kind';
+  v_name  text := btrim(coalesce(p->>'name', ''));
+  v_code  text := nullif(upper(btrim(coalesce(p->>'code', ''))), '');
+  v_vkind text := p->>'value_kind';
+  v_value bigint := (p->>'value')::bigint;
+  v_cap   bigint := nullif(p->>'max_discount_paise', '')::bigint;
+  v_min   bigint := nullif(p->>'min_bill_paise', '')::bigint;
+  v_uses  int := nullif(p->>'max_uses', '')::int;
+  v_from  timestamptz := nullif(p->>'valid_from', '')::timestamptz;
+  v_until timestamptz := nullif(p->>'valid_until', '')::timestamptz;
+  v_codes text[] := array(select distinct upper(btrim(x)) from jsonb_array_elements_text(
+                          coalesce(p->'activity_codes', '[]'::jsonb)) x order by 1);
+  v_old   discounts%rowtype;
+  v_bad   text;
+begin
+  perform _need(p_arena, 'settings');
+  if exists (select 1 from discounts where id = v_id and arena_id <> p_arena) then
+    raise exception 'not_found' using hint = 'discount';
+  end if;
+  if v_kind is null or v_kind not in ('preset', 'coupon') then
+    raise exception 'invalid_discount' using hint = 'kind';
+  end if;
+  if char_length(v_name) not between 1 and 40 then
+    raise exception 'invalid_name' using hint = '1–40 characters';
+  end if;
+  if v_kind = 'coupon' and (v_code is null or v_code !~ '^[A-Z0-9_-]{3,20}$') then
+    raise exception 'invalid_code' using hint = '3–20 of A–Z, 0–9, - or _';
+  end if;
+  if v_kind = 'preset' then v_code := null; end if;
+  if v_value is null or not ((v_vkind = 'percent' and v_value between 1 and 100)
+                             or (v_vkind = 'flat' and v_value between 1 and 100000000))
+     or coalesce(v_cap, 1) < 1 or coalesce(v_min, 0) < 0 or coalesce(v_uses, 1) < 1
+     or (v_from is not null and v_until is not null and v_from >= v_until) then
+    raise exception 'invalid_discount';
+  end if;
+  select c into v_bad from unnest(v_codes) c
+   where not exists (select 1 from activities where arena_id = p_arena and code = c) limit 1;
+  if v_bad is not null then raise exception 'unknown_type' using hint = v_bad; end if;
+
+  select * into v_old from discounts where id = v_id and arena_id = p_arena for update;
+  if found and v_old.kind <> v_kind and exists (select 1 from bill_discounts where discount_id = v_id) then
+    raise exception 'kind_locked' using hint = v_old.kind;
+  end if;
+
+  insert into discounts(id, arena_id, kind, name, code, value_kind, value, max_discount_paise,
+      min_bill_paise, activity_codes, valid_from, valid_until, max_uses, active)
+    values (v_id, p_arena, v_kind, v_name, v_code, v_vkind, v_value,
+      case when v_vkind = 'percent' then v_cap end, v_min, v_codes, v_from, v_until, v_uses,
+      coalesce((p->>'active')::boolean, true))
+  on conflict (id) do update set
+    kind = excluded.kind, name = excluded.name, code = excluded.code,
+    value_kind = excluded.value_kind, value = excluded.value,
+    max_discount_paise = excluded.max_discount_paise, min_bill_paise = excluded.min_bill_paise,
+    activity_codes = excluded.activity_codes, valid_from = excluded.valid_from,
+    valid_until = excluded.valid_until, max_uses = excluded.max_uses, active = excluded.active,
+    updated_at = statement_timestamp()
+  where discounts.arena_id = p_arena;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all
+  on function "public"."op_discount_upsert"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_game_delete (
   p_arena uuid,
@@ -3985,6 +5485,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_game_delete"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_game_replace_controls (
   p_arena uuid,
   p       jsonb
@@ -4012,6 +5514,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_game_replace_controls"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_game_set_active (
   p_arena uuid,
   p       jsonb
@@ -4038,6 +5544,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_game_set_active"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_game_set_compat (
   p_arena uuid,
   p       jsonb
@@ -4059,6 +5569,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_game_set_compat"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_game_upsert (
   p_arena uuid,
@@ -4123,6 +5637,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_game_upsert"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_group_add (
   p_arena uuid,
   p       jsonb
@@ -4154,6 +5670,8 @@ begin
   return jsonb_build_object('assignment_id', a->>'id', 'adjusted', v_skipped > 0);
 end;
 $function$;
+
+revoke all on function "public"."op_group_add"(uuid, jsonb) from public, "anon", "authenticated";
 
 create or replace function public.op_group_create (
   p_arena uuid,
@@ -4204,6 +5722,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_group_create"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_group_end (
   p_arena uuid,
   p       jsonb
@@ -4220,7 +5740,7 @@ declare
   v_waive boolean := coalesce((p->>'mark_waived')::boolean, false);
   v_billed bigint := (p->>'billed_amount_paise')::bigint;
   v_end timestamptz; v_ids uuid[]; v_paid bigint; v_pay text; v_c jsonb;
-  v_bill jsonb; v_keys text[];
+  v_bill jsonb; v_keys text[]; v_disc bigint := 0; v_total bigint; pol jsonb;
 begin
   perform _need(p_arena, 'bill');
   if v_waive then perform _need(p_arena, 'discount'); end if;
@@ -4269,8 +5789,18 @@ begin
     raise exception 'invalid_time' using hint = 'the end is before a player''s current system started';
   end if;
   v_bill := _pr_group_bill(v_group, v_ended);
-  if (v_bill->>'total')::bigint is distinct from v_billed then
-    perform _price_mismatch('bill', (v_bill->>'total')::bigint, v_billed);
+  v_total := (v_bill->>'total')::bigint;
+  -- A discount (preset, coupon or manual) comes off the subtotal before cash rounding.
+  if jsonb_typeof(p->'discount') = 'object' then
+    if v_waive then raise exception 'invalid_discount' using hint = 'a waived bill takes no discount'; end if;
+    v_disc := _discount_apply(p_arena, p->'discount', v_bill, v_ended,
+      null, v_group);
+    select _pr_policy(pricing_snapshot) into pol from group_sessions where id = v_group;
+    v_total := _pr_money((v_bill->>'subtotal')::bigint - v_disc, (pol->>'money_rounding_paise')::int,
+      pol->>'money_rounding_dir');
+  end if;
+  if v_total is distinct from v_billed then
+    perform _price_mismatch('bill', v_total, v_billed);
   end if;
   select coalesce(array_agg(k order by k), '{}') into v_keys from (
     select _pr_charge_key(activity_code, resource_id, controller_count, band_code, segment_start,
@@ -4282,6 +5812,8 @@ begin
   return jsonb_build_object('payment_status', v_pay);
 end;
 $function$;
+
+revoke all on function "public"."op_group_end"(uuid, jsonb) from public, "anon", "authenticated";
 
 create or replace function public.op_group_end_player (
   p_arena uuid,
@@ -4313,6 +5845,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_group_end_player"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_group_extend (
   p_arena uuid,
@@ -4353,6 +5889,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_group_extend"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_group_switch (
   p_arena uuid,
   p       jsonb
@@ -4391,6 +5929,8 @@ begin
   return jsonb_build_object('assignment_id', a->>'id', 'adjusted', v_skipped > 0);
 end;
 $function$;
+
+revoke all on function "public"."op_group_switch"(uuid, jsonb) from public, "anon", "authenticated";
 
 create or replace function public.op_group_void (
   p_arena uuid,
@@ -4432,6 +5972,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_group_void"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_holiday_delete (
   p_arena uuid,
   p       jsonb
@@ -4447,6 +5989,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_holiday_delete"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_holiday_upsert (
   p_arena uuid,
@@ -4466,6 +6012,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_holiday_upsert"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_payment (
   p_arena uuid,
@@ -4577,6 +6127,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_payment"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_payment_correct (
   p_arena uuid,
   p       jsonb
@@ -4674,6 +6226,10 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_payment_correct"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
 create or replace function public.op_policy_save (
   p_arena uuid,
   p       jsonb
@@ -4708,6 +6264,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_policy_save"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_rate_delete (
   p_arena uuid,
   p       jsonb
@@ -4729,6 +6287,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_rate_delete"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_rate_upsert (
   p_arena uuid,
   p       jsonb
@@ -4741,13 +6301,17 @@ create or replace function public.op_rate_upsert (
 declare
   v_card uuid := _active_card(p_arena);
   v_act uuid := _activity_id(p_arena, p->>'activity_code');
-  v_band uuid := _band_id(p_arena, p->>'band');
+  v_band uuid;
   v_cc int := nullif(p->>'controller_count','')::int;
   v_id uuid;
 begin
-  -- The declare initialisers (_active_card, _activity_id, _band_id) already ran; anything
-  -- they inserted rolls back with the op if this refuses.
+  -- The declare initialisers (_active_card, _activity_id) already ran; anything they
+  -- inserted rolls back with the op if this refuses.
   perform _need(p_arena, 'settings');
+  if coalesce(p->>'band', 'standard') <> 'standard' then
+    raise exception 'invalid' using hint = 'band';
+  end if;
+  v_band := _band_id(p_arena, 'standard');
   select id into v_id from rates where rate_card_id = v_card and activity_id = v_act
     and band_id = v_band and coalesce(controller_count, -1) = coalesce(v_cc, -1) for update;
   if found then
@@ -4761,6 +6325,8 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all on function "public"."op_rate_upsert"(uuid, jsonb) from public, "anon", "authenticated";
 
 create or replace function public.op_resource_set_mode (
   p_arena uuid,
@@ -4785,6 +6351,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_resource_set_mode"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_resource_set_status (
   p_arena uuid,
@@ -4819,6 +6389,10 @@ begin
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all
+  on function "public"."op_resource_set_status"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_resource_upsert (
   p_arena uuid,
@@ -4866,6 +6440,126 @@ begin
 end;
 $function$;
 
+revoke all
+  on function "public"."op_resource_upsert"(uuid, jsonb)
+  from public, "anon", "authenticated";
+
+create or replace function public.op_rule_delete (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+begin
+  perform _need(p_arena, 'settings');
+  if exists (select 1 from pricing_rules where id = (p->>'id')::uuid and arena_id <> p_arena) then
+    raise exception 'not_found' using hint = 'rule';
+  end if;
+  delete from pricing_rules where id = (p->>'id')::uuid and arena_id = p_arena;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all on function "public"."op_rule_delete"(uuid, jsonb) from public, "anon", "authenticated";
+
+create or replace function public.op_rule_reorder (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare v_ids uuid[] := _jsonb_uuids(p->'ids');
+begin
+  perform _need(p_arena, 'settings');
+  perform 1 from pricing_rules where arena_id = p_arena for update;
+  if not _same_ids(coalesce((select array_agg(id) from pricing_rules where arena_id = p_arena), '{}'),
+                   v_ids)
+     or cardinality(v_ids) <> (select count(distinct x) from unnest(v_ids) x) then
+    raise exception 'stale' using hint = 'the rules were changed on another device';
+  end if;
+  update pricing_rules r set priority = o.n, updated_at = statement_timestamp()
+    from unnest(v_ids) with ordinality o(id, n)
+   where r.id = o.id and r.arena_id = p_arena and r.priority <> o.n;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all on function "public"."op_rule_reorder"(uuid, jsonb) from public, "anon", "authenticated";
+
+create or replace function public.op_rule_upsert (
+  p_arena uuid,
+  p       jsonb
+)
+  returns jsonb
+  language plpgsql
+  security definer
+  set search_path to 'public'
+  AS $function$
+declare
+  v_id    uuid := (p->>'id')::uuid;
+  v_name  text := btrim(coalesce(p->>'name', ''));
+  v_days  smallint[] := array(select distinct x::smallint from jsonb_array_elements_text(
+                          coalesce(p->'days', '[]'::jsonb)) x order by 1);
+  v_codes text[] := array(select distinct upper(btrim(x)) from jsonb_array_elements_text(
+                          coalesce(p->'activity_codes', '[]'::jsonb)) x order by 1);
+  v_start int := (p->>'start_min')::int;
+  v_end   int := (p->>'end_min')::int;
+  v_from  date := nullif(p->>'valid_from', '')::date;
+  v_until date := nullif(p->>'valid_until', '')::date;
+  v_kind  text := p->>'adjust_kind';
+  v_value int := (p->>'adjust_value')::int;
+  v_bad   text;
+  v_prio  int;
+begin
+  perform _need(p_arena, 'settings');
+  if exists (select 1 from pricing_rules where id = v_id and arena_id <> p_arena) then
+    raise exception 'not_found' using hint = 'rule';
+  end if;
+  if char_length(v_name) not between 1 and 40 then
+    raise exception 'invalid_name' using hint = '1–40 characters';
+  end if;
+  if cardinality(v_days) = 0 or not v_days <@ array[1,2,3,4,5,6,7]::smallint[]
+     or v_start is null or v_end is null or v_start < 0 or v_start >= v_end or v_end > 1440
+     or (v_from is not null and v_until is not null and v_until < v_from) then
+    raise exception 'invalid_window';
+  end if;
+  if v_value is null or v_value = 0
+     or not ((v_kind = 'percent' and v_value between -100 and 500)
+          or (v_kind = 'per_hour' and v_value between -10000000 and 10000000)) then
+    raise exception 'invalid_adjustment';
+  end if;
+  select c into v_bad from unnest(v_codes) c
+   where not exists (select 1 from activities where arena_id = p_arena and code = c) limit 1;
+  if v_bad is not null then raise exception 'unknown_type' using hint = v_bad; end if;
+
+  select priority into v_prio from pricing_rules where id = v_id for update;
+  v_prio := coalesce((p->>'priority')::int, v_prio,
+    (select coalesce(max(priority), 0) + 1 from pricing_rules where arena_id = p_arena));
+
+  insert into pricing_rules(id, arena_id, name, priority, active, days, start_min, end_min,
+      holiday_mode, valid_from, valid_until, activity_codes, adjust_kind, adjust_value)
+    values (v_id, p_arena, v_name, v_prio, coalesce((p->>'active')::boolean, true), v_days,
+      v_start, v_end, coalesce(p->>'holiday_mode', 'any'), v_from, v_until, v_codes, v_kind, v_value)
+  on conflict (id) do update set
+    name = excluded.name, priority = excluded.priority, active = excluded.active,
+    days = excluded.days, start_min = excluded.start_min, end_min = excluded.end_min,
+    holiday_mode = excluded.holiday_mode, valid_from = excluded.valid_from,
+    valid_until = excluded.valid_until, activity_codes = excluded.activity_codes,
+    adjust_kind = excluded.adjust_kind, adjust_value = excluded.adjust_value,
+    updated_at = statement_timestamp()
+  where pricing_rules.arena_id = p_arena;
+  return '{}'::jsonb;
+end;
+$function$;
+
+revoke all on function "public"."op_rule_upsert"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_session_end (
   p_arena uuid,
   p       jsonb
@@ -4882,7 +6576,7 @@ declare
   v_waive boolean := coalesce((p->>'mark_waived')::boolean, false);
   v_billed bigint := (p->>'billed_amount_paise')::bigint;
   v_status text; v_end timestamptz; v_segs uuid[]; v_paid bigint; v_pay text; v_c jsonb;
-  v_bill jsonb; v_keys text[];
+  v_bill jsonb; v_keys text[]; v_disc bigint := 0; v_total bigint; pol jsonb;
 begin
   perform _need(p_arena, 'bill');
   if v_waive then perform _need(p_arena, 'discount'); end if;
@@ -4933,8 +6627,18 @@ begin
     raise exception 'invalid_time' using hint = 'the end is before the current segment started';
   end if;
   v_bill := _pr_session_bill(v_session, v_ended);
-  if (v_bill->>'total')::bigint is distinct from v_billed then
-    perform _price_mismatch('bill', (v_bill->>'total')::bigint, v_billed);
+  v_total := (v_bill->>'total')::bigint;
+  -- A discount (preset, coupon or manual) comes off the subtotal before cash rounding.
+  if jsonb_typeof(p->'discount') = 'object' then
+    if v_waive then raise exception 'invalid_discount' using hint = 'a waived bill takes no discount'; end if;
+    v_disc := _discount_apply(p_arena, p->'discount', v_bill, v_ended,
+      v_session, null);
+    select _pr_policy(pricing_snapshot) into pol from sessions where id = v_session;
+    v_total := _pr_money((v_bill->>'subtotal')::bigint - v_disc, (pol->>'money_rounding_paise')::int,
+      pol->>'money_rounding_dir');
+  end if;
+  if v_total is distinct from v_billed then
+    perform _price_mismatch('bill', v_total, v_billed);
   end if;
   select coalesce(array_agg(k order by k), '{}') into v_keys from (
     select _pr_charge_key(activity_code, resource_id, controller_count, band_code, segment_start,
@@ -4946,6 +6650,8 @@ begin
   return jsonb_build_object('payment_status', v_pay);
 end;
 $function$;
+
+revoke all on function "public"."op_session_end"(uuid, jsonb) from public, "anon", "authenticated";
 
 create or replace function public.op_session_extend (
   p_arena uuid,
@@ -4995,6 +6701,10 @@ begin
   return jsonb_build_object('new_end_at', p->>'new_end_at');
 end;
 $function$;
+
+revoke all
+  on function "public"."op_session_extend"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_session_reconfigure (
   p_arena uuid,
@@ -5063,6 +6773,10 @@ begin
   return jsonb_build_object('segment_id', v_new, 'adjusted', v_skipped > 0);
 end;
 $function$;
+
+revoke all
+  on function "public"."op_session_reconfigure"(uuid, jsonb)
+  from public, "anon", "authenticated";
 
 create or replace function public.op_session_start (
   p_arena uuid,
@@ -5141,6 +6855,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_session_start"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_session_void (
   p_arena uuid,
   p       jsonb
@@ -5180,6 +6896,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_session_void"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.op_settings_save (
   p_arena uuid,
   p       jsonb
@@ -5192,17 +6910,21 @@ create or replace function public.op_settings_save (
 declare v_json jsonb := p->'json';
 begin
   perform _need(p_arena, 'settings');
-  if (p->>'key') not in ('business_hours', 'floor_options') then
+  if (p->>'key') not in ('business_hours', 'floor_options', 'discount_options') then
     raise exception 'setting_not_shared' using hint = coalesce(p->>'key', 'null');
   end if;
   if p->>'key' = 'floor_options' then
     v_json := _floor_options(p->'json');
+  elsif p->>'key' = 'discount_options' then
+    v_json := _discount_options(p->'json');
   end if;
   insert into settings(arena_id, key, json) values (p_arena, p->>'key', v_json)
   on conflict (arena_id, key) do update set json = excluded.json, updated_at = statement_timestamp();
   return '{}'::jsonb;
 end;
 $function$;
+
+revoke all on function "public"."op_settings_save"(uuid, jsonb) from public, "anon", "authenticated";
 
 create or replace function public.op_staff_update (
   p_arena uuid,
@@ -5277,6 +6999,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."op_staff_update"(uuid, jsonb) from public, "anon", "authenticated";
+
 create or replace function public.revoke_invite (
   p_arena  uuid,
   p_invite uuid
@@ -5287,6 +7011,8 @@ create or replace function public.revoke_invite (
   AS $function$
   select private.revoke_invite(p_arena, p_invite);
 $function$;
+
+revoke all on function "public"."revoke_invite"(uuid, uuid) from public, "anon";
 
 create or replace function public.set_updated_at()
   returns trigger
@@ -5301,6 +7027,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."set_updated_at"() from public, "anon", "authenticated";
+
 create or replace function public.sync_fetch_entity (
   p_arena uuid,
   p_refs  jsonb
@@ -5312,6 +7040,8 @@ create or replace function public.sync_fetch_entity (
   AS $function$
   select private.sync_fetch_entity(p_arena, p_refs);
 $function$;
+
+revoke all on function "public"."sync_fetch_entity"(uuid, jsonb) from public, "anon";
 
 create or replace function public.sync_pull (
   p_arena  uuid,
@@ -5326,6 +7056,8 @@ create or replace function public.sync_pull (
   select private.sync_pull(p_arena, p_cursor, p_limit);
 $function$;
 
+revoke all on function "public"."sync_pull"(uuid, text, integer) from public, "anon";
+
 create or replace function public.sync_push (
   p_arena  uuid,
   p_ops    jsonb,
@@ -5337,6 +7069,8 @@ create or replace function public.sync_push (
   AS $function$
   select private.sync_push(p_arena, p_ops, p_device);
 $function$;
+
+revoke all on function "public"."sync_push"(uuid, jsonb, text) from public, "anon";
 
 create or replace function public.sync_record_delete()
   returns trigger
@@ -5351,6 +7085,8 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."sync_record_delete"() from public, "anon", "authenticated";
+
 create or replace function public.sync_stamp()
   returns trigger
   language plpgsql
@@ -5362,6 +7098,12 @@ begin
 end;
 $function$;
 
+revoke all on function "public"."sync_stamp"() from public, "anon", "authenticated";
+
+alter table "public"."accessory_kinds"
+  add constraint "accessory_kinds_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
+    on delete cascade;
+
 alter table "public"."activities"
   add constraint "activities_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade;
@@ -5372,6 +7114,10 @@ alter table "public"."audit_log"
 
 alter table "public"."audit_log"
   add constraint "audit_log_created_by_fkey" foreign key (created_by) references auth.users(id);
+
+alter table "public"."bill_discounts"
+  add constraint "bill_discounts_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
+    on delete cascade;
 
 alter table "public"."billing_policies"
   add constraint "billing_policies_arena_id_fkey" foreign key (arena_id)
@@ -5409,6 +7155,10 @@ alter table "public"."controllers"
   add constraint "controllers_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade;
 
+alter table "public"."controllers"
+  add constraint "controllers_kind_id_fkey" foreign key (kind_id)
+    references public.accessory_kinds(id);
+
 alter table "public"."controller_allocations"
   add constraint "controller_allocations_controller_id_fkey" foreign key (controller_id)
     references public.controllers(id);
@@ -5424,6 +7174,14 @@ alter table "public"."customers"
 alter table "public"."bookings"
   add constraint "bookings_customer_id_fkey" foreign key (customer_id)
     references public.customers(id) on delete set null;
+
+alter table "public"."discounts"
+  add constraint "discounts_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
+    on delete cascade;
+
+alter table "public"."bill_discounts"
+  add constraint "bill_discounts_discount_id_fkey" foreign key (discount_id)
+    references public.discounts(id);
 
 alter table "public"."game_categories"
   add constraint "game_categories_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
@@ -5510,6 +7268,10 @@ alter table "public"."group_sessions"
 alter table "public"."group_sessions"
   add constraint "group_sessions_created_by_fkey" foreign key (created_by) references auth.users(id);
 
+alter table "public"."bill_discounts"
+  add constraint "bill_discounts_group_id_fkey" foreign key (group_id)
+    references public.group_sessions(id) on delete cascade;
+
 alter table "public"."controller_allocations"
   add constraint "controller_allocations_group_id_fkey" foreign key (group_id)
     references public.group_sessions(id) on delete cascade;
@@ -5551,6 +7313,10 @@ alter table "public"."pricing_catalog_history"
 
 alter table "public"."pricing_catalog_history"
   add constraint "pricing_catalog_history_pkey" primary key (arena_id, canon_md5);
+
+alter table "public"."pricing_rules"
+  add constraint "pricing_rules_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
+    on delete cascade;
 
 alter table "public"."rate_bands"
   add constraint "rate_bands_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
@@ -5686,6 +7452,10 @@ alter table "public"."sessions"
   add constraint "sessions_customer_id_fkey" foreign key (customer_id)
     references public.customers(id);
 
+alter table "public"."bill_discounts"
+  add constraint "bill_discounts_session_id_fkey" foreign key (session_id)
+    references public.sessions(id) on delete cascade;
+
 alter table "public"."controller_allocations"
   add constraint "controller_allocations_session_id_fkey" foreign key (session_id)
     references public.sessions(id) on delete cascade;
@@ -5743,6 +7513,8 @@ create view "public"."sync_v_arenas" with (security_invoker=true) AS  SELECT id,
     id AS arena_id
    FROM public.arenas a;
 
+revoke all on table "public"."sync_v_arenas" from "anon", "authenticated";
+
 create view "public"."sync_v_bookings" with (security_invoker=true) AS  SELECT bk.id,
     bk.arena_id,
     bk.customer_id,
@@ -5765,6 +7537,8 @@ create view "public"."sync_v_bookings" with (security_invoker=true) AS  SELECT b
    FROM (public.bookings bk
      LEFT JOIN public.activities ac ON ((ac.id = bk.activity_id)));
 
+revoke all on table "public"."sync_v_bookings" from "anon", "authenticated";
+
 create view "public"."sync_v_rates" with (security_invoker=true) AS  SELECT r.id,
     r.arena_id,
     r.rate_card_id,
@@ -5783,6 +7557,8 @@ create view "public"."sync_v_rates" with (security_invoker=true) AS  SELECT r.id
      JOIN public.rate_bands b ON ((b.id = r.band_id)))
      JOIN public.rate_cards c ON (((c.id = r.rate_card_id) AND c.active)));
 
+revoke all on table "public"."sync_v_rates" from "anon", "authenticated";
+
 create view "public"."sync_v_resource_activities" with (security_invoker=true) AS  SELECT ra.id,
     ra.arena_id,
     ra.resource_id,
@@ -5793,6 +7569,10 @@ create view "public"."sync_v_resource_activities" with (security_invoker=true) A
     ac.code AS activity_code
    FROM (public.resource_activities ra
      JOIN public.activities ac ON ((ac.id = ra.activity_id)));
+
+revoke all on table "public"."sync_v_resource_activities" from "anon", "authenticated";
+
+create index ix_accessory_kinds_sync on public.accessory_kinds using btree (arena_id, sync_xid);
 
 create index ix_activities_sync on public.activities using btree (arena_id, sync_xid);
 
@@ -5818,6 +7598,11 @@ create index ix_assignments_resource on public.group_assignments
 create index ix_audit_entity on public.audit_log using btree (arena_id, entity_type, entity_id);
 
 create index ix_audit_log_created_by on public.audit_log using btree (created_by);
+
+create index ix_bill_discounts_discount on public.bill_discounts
+  using btree (discount_id, applied_at);
+
+create index ix_bill_discounts_sync on public.bill_discounts using btree (arena_id, sync_xid);
 
 create index ix_billing_policies_sync on public.billing_policies using btree (arena_id, sync_xid);
 
@@ -5863,6 +7648,8 @@ create index ix_controllers_at_station on public.controllers
 
 create index ix_controllers_home_resource_id on public.controllers using btree (home_resource_id);
 
+create index ix_controllers_kind_id on public.controllers using btree (kind_id);
+
 create index ix_controllers_sync on public.controllers using btree (arena_id, sync_xid);
 
 create index ix_controls_game on public.game_controls using btree (game_id, sort_order);
@@ -5873,6 +7660,8 @@ create index ix_customers_directory on public.customers using btree (arena_id, n
 create index ix_customers_name on public.customers using btree (arena_id, lower(name));
 
 create index ix_customers_sync on public.customers using btree (arena_id, sync_xid);
+
+create index ix_discounts_sync on public.discounts using btree (arena_id, sync_xid);
 
 create index ix_extensions_session on public.session_extensions using btree (session_id, created_at);
 
@@ -5937,6 +7726,11 @@ create index ix_payments_created_by on public.payments using btree (created_by);
 create index ix_payments_session on public.payments using btree (session_id, created_at);
 
 create index ix_payments_sync on public.payments using btree (arena_id, sync_xid);
+
+create index ix_pricing_rules_arena_priority on public.pricing_rules
+  using btree (arena_id, priority);
+
+create index ix_pricing_rules_sync on public.pricing_rules using btree (arena_id, sync_xid);
 
 create index ix_rate_bands_sync on public.rate_bands using btree (arena_id, sync_xid);
 
@@ -6011,12 +7805,24 @@ create index staff_invites_invited_by_idx on public.staff_invites using btree (i
 create unique index staff_invites_one_open on public.staff_invites using btree (arena_id, email)
   where ((accepted_at is null) AND (revoked_at is null));
 
+create unique index ux_accessory_kinds_name on public.accessory_kinds
+  using btree (arena_id, lower(name));
+
 create unique index ux_assignments_request on public.group_assignments
   using btree (arena_id, request_id)
   where (request_id is not null);
 
+create unique index ux_bill_discounts_group on public.bill_discounts using btree (group_id)
+  where (group_id is not null);
+
+create unique index ux_bill_discounts_session on public.bill_discounts using btree (session_id)
+  where (session_id is not null);
+
 create unique index ux_customer_phone on public.customers using btree (arena_id, phone)
   where (phone is not null);
+
+create unique index ux_discounts_code on public.discounts using btree (arena_id, code)
+  where (code is not null);
 
 create unique index ux_extensions_request on public.session_extensions
   using btree (arena_id, request_id)
@@ -6054,6 +7860,21 @@ create unique index ux_segments_request on public.session_segments
 create unique index ux_sessions_request on public.sessions using btree (arena_id, request_id)
   where (request_id is not null);
 
+create trigger t_accessory_kinds_sync
+  before insert or update on public.accessory_kinds
+  for each row
+  execute function public.sync_stamp();
+
+create trigger t_accessory_kinds_tomb
+  after delete on public.accessory_kinds
+  for each row
+  execute function public.sync_record_delete();
+
+create trigger t_accessory_kinds_updated
+  before update on public.accessory_kinds
+  for each row
+  execute function public.set_updated_at();
+
 create trigger t_activities_sync
   before insert or update on public.activities
   for each row
@@ -6078,6 +7899,23 @@ create trigger t_arenas_updated
   before update on public.arenas
   for each row
   execute function public.set_updated_at();
+
+create trigger t_bill_discounts_sync
+  before insert or update on public.bill_discounts
+  for each row
+  execute function public.sync_stamp();
+
+create trigger t_bill_discounts_tomb
+  after delete on public.bill_discounts
+  for each row
+  execute function public.sync_record_delete();
+
+create trigger t_same_arena
+  before insert or update on public.bill_discounts
+  for each row
+  execute function
+    public._assert_same_arena('session_id', 'sessions', 'group_id', 'group_sessions', 'discount_id',
+    'discounts');
 
 create trigger t_billing_policies_sync
   before insert or update on public.billing_policies
@@ -6178,7 +8016,8 @@ create trigger t_same_arena
   before insert or update on public.controllers
   for each row
   execute function
-    public._assert_same_arena('current_resource_id', 'resources', 'home_resource_id', 'resources');
+    public._assert_same_arena('current_resource_id', 'resources', 'home_resource_id', 'resources',
+    'kind_id', 'accessory_kinds');
 
 create trigger t_customers_sync
   before insert or update on public.customers
@@ -6192,6 +8031,21 @@ create trigger t_customers_tomb
 
 create trigger t_customers_updated
   before update on public.customers
+  for each row
+  execute function public.set_updated_at();
+
+create trigger t_discounts_sync
+  before insert or update on public.discounts
+  for each row
+  execute function public.sync_stamp();
+
+create trigger t_discounts_tomb
+  after delete on public.discounts
+  for each row
+  execute function public.sync_record_delete();
+
+create trigger t_discounts_updated
+  before update on public.discounts
   for each row
   execute function public.set_updated_at();
 
@@ -6389,6 +8243,21 @@ create trigger t_same_arena
   for each row
   execute function public._assert_same_arena('session_id', 'sessions');
 
+create trigger t_pricing_rules_sync
+  before insert or update on public.pricing_rules
+  for each row
+  execute function public.sync_stamp();
+
+create trigger t_pricing_rules_tomb
+  after delete on public.pricing_rules
+  for each row
+  execute function public.sync_record_delete();
+
+create trigger t_pricing_rules_updated
+  before update on public.pricing_rules
+  for each row
+  execute function public.set_updated_at();
+
 create trigger t_rate_bands_sync
   before insert or update on public.rate_bands
   for each row
@@ -6581,6 +8450,11 @@ create trigger t_staff_updated
   for each row
   execute function public.set_updated_at();
 
+create policy "p_sel_accessory_kinds" on "public"."accessory_kinds"
+  for select
+  to "authenticated"
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
+
 create policy "p_sel_activities" on "public"."activities"
   for select
   to "authenticated"
@@ -6597,6 +8471,13 @@ create policy "p_sel_audit_log" on "public"."audit_log"
   using
     ((arena_id in ( select private.app_arena_ids_with(ARRAY['money'::text, 'reports'::text]) as
     app_arena_ids_with)));
+
+create policy "p_sel_bill_discounts" on "public"."bill_discounts"
+  for select
+  to "authenticated"
+  using
+    ((arena_id in ( select private.app_arena_ids_with(ARRAY['bill'::text, 'money'::text,
+    'reports'::text]) as app_arena_ids_with)));
 
 create policy "p_sel_billing_policies" on "public"."billing_policies"
   for select
@@ -6629,6 +8510,11 @@ create policy "p_sel_customers" on "public"."customers"
   using
     ((arena_id in ( select private.app_arena_ids_with(ARRAY['start'::text, 'members'::text,
     'money'::text, 'reports'::text]) as app_arena_ids_with)));
+
+create policy "p_sel_discounts" on "public"."discounts"
+  for select
+  to "authenticated"
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 create policy "p_sel_game_categories" on "public"."game_categories"
   for select
@@ -6690,6 +8576,11 @@ create policy "p_sel_payments" on "public"."payments"
   using
     ((arena_id in ( select private.app_arena_ids_with(ARRAY['bill'::text, 'money'::text,
     'reports'::text]) as app_arena_ids_with)));
+
+create policy "p_sel_pricing_rules" on "public"."pricing_rules"
+  for select
+  to "authenticated"
+  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
 
 create policy "p_sel_rate_bands" on "public"."rate_bands"
   for select
@@ -6763,7 +8654,11 @@ create policy "arena_members_send" on "realtime"."messages"
     (((extension = 'broadcast'::text) AND private.can_use_arena_topic(( SELECT realtime.topic() AS
     topic))));
 
+alter publication "supabase_realtime" add table "public"."accessory_kinds";
+
 alter publication "supabase_realtime" add table "public"."activities";
+
+alter publication "supabase_realtime" add table "public"."bill_discounts";
 
 alter publication "supabase_realtime" add table "public"."billing_policies";
 
@@ -6776,6 +8671,8 @@ alter publication "supabase_realtime" add table "public"."controller_moves";
 alter publication "supabase_realtime" add table "public"."controllers";
 
 alter publication "supabase_realtime" add table "public"."customers";
+
+alter publication "supabase_realtime" add table "public"."discounts";
 
 alter publication "supabase_realtime" add table "public"."game_categories";
 
@@ -6799,6 +8696,8 @@ alter publication "supabase_realtime" add table "public"."holidays";
 
 alter publication "supabase_realtime" add table "public"."payments";
 
+alter publication "supabase_realtime" add table "public"."pricing_rules";
+
 alter publication "supabase_realtime" add table "public"."rate_bands";
 
 alter publication "supabase_realtime" add table "public"."rate_cards";
@@ -6821,6 +8720,16 @@ alter publication "supabase_realtime" add table "public"."settings";
 
 alter publication "supabase_realtime" add table "public"."staff_profiles";
 
+comment on column "public"."accessory_kinds"."active" is 'False once retired (a kind some accessory still uses is retired, not deleted).';
+
+comment on column "public"."accessory_kinds"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
+
+comment on column "public"."accessory_kinds"."counts_as_controller" is 'True when accessories of this kind are game pads: allocated to players, counted for controller-count pricing and borrowed by session starts. Other kinds are only tracked physically.';
+
+comment on column "public"."accessory_kinds"."name" is 'Display name, 1–40 characters, unique per arena ignoring case.';
+
+comment on column "public"."accessory_kinds"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull.';
+
 comment on column "public"."activities"."active" is 'App-side flag for retiring an activity without deleting it. Not consulted server-side: the pricing snapshot includes inactive activities.';
 
 comment on column "public"."activities"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
@@ -6828,8 +8737,6 @@ comment on column "public"."activities"."arena_id" is 'Owning arena (tenant). RL
 comment on column "public"."activities"."code" is 'Stable business code, unique per arena (e.g. PS5). Segments, assignments, rates and pricing snapshots reference activities by this code.';
 
 comment on column "public"."activities"."duration_model" is 'How time is billed: hourly (by time, per billing_policies.billing_unit), unit (whole units of rates.unit_minutes, per billing_policies.vr_unit_rounding) or flat_hourly (priced like hourly by the server pricer).';
-
-comment on column "public"."activities"."happy_hour_eligible" is 'When false the happy-hour band never applies; the whole session is priced at the standard band.';
 
 comment on column "public"."activities"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull.';
 
@@ -6860,6 +8767,26 @@ comment on column "public"."audit_log"."entity_id" is 'Id of the row acted on (n
 comment on column "public"."audit_log"."entity_type" is 'Kind of row acted on, e.g. session, group_session, customer.';
 
 comment on column "public"."audit_log"."reason" is 'Human reason (the void or correction reason, the waive reason when given, or a system explanation).';
+
+comment on column "public"."bill_discounts"."amount_paise" is 'Paise taken off the subtotal before cash rounding.';
+
+comment on column "public"."bill_discounts"."applied_at" is 'When the bill ended (device-reported end instant): the moment validity is judged at.';
+
+comment on column "public"."bill_discounts"."arena_id" is 'Owning arena (tenant). RLS limits reads to members holding bill, money or reports.';
+
+comment on column "public"."bill_discounts"."base_paise" is 'The part of the bill subtotal the discount applied to (its station types; the whole subtotal when unscoped).';
+
+comment on column "public"."bill_discounts"."code" is 'Coupon code used; null otherwise.';
+
+comment on column "public"."bill_discounts"."discount_id" is 'The preset or coupon used; null for a manual discount.';
+
+comment on column "public"."bill_discounts"."name" is 'Discount name at the time (manual: "Manual discount").';
+
+comment on column "public"."bill_discounts"."reason" is 'Why it was given (required for manual discounts when Settings ask for a reason).';
+
+comment on column "public"."bill_discounts"."source" is 'preset, coupon or manual (typed in by staff with the discount permission).';
+
+comment on column "public"."bill_discounts"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull.';
 
 comment on column "public"."billing_policies"."active" is 'Only active rows are considered; the oldest active one (by created_at) is used.';
 
@@ -6973,6 +8900,8 @@ comment on column "public"."controllers"."current_resource_id" is 'Station where
 
 comment on column "public"."controllers"."home_resource_id" is 'Station the pad belongs to and is returned to. Changed only by a permanent move (re-homing, needs settings).';
 
+comment on column "public"."controllers"."kind_id" is 'What the accessory is (accessory_kinds). Null = a game pad. Only pads (null, or a kind with counts_as_controller) can be allocated or borrowed by a session start.';
+
 comment on column "public"."controllers"."label" is 'The marking on the pad (e.g. HEX-1), which staff use to find it.';
 
 comment on column "public"."controllers"."loan_return_to" is 'Set while the pad is on loan away from home: the home station id (uuid as text) it must go back to; null otherwise.';
@@ -6996,6 +8925,30 @@ comment on column "public"."customers"."last_visit_at" is 'Start time of the cus
 comment on column "public"."customers"."phone" is 'Contact number, trimmed; null when unknown. Unique per arena when set (ux_customer_phone).';
 
 comment on column "public"."customers"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull. Also the base_version a device sends with customer.update.';
+
+comment on column "public"."discounts"."activity_codes" is 'Station types (activities.code) whose charges the discount applies to; empty = the whole bill.';
+
+comment on column "public"."discounts"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
+
+comment on column "public"."discounts"."code" is 'Coupon code, upper-case A–Z, 0–9, - or _ (3–20), unique per arena; null for a preset.';
+
+comment on column "public"."discounts"."kind" is 'preset: picked by staff from a list; coupon: entered by its code.';
+
+comment on column "public"."discounts"."max_discount_paise" is 'Upper limit of a percent discount in paise; null = no limit.';
+
+comment on column "public"."discounts"."max_uses" is 'How many bills (voided ones excluded) may use it; null = unlimited.';
+
+comment on column "public"."discounts"."min_bill_paise" is 'Smallest bill subtotal (before discount) the discount may be used on; null = any.';
+
+comment on column "public"."discounts"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull.';
+
+comment on column "public"."discounts"."valid_from" is 'First instant a bill may end with this discount; null = no start.';
+
+comment on column "public"."discounts"."valid_until" is 'Expiry: last instant a bill may end with this discount; null = never expires.';
+
+comment on column "public"."discounts"."value" is 'Percent (1–100) or paise, per value_kind.';
+
+comment on column "public"."discounts"."value_kind" is 'percent (value 1–100 % of the bill part in scope) or flat (value in paise).';
 
 comment on column "public"."game_categories"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
@@ -7071,7 +9024,7 @@ comment on column "public"."group_charges"."arena_id" is 'Owning arena (tenant);
 
 comment on column "public"."group_charges"."assignment_id" is 'Assignment billed by this line when exactly one player was on the station for it; null for shared or pooled lines.';
 
-comment on column "public"."group_charges"."band_code" is 'Price band: standard or happy (happy hour).';
+comment on column "public"."group_charges"."band_code" is 'Price band: standard (happy only on charges billed before happy hour became a pricing rule).';
 
 comment on column "public"."group_charges"."billed_minutes" is 'Minutes charged after billing-unit / block rounding (or units x unit_minutes for unit-priced activities).';
 
@@ -7166,7 +9119,7 @@ comment on column "public"."group_sessions"."void_reason" is 'Reason given by th
 
 comment on column "public"."holidays"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column "public"."holidays"."closed" is 'True when the arena is closed that day (listed in the snapshot''s closed_days); false = open, but without happy hour.';
+comment on column "public"."holidays"."closed" is 'True when the arena is closed that day (listed in the snapshot''s closed_days); false = open (rules follow their holiday_mode).';
 
 comment on column "public"."holidays"."day" is 'Business calendar day in Asia/Kolkata (IST); unique per arena.';
 
@@ -7198,9 +9151,33 @@ comment on column "public"."pricing_catalog_history"."canon_md5" is 'md5 of cano
 
 comment on column "public"."pricing_catalog_history"."retired_at" is 'When the list was last replaced (statement time); entries older than _pricing_grace() are no longer accepted.';
 
+comment on column "public"."pricing_rules"."activity_codes" is 'Station types (activities.code) the rule applies to; empty = every type.';
+
+comment on column "public"."pricing_rules"."adjust_kind" is 'percent: unit price × (100 + adjust_value) / 100; per_hour: unit price + adjust_value paise per 60 minutes of the rate''s unit.';
+
+comment on column "public"."pricing_rules"."adjust_value" is 'Signed: positive raises the price, negative lowers it. Percent −100…500, per_hour in paise; never 0.';
+
+comment on column "public"."pricing_rules"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
+
+comment on column "public"."pricing_rules"."days" is 'ISO weekdays the rule applies on (1 = Monday … 7 = Sunday), judged on the IST date of the session start.';
+
+comment on column "public"."pricing_rules"."end_min" is 'Window end in minutes after IST midnight (exclusive, at most 1440).';
+
+comment on column "public"."pricing_rules"."holiday_mode" is 'any = holidays do not matter; only = applies only on a listed holiday; skip = never on a listed holiday.';
+
+comment on column "public"."pricing_rules"."priority" is 'Lower wins: when several active rules match a session start, only the lowest priority (then name, then id) applies.';
+
+comment on column "public"."pricing_rules"."start_min" is 'Window start in minutes after IST midnight (inclusive); the session start minute must be in [start_min, end_min).';
+
+comment on column "public"."pricing_rules"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp); change-feed cursor for sync_pull.';
+
+comment on column "public"."pricing_rules"."valid_from" is 'First IST date the rule applies (inclusive); null = no start.';
+
+comment on column "public"."pricing_rules"."valid_until" is 'Last IST date the rule applies (inclusive); null = no end.';
+
 comment on column "public"."rate_bands"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column "public"."rate_bands"."code" is 'Band code, unique per arena; the pricer selects standard or happy. Any other code is stored but never chosen.';
+comment on column "public"."rate_bands"."code" is 'Band code, unique per arena; the pricer selects standard. Any other code (e.g. the retired happy) is stored but never chosen.';
 
 comment on column "public"."rate_bands"."sync_xid" is 'Id of the transaction that last wrote the row (set by trigger sync_stamp). The table is not in the sync_pull feed; devices see band codes through sync_v_rates.';
 
@@ -7214,7 +9191,7 @@ comment on column "public"."rate_cards"."sync_xid" is 'Id of the transaction tha
 
 comment on column "public"."rates"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column "public"."rates"."band_id" is 'Time band the price applies in (rate_bands, e.g. standard or happy). A happy-hour period with no happy rate falls back to the standard rate.';
+comment on column "public"."rates"."band_id" is 'Rate band (rate_bands); the pricer only uses standard. Time-of-day prices are pricing_rules.';
 
 comment on column "public"."rates"."controller_count" is 'Number of controllers the price is for (e.g. PS5 with 1-4 pads); null = the price does not depend on controllers. Matched exactly, null to null.';
 
@@ -7244,7 +9221,7 @@ comment on column "public"."session_charges"."amount_paise" is 'Line amount in i
 
 comment on column "public"."session_charges"."arena_id" is 'Owning arena (tenant); RLS shows the row only to active members of this arena.';
 
-comment on column "public"."session_charges"."band_code" is 'Price band: standard or happy (happy hour).';
+comment on column "public"."session_charges"."band_code" is 'Price band: standard (happy only on charges billed before happy hour became a pricing rule).';
 
 comment on column "public"."session_charges"."billed_minutes" is 'Minutes charged after billing-unit / block rounding (or units x unit_minutes for unit-priced activities).';
 
@@ -7332,7 +9309,7 @@ comment on column "public"."sessions"."void_reason" is 'Reason given by the owne
 
 comment on column "public"."settings"."arena_id" is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column "public"."settings"."json" is 'Setting value. business_hours: {"open": {...}, "happy": {...}}, each keyed by ISO weekday "1" (Monday) to "7", value {"start": m, "end": m} in minutes after IST midnight, or null when closed / no happy hour. floor_options: {"payment_methods": [...], "start_presets": [minutes...], "warn_minutes": n}.';
+comment on column "public"."settings"."json" is 'Setting value. business_hours: {"open": {...}} keyed by ISO weekday "1" (Monday) to "7", value {"start": m, "end": m} in minutes after IST midnight, or null when closed (a legacy "happy" key is ignored). floor_options: {"payment_methods": [...], "start_presets": [minutes...], "warn_minutes": n}.';
 
 comment on column "public"."settings"."key" is 'Setting name, unique per arena. Writable: business_hours, floor_options.';
 
@@ -7400,9 +9377,29 @@ comment on function "private"."app_has_perm"(uuid, text) is 'True when the signe
 
 comment on function "private"."app_is_owner"(uuid) is 'True when the signed-in user is owner level in the arena: an active profile with role owner, or holding the money or reports permission.';
 
+comment on function "private"."arena_activity"(uuid, uuid, uuid, timestamp
+  with time zone, integer) is 'Client API (owner level): a station''s or member''s newest bills and (for a member) minutes per game, read when the dashboard opens it.';
+
+comment on function "private"."arena_discount_usage"(uuid, uuid, integer, text) is
+  'Client API (owner level): the bills a preset discount or coupon was used on, newest first, paged by an (applied time, id) cursor, with use counts.';
+
+comment on function "private"."arena_game_fans"(uuid, uuid, timestamp
+  with time zone, integer) is 'Client API (owner level): the members who played a game the most since an instant, aggregated on the server.';
+
+comment on function "private"."arena_game_stats"(uuid, timestamp
+  with time zone) is 'Client API (owner level): per-game minutes, bills and stations playing it now, aggregated on the server.';
+
 comment on function "private"."arena_invites"(uuid) is 'Owner level: the arena''s open invitations (not accepted or withdrawn), newest first, without their token hashes.';
 
-comment on function "private"."arena_pricing"(uuid) is 'Client API (owner level): the arena''s station types with station counts, active rates and business/happy hours, for the admin dashboard''s Pricing screen.';
+comment on function "private"."arena_members"(uuid, timestamp with time zone, timestamp
+  with time zone, text, integer, integer) is 'Client API (owner level): one searched page of registered members with their visits, minutes, 30-day spend and last visit, aggregated on the server.';
+
+comment on function "private"."arena_overview"(uuid, timestamp with time zone, timestamp
+  with time zone,
+  timestamp with time zone,
+  timestamp with time zone, text, timestamp with time zone) is 'Client API (owner level): the Overview''s aggregated figures for a period and the one before it (totals, takings buckets, payment split, by type, top games, by staff, latest bills).';
+
+comment on function "private"."arena_pricing"(uuid) is 'Client API (owner level): the arena''s station types with station counts, active standard rates and opening hours, for the admin dashboard''s Pricing screen.';
 
 comment on function "private"."arena_sale"(uuid, uuid) is 'Client API (owner level): one closed bill with its charge lines, extensions, payments ledger, audit history and void record, for the admin dashboard''s Sales detail.';
 
@@ -7411,9 +9408,12 @@ comment on function "private"."arena_sales"(uuid, timestamp with time zone, time
 
 comment on function "private"."arena_staff"(uuid) is 'Client API (owner level): the arena''s staff with login e-mail, never-signed-in flag and 30-day bills, net takings and refunds they recorded, for the admin dashboard''s Staff screen.';
 
+comment on function "private"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+  with time zone, timestamp with time zone) is 'Client API (owner level): per-station billed today / 30 days, sessions today, minutes played and accessory count, aggregated on the server.';
+
 comment on function "private"."can_use_arena_topic"(text) is 'True when the topic is arena:<uuid> and the caller is an active member of that arena. Used by the realtime.messages policies (private channels).';
 
-comment on function "private"."create_my_arena"(text, text) is 'Client API (self-serve sign-up): a confirmed login creates one arena with the default catalog and becomes its owner. Refuses unconfirmed logins, blank or over-long names, and a login that already owns an arena (arena_limit).';
+comment on function "private"."create_my_arena"(text, text) is 'Client API (self-serve sign-up): a confirmed login creates one empty arena and becomes its owner. Refuses unconfirmed logins, blank or over-long names, and a login that already owns an arena (arena_limit).';
 
 comment on function "private"."invite_member"(uuid, text, text, text, text[]) is
   'Create a one-time invitation to the arena (staff: caller holds Settings, money/reports only from owner level; owner: caller is an owner). Returns {invite_id, token, expires_at}; only the token''s SHA-256 is stored. Never reads or changes the invited address''s login.';
@@ -7442,11 +9442,18 @@ comment on function "public"."_assert_snapshot"(uuid, jsonb) is 'Pricing: raises
 
 comment on function "public"."_band_id"(uuid, text) is 'Resolves a rate band code to its id within an arena, creating the band when absent.';
 
+comment on function "public"."_bill_minutes"(jsonb) is 'Internal (dashboard reads): whole minutes from a _sales bill''s start to its end or close.';
+
 comment on function "public"."_booking_free"(uuid, uuid, uuid, timestamp with time zone, timestamp
   with time zone) is 'Locks a station and raises booking_conflict if another open booking overlaps the given window.';
 
 comment on function "public"."_create_arena_with_owner"(uuid, text, text) is
   'Internal: create an empty arena (no catalog: the owner adds station types, prices, stations, games and controllers on the dashboard) and make the given login its owner with every permission. Shared by bootstrap_owner and create_my_arena; callers validate the login first.';
+
+comment on function "public"."_discount_apply"(uuid, jsonb, jsonb, timestamp
+  with time zone, uuid, uuid) is 'Validates a preset, coupon or manual discount against a bill, records it in bill_discounts and returns the paise taken off.';
+
+comment on function "public"."_discount_options"(jsonb) is 'Validates and normalises the discount_options setting (manual_max_percent 0–100, reason_required).';
 
 comment on function "public"."_floor_options"(jsonb) is 'Validates and normalises the floor_options setting (payment methods offered, session start presets, end-of-session warning minutes); raises invalid_floor_options.';
 
@@ -7468,6 +9475,8 @@ comment on function "public"."_group_place"(uuid, uuid, jsonb, timestamp
   with time zone, integer, integer) is 'Validates and inserts one group assignment, borrowing and allocating its pads; returns the count of skipped pad moves.';
 
 comment on function "public"."_inventory_tracked"(uuid) is 'True when the arena has at least one non-retired controller.';
+
+comment on function "public"."_is_pad"(uuid) is 'True when an accessory of this kind (null = no kind) is a game pad.';
 
 comment on function "public"."_jsonb_uuids"(jsonb) is 'Internal: convert a jsonb array of uuid strings to uuid[] (empty array for null).';
 
@@ -7494,6 +9503,8 @@ comment on function "public"."_pad_origins"(uuid, uuid[]) is 'Distinct current s
 
 comment on function "public"."_payment_status"(bigint, bigint) is 'Internal: paid / partial / unpaid from billed and paid amounts in paise; a null billed amount gives partial or unpaid.';
 
+comment on function "public"."_plays"(uuid, timestamp with time zone) is 'Internal (dashboard reads): segments and group assignments of non-voided bills started since an instant or still open, with minutes played.';
+
 comment on function "public"."_pr_ceil_step"(bigint, integer) is 'Pricing: smallest multiple of step that is >= v (v unchanged when step <= 1); port of Dart ceilToStep.';
 
 comment on function "public"."_pr_charge_key"(text, uuid, integer, text, timestamp
@@ -7505,8 +9516,6 @@ comment on function "public"."_pr_div"(bigint, bigint) is 'Pricing: integer divi
 comment on function "public"."_pr_group_bill"(uuid, timestamp
   with time zone) is 'Pricing: server-side bill of a group session (per-system sweeps or a shared controller pool); port of GroupBilling.bill.';
 
-comment on function "public"."_pr_happy"(jsonb, date) is 'Pricing: happy-hour range of one IST day under a snapshot, null on holidays, closed days or no window; port of BusinessCalendar.happyWindow.';
-
 comment on function "public"."_pr_ist_date"(timestamp with time zone) is 'Pricing: IST (fixed +05:30) business date of a UTC instant; port of Dart IstDate.fromUtc.';
 
 comment on function "public"."_pr_keys"(jsonb, text, uuid, integer) is 'Pricing: _pr_charge_key of every line of a quote.';
@@ -7516,11 +9525,16 @@ comment on function "public"."_pr_money"(bigint, integer, text) is 'Pricing: cas
 comment on function "public"."_pr_policy"(jsonb) is 'Pricing: billing policy of a snapshot merged over the Dart BillingPolicy.defaults.';
 
 comment on function "public"."_pr_quote"(jsonb, text, integer, timestamp with time zone, timestamp
-  with time zone) is 'Pricing: quotes one interval for one activity and controller count on a snapshot (lines, subtotal, cash-rounded amount); port of PricingService.quote.';
+  with time zone, timestamp with time zone) is 'Pricing: quotes one interval for one activity and controller count on a snapshot (lines, subtotal, cash-rounded amount); port of PricingService.quote.';
 
 comment on function "public"."_pr_rate"(jsonb, text, text, integer) is 'Pricing: first rate in a snapshot matching activity, band and controller count exactly; port of PricingSnapshot.rateFor.';
 
 comment on function "public"."_pr_round_step"(bigint, integer) is 'Pricing: nearest multiple of step to v, ties up (v unchanged when step <= 1); port of Dart roundToStep.';
+
+comment on function "public"."_pr_rule"(jsonb, text, timestamp
+  with time zone) is 'Pricing: the snapshot''s first-priority rule matching an activity started at an instant (IST weekday, minute, dates, holidays), or null.';
+
+comment on function "public"."_pr_rule_price"(bigint, integer, jsonb) is 'Pricing: a unit price after a pricing rule (percent or paise per hour, never below 0).';
 
 comment on function "public"."_pr_secs"(timestamp with time zone, timestamp
   with time zone) is 'Pricing: whole seconds between two instants, truncated (Dart Duration.inSeconds).';
@@ -7572,9 +9586,29 @@ comment on function "public"."accept_invite"(uuid, text) is 'Client API: the inv
 
 comment on function "public"."app_is_owner"(uuid) is 'True when the signed-in user is owner level in the arena: an active profile with role owner, or holding the money or reports permission.';
 
+comment on function "public"."arena_activity"(uuid, uuid, uuid, timestamp
+  with time zone, integer) is 'Client API (owner level): a station''s or member''s newest bills and (for a member) minutes per game, read when the dashboard opens it.';
+
+comment on function "public"."arena_discount_usage"(uuid, uuid, integer, text) is
+  'Client API (owner level): the bills a preset discount or coupon was used on, newest first, paged by an (applied time, id) cursor, with use counts.';
+
+comment on function "public"."arena_game_fans"(uuid, uuid, timestamp
+  with time zone, integer) is 'Client API (owner level): the members who played a game the most since an instant, aggregated on the server.';
+
+comment on function "public"."arena_game_stats"(uuid, timestamp
+  with time zone) is 'Client API (owner level): per-game minutes, bills and stations playing it now, aggregated on the server.';
+
 comment on function "public"."arena_invites"(uuid) is 'Client API (owner level): the arena''s open invitations, newest first.';
 
-comment on function "public"."arena_pricing"(uuid) is 'Client API (owner level): the arena''s station types with station counts, active rates and business/happy hours, for the admin dashboard''s Pricing screen.';
+comment on function "public"."arena_members"(uuid, timestamp with time zone, timestamp
+  with time zone, text, integer, integer) is 'Client API (owner level): one searched page of registered members with their visits, minutes, 30-day spend and last visit, aggregated on the server.';
+
+comment on function "public"."arena_overview"(uuid, timestamp with time zone, timestamp
+  with time zone,
+  timestamp with time zone,
+  timestamp with time zone, text, timestamp with time zone) is 'Client API (owner level): the Overview''s aggregated figures for a period and the one before it (totals, takings buckets, payment split, by type, top games, by staff, latest bills).';
+
+comment on function "public"."arena_pricing"(uuid) is 'Client API (owner level): the arena''s station types with station counts, active standard rates and opening hours, for the admin dashboard''s Pricing screen.';
 
 comment on function "public"."arena_sale"(uuid, uuid) is 'Client API (owner level): one closed bill with its charge lines, extensions, payments ledger and void record, for the admin dashboard''s Sales detail.';
 
@@ -7582,6 +9616,9 @@ comment on function "public"."arena_sales"(uuid, timestamp with time zone, times
   with time zone) is 'Client API (owner level): the arena''s closed bills (sessions and groups, completed or voided) that closed in [from, to), newest first, for the admin dashboard''s Sales screen. At most 93 days.';
 
 comment on function "public"."arena_staff"(uuid) is 'Client API (owner level): the arena''s staff with login e-mail, never-signed-in flag and 30-day bills, net takings and refunds they recorded, for the admin dashboard''s Staff screen.';
+
+comment on function "public"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+  with time zone, timestamp with time zone) is 'Client API (owner level): per-station billed today / 30 days, sessions today, minutes played and accessory count, aggregated on the server.';
 
 comment on function "public"."assert_controller_free_for_allocation"() is 'Trigger (controller_allocations): refuse an open allocation for a controller that already has one (controller_taken), serialised by locking the controller row.';
 
@@ -7597,6 +9634,10 @@ comment on function "public"."invite_member"(uuid, text, text, text, text[]) is
   'Client API (Settings holder; owner invites need an owner): create a one-time invitation to the arena. Returns {invite_id, token, expires_at}.';
 
 comment on function "public"."my_arenas"() is 'Client API: the signed-in user''s staff profiles across arenas (including inactive ones) as a jsonb array of {arena_id, arena_name, name, role, perms, active}.';
+
+comment on function "public"."op_accessory_kind_remove"(uuid, jsonb) is 'Sync op accessory_kind.remove: deletes an accessory kind nothing uses, or retires one still in use.';
+
+comment on function "public"."op_accessory_kind_upsert"(uuid, jsonb) is 'Sync op accessory_kind.upsert: creates or edits an accessory kind (Controller, VR headset …).';
 
 comment on function "public"."op_activity_remove"(uuid, jsonb) is 'Sync op activity.remove: deletes a never-used station type with its prices, or retires a used one so past bills keep it.';
 
@@ -7614,11 +9655,17 @@ comment on function "public"."op_controller_move"(uuid, jsonb) is 'Sync op contr
 
 comment on function "public"."op_controller_set_status"(uuid, jsonb) is 'Sync op controller.set_status: sets a pad''s status and notes.';
 
-comment on function "public"."op_controller_upsert"(uuid, jsonb) is 'Sync op controller.upsert: creates or edits a pad, refusing to relocate one that is in use.';
+comment on function "public"."op_controller_upsert"(uuid, jsonb) is 'Sync op controller.upsert: creates or edits a station accessory, refusing to relocate one that is in use.';
 
 comment on function "public"."op_customer_create"(uuid, jsonb) is 'Sync op customer.create: registers a customer, keeping the row without its phone when that phone already belongs to someone else.';
 
 comment on function "public"."op_customer_update"(uuid, jsonb) is 'Sync op customer.update: edits a customer, refusing a stale base_version or a phone already in use.';
+
+comment on function "public"."op_discount_delete"(uuid, jsonb) is 'Sync op discount.delete: deletes a preset or coupon that no bill has used (a used one is turned off instead).';
+
+comment on function "public"."op_discount_set_active"(uuid, jsonb) is 'Sync op discount.set_active: turns a preset discount or coupon on or off.';
+
+comment on function "public"."op_discount_upsert"(uuid, jsonb) is 'Sync op discount.upsert: creates or edits a preset discount or a coupon (value, scope, cap, minimum, validity, use limit).';
 
 comment on function "public"."op_game_delete"(uuid, jsonb) is 'Sync op game.delete: permanently deletes a game no session, group, pad allocation or booking ever used (with its station statuses and control guide); refuses one in play (game_in_play) or with history (game_has_history: archive it instead).';
 
@@ -7656,13 +9703,19 @@ comment on function "public"."op_policy_save"(uuid, jsonb) is 'Sync op policy.sa
 
 comment on function "public"."op_rate_delete"(uuid, jsonb) is 'Sync op rate.delete: deletes the active card''s rate for a band, activity and controller count (idempotent).';
 
-comment on function "public"."op_rate_upsert"(uuid, jsonb) is 'Sync op rate.upsert: inserts or updates the active card''s rate for a band, activity and controller count.';
+comment on function "public"."op_rate_upsert"(uuid, jsonb) is 'Sync op rate.upsert: inserts or updates the active card''s standard rate for an activity and controller count.';
 
 comment on function "public"."op_resource_set_mode"(uuid, jsonb) is 'Sync op resource.set_mode: sets or clears a station''s activity mode lock while it is idle.';
 
 comment on function "public"."op_resource_set_status"(uuid, jsonb) is 'Sync op resource.set_status: puts a station in or out of service or removes it; refuses anything but available while a session or group player is on it (resource_busy).';
 
 comment on function "public"."op_resource_upsert"(uuid, jsonb) is 'Sync op resource.upsert: adds or edits a station and the types it offers; an edit without a status keeps it, and a status change away from available is refused while the station is in use (resource_busy).';
+
+comment on function "public"."op_rule_delete"(uuid, jsonb) is 'Sync op rule.delete: deletes a pricing rule; sessions already started keep it in their snapshot.';
+
+comment on function "public"."op_rule_reorder"(uuid, jsonb) is 'Sync op rule.reorder: renumbers every pricing rule of the arena in the given order (first wins).';
+
+comment on function "public"."op_rule_upsert"(uuid, jsonb) is 'Sync op rule.upsert: creates or edits a day/time pricing rule (percent or paise per hour, by session start).';
 
 comment on function "public"."op_session_void"(uuid, jsonb) is 'Sync op session.void: voids a single session (owner level only, reason required), closing open segments and pads and auditing who, when and why.';
 
@@ -7682,11 +9735,15 @@ comment on function "public"."sync_stamp"() is 'Trigger (before insert or update
 
 comment on schema "private" is 'SECURITY DEFINER bodies of the client API and the RLS helpers; not exposed over the Data API.';
 
+comment on table "public"."accessory_kinds" is 'Owner-defined kinds of station accessory (Controller, VR headset, Steering wheel …); counts_as_controller marks game pads.';
+
 comment on table "public"."activities" is 'Activity types an arena sells (e.g. PS5, VR, POOL, LOUNGE), identified by a per-arena business code; part of the pricing snapshot.';
 
 comment on table "public"."arenas" is 'One gaming centre (tenant). Every arena-scoped row references it via arena_id; created by bootstrap_owner() or create_my_arena().';
 
 comment on table "public"."audit_log" is 'Append-only audit trail of voids, waives, payment-method corrections and sync-time data adjustments, per arena. Not part of the sync change feed.';
+
+comment on table "public"."bill_discounts" is 'The discount applied to a bill (session or group), with a snapshot of the discount, the amount taken off, who applied it and why. Append-only; one per bill.';
 
 comment on table "public"."billing_policies" is 'Configurable billing rules for an arena. The oldest active row is the live policy and is captured into every session''s pricing snapshot.';
 
@@ -7696,9 +9753,11 @@ comment on table "public"."controller_allocations" is 'Append-only per-pad timel
 
 comment on table "public"."controller_moves" is 'Append-only history of physical pad carries between stations (loan, permanent re-home, return home).';
 
-comment on table "public"."controllers" is 'Physical controllers (pads): label, home station, current location, condition and any outstanding loan.';
+comment on table "public"."controllers" is 'Station accessories (pads, headsets, wheels …): label, kind, home station, current location, condition and any outstanding loan.';
 
 comment on table "public"."customers" is 'Customers of an arena: registered members and per-visit walk-in guest records. Referenced by sessions, groups and bookings.';
+
+comment on table "public"."discounts" is 'Owner-defined discounts: presets staff pick and coupon codes, percent or flat, with type scope, cap, minimum bill, validity window and use limit. Applied ones are recorded in bill_discounts.';
 
 comment on table "public"."game_categories" is 'Genre categories used to group an arena''s games; names are unique per arena.';
 
@@ -7718,13 +9777,15 @@ comment on table "public"."group_payments" is 'Append-only payments and refunds 
 
 comment on table "public"."group_sessions" is 'A group session: one shared countdown and one bill over several players, whose station placements are group_assignments.';
 
-comment on table "public"."holidays" is 'Holiday and closure days per arena. Every listed day has no happy hour; closed days are also shut. Part of the pricing snapshot.';
+comment on table "public"."holidays" is 'Holiday and closure days per arena. Pricing rules apply on a listed day per their holiday_mode; closed days are also shut. Part of the pricing snapshot.';
 
 comment on table "public"."payments" is 'Append-only payments and refunds against a single session; their sum is what was collected.';
 
 comment on table "public"."pricing_catalog_history" is 'Price lists retired by a pricing change, kept so a device that went offline holding the old list can still start sessions within the grace window. Server-only.';
 
-comment on table "public"."rate_bands" is 'Pricing time bands per arena, identified by code. The server pricer uses the codes standard and happy.';
+comment on table "public"."pricing_rules" is 'Day/time price adjustments: the first active match by priority, judged at the session start (IST), changes every unit price of the session by a percent or paise per hour. Part of the pricing snapshot.';
+
+comment on table "public"."rate_bands" is 'Rate bands per arena, identified by code. The pricer only uses standard; time-of-day prices are pricing_rules.';
 
 comment on table "public"."rate_cards" is 'Named price lists grouping rates. Rates on active cards form the arena''s live price list; ops edit the newest active card.';
 
@@ -7762,49 +9823,206 @@ comment on view "public"."sync_v_resource_activities" is 'Change-feed source for
 
 revoke all on function "private"."accept_invite"(uuid, text) from public;
 
-grant execute
-  on function "private"."accept_invite"(uuid, text)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."accept_invite"(uuid, text) to "authenticated";
+
+revoke all on function "private"."accept_invite"(uuid, text) from "postgres";
+
+grant execute on function "private"."accept_invite"(uuid, text) to "postgres";
+
+grant execute on function "private"."accept_invite"(uuid, text) to "service_role";
 
 revoke all on function "private"."app_arena_ids"() from public;
 
-grant execute on function "private"."app_arena_ids"() to "authenticated", "postgres", "service_role";
+grant execute on function "private"."app_arena_ids"() to "authenticated";
+
+revoke all on function "private"."app_arena_ids"() from "postgres";
+
+grant execute on function "private"."app_arena_ids"() to "postgres";
+
+grant execute on function "private"."app_arena_ids"() to "service_role";
 
 revoke all on function "private"."app_arena_ids_with"(text[]) from public;
 
-grant execute
-  on function "private"."app_arena_ids_with"(text[])
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."app_arena_ids_with"(text[]) to "authenticated";
+
+revoke all on function "private"."app_arena_ids_with"(text[]) from "postgres";
+
+grant execute on function "private"."app_arena_ids_with"(text[]) to "postgres";
+
+grant execute on function "private"."app_arena_ids_with"(text[]) to "service_role";
 
 revoke all on function "private"."app_has_perm"(uuid, text) from public;
 
-grant execute
-  on function "private"."app_has_perm"(uuid, text)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."app_has_perm"(uuid, text) to "authenticated";
+
+revoke all on function "private"."app_has_perm"(uuid, text) from "postgres";
+
+grant execute on function "private"."app_has_perm"(uuid, text) to "postgres";
+
+grant execute on function "private"."app_has_perm"(uuid, text) to "service_role";
 
 revoke all on function "private"."app_is_owner"(uuid) from public;
 
+grant execute on function "private"."app_is_owner"(uuid) to "authenticated";
+
+revoke all on function "private"."app_is_owner"(uuid) from "postgres";
+
+grant execute on function "private"."app_is_owner"(uuid) to "postgres";
+
+grant execute on function "private"."app_is_owner"(uuid) to "service_role";
+
+revoke all
+  on function "private"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  from public;
+
 grant execute
-  on function "private"."app_is_owner"(uuid)
-  to "authenticated", "postgres", "service_role";
+  on function "private"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  to "authenticated";
+
+revoke all
+  on function "private"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  from "postgres";
+
+grant execute
+  on function "private"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  to "postgres";
+
+grant execute
+  on function "private"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  to "service_role";
+
+revoke all on function "private"."arena_discount_usage"(uuid, uuid, integer, text) from public;
+
+grant execute
+  on function "private"."arena_discount_usage"(uuid, uuid, integer, text)
+  to "authenticated";
+
+revoke all on function "private"."arena_discount_usage"(uuid, uuid, integer, text) from "postgres";
+
+grant execute on function "private"."arena_discount_usage"(uuid, uuid, integer, text) to "postgres";
+
+grant execute
+  on function "private"."arena_discount_usage"(uuid, uuid, integer, text)
+  to "service_role";
+
+revoke all
+  on function "private"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  from public;
+
+grant execute
+  on function "private"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  to "authenticated";
+
+revoke all
+  on function "private"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  from "postgres";
+
+grant execute
+  on function "private"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  to "postgres";
+
+grant execute
+  on function "private"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  to "service_role";
+
+revoke all on function "private"."arena_game_stats"(uuid, timestamp with time zone) from public;
+
+grant execute
+  on function "private"."arena_game_stats"(uuid, timestamp with time zone)
+  to "authenticated";
+
+revoke all on function "private"."arena_game_stats"(uuid, timestamp with time zone) from "postgres";
+
+grant execute on function "private"."arena_game_stats"(uuid, timestamp with time zone) to "postgres";
+
+grant execute
+  on function "private"."arena_game_stats"(uuid, timestamp with time zone)
+  to "service_role";
 
 revoke all on function "private"."arena_invites"(uuid) from public;
 
+grant execute on function "private"."arena_invites"(uuid) to "authenticated";
+
+revoke all on function "private"."arena_invites"(uuid) from "postgres";
+
+grant execute on function "private"."arena_invites"(uuid) to "postgres";
+
+grant execute on function "private"."arena_invites"(uuid) to "service_role";
+
+revoke all
+  on function "private"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  from public;
+
 grant execute
-  on function "private"."arena_invites"(uuid)
-  to "authenticated", "postgres", "service_role";
+  on function "private"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  to "authenticated";
+
+revoke all
+  on function "private"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  from "postgres";
+
+grant execute
+  on function "private"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  to "postgres";
+
+grant execute
+  on function "private"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  to "service_role";
+
+revoke all
+  on function "private"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  from public;
+
+grant execute
+  on function "private"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  to "authenticated";
+
+revoke all
+  on function "private"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  from "postgres";
+
+grant execute
+  on function "private"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  to "postgres";
+
+grant execute
+  on function "private"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  to "service_role";
 
 revoke all on function "private"."arena_pricing"(uuid) from public;
 
-grant execute
-  on function "private"."arena_pricing"(uuid)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."arena_pricing"(uuid) to "authenticated";
+
+revoke all on function "private"."arena_pricing"(uuid) from "postgres";
+
+grant execute on function "private"."arena_pricing"(uuid) to "postgres";
+
+grant execute on function "private"."arena_pricing"(uuid) to "service_role";
 
 revoke all on function "private"."arena_sale"(uuid, uuid) from public;
 
-grant execute
-  on function "private"."arena_sale"(uuid, uuid)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."arena_sale"(uuid, uuid) to "authenticated";
+
+revoke all on function "private"."arena_sale"(uuid, uuid) from "postgres";
+
+grant execute on function "private"."arena_sale"(uuid, uuid) to "postgres";
+
+grant execute on function "private"."arena_sale"(uuid, uuid) to "service_role";
 
 revoke all
   on function "private"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
@@ -7812,891 +10030,1786 @@ revoke all
 
 grant execute
   on function "private"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
-  to "authenticated", "postgres", "service_role";
+  to "authenticated";
+
+revoke all
+  on function "private"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
+  from "postgres";
+
+grant execute
+  on function "private"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
+  to "postgres";
+
+grant execute
+  on function "private"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
+  to "service_role";
 
 revoke all on function "private"."arena_staff"(uuid) from public;
 
+grant execute on function "private"."arena_staff"(uuid) to "authenticated";
+
+revoke all on function "private"."arena_staff"(uuid) from "postgres";
+
+grant execute on function "private"."arena_staff"(uuid) to "postgres";
+
+grant execute on function "private"."arena_staff"(uuid) to "service_role";
+
+revoke all
+  on function "private"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  from public;
+
 grant execute
-  on function "private"."arena_staff"(uuid)
-  to "authenticated", "postgres", "service_role";
+  on function "private"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "authenticated";
+
+revoke all
+  on function "private"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  from "postgres";
+
+grant execute
+  on function "private"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "postgres";
+
+grant execute
+  on function "private"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "service_role";
 
 revoke all on function "private"."can_use_arena_topic"(text) from public;
 
-grant execute
-  on function "private"."can_use_arena_topic"(text)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."can_use_arena_topic"(text) to "authenticated";
+
+revoke all on function "private"."can_use_arena_topic"(text) from "postgres";
+
+grant execute on function "private"."can_use_arena_topic"(text) to "postgres";
+
+grant execute on function "private"."can_use_arena_topic"(text) to "service_role";
 
 revoke all on function "private"."create_my_arena"(text, text) from public;
 
-grant execute
-  on function "private"."create_my_arena"(text, text)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."create_my_arena"(text, text) to "authenticated";
+
+revoke all on function "private"."create_my_arena"(text, text) from "postgres";
+
+grant execute on function "private"."create_my_arena"(text, text) to "postgres";
+
+grant execute on function "private"."create_my_arena"(text, text) to "service_role";
 
 revoke all on function "private"."invite_member"(uuid, text, text, text, text[]) from public;
 
 grant execute
   on function "private"."invite_member"(uuid, text, text, text, text[])
-  to "authenticated", "postgres", "service_role";
+  to "authenticated";
+
+revoke all on function "private"."invite_member"(uuid, text, text, text, text[]) from "postgres";
+
+grant execute on function "private"."invite_member"(uuid, text, text, text, text[]) to "postgres";
+
+grant execute
+  on function "private"."invite_member"(uuid, text, text, text, text[])
+  to "service_role";
 
 revoke all on function "private"."my_arenas"() from public;
 
-grant execute on function "private"."my_arenas"() to "authenticated", "postgres", "service_role";
+grant execute on function "private"."my_arenas"() to "authenticated";
+
+revoke all on function "private"."my_arenas"() from "postgres";
+
+grant execute on function "private"."my_arenas"() to "postgres";
+
+grant execute on function "private"."my_arenas"() to "service_role";
 
 revoke all on function "private"."revoke_invite"(uuid, uuid) from public;
 
-grant execute
-  on function "private"."revoke_invite"(uuid, uuid)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."revoke_invite"(uuid, uuid) to "authenticated";
+
+revoke all on function "private"."revoke_invite"(uuid, uuid) from "postgres";
+
+grant execute on function "private"."revoke_invite"(uuid, uuid) to "postgres";
+
+grant execute on function "private"."revoke_invite"(uuid, uuid) to "service_role";
 
 revoke all on function "private"."sync_fetch_entity"(uuid, jsonb) from public;
 
-grant execute
-  on function "private"."sync_fetch_entity"(uuid, jsonb)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."sync_fetch_entity"(uuid, jsonb) to "authenticated";
+
+revoke all on function "private"."sync_fetch_entity"(uuid, jsonb) from "postgres";
+
+grant execute on function "private"."sync_fetch_entity"(uuid, jsonb) to "postgres";
+
+grant execute on function "private"."sync_fetch_entity"(uuid, jsonb) to "service_role";
 
 revoke all on function "private"."sync_pull"(uuid, text, integer) from public;
 
-grant execute
-  on function "private"."sync_pull"(uuid, text, integer)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."sync_pull"(uuid, text, integer) to "authenticated";
+
+revoke all on function "private"."sync_pull"(uuid, text, integer) from "postgres";
+
+grant execute on function "private"."sync_pull"(uuid, text, integer) to "postgres";
+
+grant execute on function "private"."sync_pull"(uuid, text, integer) to "service_role";
 
 revoke all on function "private"."sync_push"(uuid, jsonb, text) from public;
 
-grant execute
-  on function "private"."sync_push"(uuid, jsonb, text)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "private"."sync_push"(uuid, jsonb, text) to "authenticated";
 
-revoke all on function "public"."_active_card"(uuid) from public;
+revoke all on function "private"."sync_push"(uuid, jsonb, text) from "postgres";
 
-grant execute on function "public"."_active_card"(uuid) to "postgres", "service_role";
+grant execute on function "private"."sync_push"(uuid, jsonb, text) to "postgres";
 
-revoke all on function "public"."_activity_id"(uuid, text) from public;
+grant execute on function "private"."sync_push"(uuid, jsonb, text) to "service_role";
 
-grant execute on function "public"."_activity_id"(uuid, text) to "postgres", "service_role";
+revoke all on function "public"."_active_card"(uuid) from "postgres";
 
-revoke all on function "public"."_assert_known_perms"(text[]) from public;
+grant execute on function "public"."_active_card"(uuid) to "postgres";
 
-grant execute on function "public"."_assert_known_perms"(text[]) to "postgres", "service_role";
+grant execute on function "public"."_active_card"(uuid) to "service_role";
 
-revoke all on function "public"."_assert_same_arena"() from public;
+revoke all on function "public"."_activity_id"(uuid, text) from "postgres";
 
-grant execute on function "public"."_assert_same_arena"() to "postgres", "service_role";
+grant execute on function "public"."_activity_id"(uuid, text) to "postgres";
 
-revoke all on function "public"."_assert_settings_holder"(uuid) from public;
+grant execute on function "public"."_activity_id"(uuid, text) to "service_role";
 
-grant execute on function "public"."_assert_settings_holder"(uuid) to "postgres", "service_role";
+revoke all on function "public"."_assert_known_perms"(text[]) from "postgres";
 
-revoke all on function "public"."_assert_snapshot"(uuid, jsonb) from public;
+grant execute on function "public"."_assert_known_perms"(text[]) to "postgres";
 
-grant execute on function "public"."_assert_snapshot"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."_assert_known_perms"(text[]) to "service_role";
 
-revoke all on function "public"."_band_id"(uuid, text) from public;
+revoke all on function "public"."_assert_same_arena"() from "postgres";
 
-grant execute on function "public"."_band_id"(uuid, text) to "postgres", "service_role";
+grant execute on function "public"."_assert_same_arena"() to "postgres";
+
+grant execute on function "public"."_assert_same_arena"() to "service_role";
+
+revoke all on function "public"."_assert_settings_holder"(uuid) from "postgres";
+
+grant execute on function "public"."_assert_settings_holder"(uuid) to "postgres";
+
+grant execute on function "public"."_assert_settings_holder"(uuid) to "service_role";
+
+revoke all on function "public"."_assert_snapshot"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."_assert_snapshot"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."_assert_snapshot"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."_band_id"(uuid, text) from "postgres";
+
+grant execute on function "public"."_band_id"(uuid, text) to "postgres";
+
+grant execute on function "public"."_band_id"(uuid, text) to "service_role";
+
+revoke all on function "public"."_bill_minutes"(jsonb) from "postgres";
+
+grant execute on function "public"."_bill_minutes"(jsonb) to "postgres";
+
+grant execute on function "public"."_bill_minutes"(jsonb) to "service_role";
 
 revoke all
   on function "public"."_booking_free"(uuid, uuid, uuid, timestamp with time zone, timestamp
     with time zone)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_booking_free"(uuid, uuid, uuid, timestamp with time zone, timestamp
     with time zone)
-  to "postgres", "service_role";
-
-revoke all on function "public"."_create_arena_with_owner"(uuid, text, text) from public;
+  to "postgres";
 
 grant execute
-  on function "public"."_create_arena_with_owner"(uuid, text, text)
-  to "postgres", "service_role";
+  on function "public"."_booking_free"(uuid, uuid, uuid, timestamp with time zone, timestamp
+    with time zone)
+  to "service_role";
 
-revoke all on function "public"."_floor_options"(jsonb) from public;
+revoke all on function "public"."_create_arena_with_owner"(uuid, text, text) from "postgres";
 
-grant execute on function "public"."_floor_options"(jsonb) to "postgres", "service_role";
+grant execute on function "public"."_create_arena_with_owner"(uuid, text, text) to "postgres";
 
-revoke all on function "public"."_free_pads_at"(uuid, uuid) from public;
+grant execute on function "public"."_create_arena_with_owner"(uuid, text, text) to "service_role";
 
-grant execute on function "public"."_free_pads_at"(uuid, uuid) to "postgres", "service_role";
+revoke all
+  on function "public"."_discount_apply"(uuid, jsonb, jsonb, timestamp with time zone, uuid, uuid)
+  from "postgres";
 
-revoke all on function "public"."_game_max_players"(uuid) from public;
+grant execute
+  on function "public"."_discount_apply"(uuid, jsonb, jsonb, timestamp with time zone, uuid, uuid)
+  to "postgres";
 
-grant execute on function "public"."_game_max_players"(uuid) to "postgres", "service_role";
+grant execute
+  on function "public"."_discount_apply"(uuid, jsonb, jsonb, timestamp with time zone, uuid, uuid)
+  to "service_role";
 
-revoke all on function "public"."_game_playable"(uuid, uuid) from public;
+revoke all on function "public"."_discount_options"(jsonb) from "postgres";
 
-grant execute on function "public"."_game_playable"(uuid, uuid) to "postgres", "service_role";
+grant execute on function "public"."_discount_options"(jsonb) to "postgres";
 
-revoke all on function "public"."_group_active"(uuid, uuid) from public;
+grant execute on function "public"."_discount_options"(jsonb) to "service_role";
 
-grant execute on function "public"."_group_active"(uuid, uuid) to "postgres", "service_role";
+revoke all on function "public"."_floor_options"(jsonb) from "postgres";
+
+grant execute on function "public"."_floor_options"(jsonb) to "postgres";
+
+grant execute on function "public"."_floor_options"(jsonb) to "service_role";
+
+revoke all on function "public"."_free_pads_at"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."_free_pads_at"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."_free_pads_at"(uuid, uuid) to "service_role";
+
+revoke all on function "public"."_game_max_players"(uuid) from "postgres";
+
+grant execute on function "public"."_game_max_players"(uuid) to "postgres";
+
+grant execute on function "public"."_game_max_players"(uuid) to "service_role";
+
+revoke all on function "public"."_game_playable"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."_game_playable"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."_game_playable"(uuid, uuid) to "service_role";
+
+revoke all on function "public"."_group_active"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."_group_active"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."_group_active"(uuid, uuid) to "service_role";
 
 revoke all
   on function
     "public"."_group_assignable"(uuid, uuid, uuid, text, uuid, integer, integer, integer, integer)
-  from public;
+  from "postgres";
 
 grant execute
   on function
     "public"."_group_assignable"(uuid, uuid, uuid, text, uuid, integer, integer, integer, integer)
-  to "postgres", "service_role";
+  to "postgres";
 
-revoke all on function "public"."_group_lock"(uuid, jsonb, uuid[]) from public;
+grant execute
+  on function
+    "public"."_group_assignable"(uuid, uuid, uuid, text, uuid, integer, integer, integer, integer)
+  to "service_role";
 
-grant execute on function "public"."_group_lock"(uuid, jsonb, uuid[]) to "postgres", "service_role";
+revoke all on function "public"."_group_lock"(uuid, jsonb, uuid[]) from "postgres";
+
+grant execute on function "public"."_group_lock"(uuid, jsonb, uuid[]) to "postgres";
+
+grant execute on function "public"."_group_lock"(uuid, jsonb, uuid[]) to "service_role";
 
 revoke all
   on function "public"."_group_place"(uuid, uuid, jsonb, timestamp with time zone, integer, integer)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_group_place"(uuid, uuid, jsonb, timestamp with time zone, integer, integer)
-  to "postgres", "service_role";
+  to "postgres";
 
-revoke all on function "public"."_inventory_tracked"(uuid) from public;
+grant execute
+  on function "public"."_group_place"(uuid, uuid, jsonb, timestamp with time zone, integer, integer)
+  to "service_role";
 
-grant execute on function "public"."_inventory_tracked"(uuid) to "postgres", "service_role";
+revoke all on function "public"."_inventory_tracked"(uuid) from "postgres";
 
-revoke all on function "public"."_jsonb_uuids"(jsonb) from public;
+grant execute on function "public"."_inventory_tracked"(uuid) to "postgres";
 
-grant execute on function "public"."_jsonb_uuids"(jsonb) to "postgres", "service_role";
+grant execute on function "public"."_inventory_tracked"(uuid) to "service_role";
 
-revoke all on function "public"."_known_perms"() from public;
+revoke all on function "public"."_is_pad"(uuid) from "postgres";
 
-grant execute on function "public"."_known_perms"() to "postgres", "service_role";
+grant execute on function "public"."_is_pad"(uuid) to "postgres";
 
-revoke all on function "public"."_lock_pads"(uuid, uuid[]) from public;
+grant execute on function "public"."_is_pad"(uuid) to "service_role";
 
-grant execute on function "public"."_lock_pads"(uuid, uuid[]) to "postgres", "service_role";
+revoke all on function "public"."_jsonb_uuids"(jsonb) from "postgres";
 
-revoke all on function "public"."_lock_resources"(uuid, uuid[]) from public;
+grant execute on function "public"."_jsonb_uuids"(jsonb) to "postgres";
 
-grant execute on function "public"."_lock_resources"(uuid, uuid[]) to "postgres", "service_role";
+grant execute on function "public"."_jsonb_uuids"(jsonb) to "service_role";
 
-revoke all on function "public"."_mode_ok"(uuid, uuid, text) from public;
+revoke all on function "public"."_known_perms"() from "postgres";
 
-grant execute on function "public"."_mode_ok"(uuid, uuid, text) to "postgres", "service_role";
+grant execute on function "public"."_known_perms"() to "postgres";
 
-revoke all on function "public"."_need"(uuid, text) from public;
+grant execute on function "public"."_known_perms"() to "service_role";
 
-grant execute on function "public"."_need"(uuid, text) to "postgres", "service_role";
+revoke all on function "public"."_lock_pads"(uuid, uuid[]) from "postgres";
+
+grant execute on function "public"."_lock_pads"(uuid, uuid[]) to "postgres";
+
+grant execute on function "public"."_lock_pads"(uuid, uuid[]) to "service_role";
+
+revoke all on function "public"."_lock_resources"(uuid, uuid[]) from "postgres";
+
+grant execute on function "public"."_lock_resources"(uuid, uuid[]) to "postgres";
+
+grant execute on function "public"."_lock_resources"(uuid, uuid[]) to "service_role";
+
+revoke all on function "public"."_mode_ok"(uuid, uuid, text) from "postgres";
+
+grant execute on function "public"."_mode_ok"(uuid, uuid, text) to "postgres";
+
+grant execute on function "public"."_mode_ok"(uuid, uuid, text) to "service_role";
+
+revoke all on function "public"."_need"(uuid, text) from "postgres";
+
+grant execute on function "public"."_need"(uuid, text) to "postgres";
+
+grant execute on function "public"."_need"(uuid, text) to "service_role";
 
 revoke all
   on function
     "public"."_pad_allocate"(uuid, jsonb, text, uuid, uuid, uuid, uuid, integer, text, uuid, text,
     uuid, timestamp with time zone)
-  from public;
+  from "postgres";
 
 grant execute
   on function
     "public"."_pad_allocate"(uuid, jsonb, text, uuid, uuid, uuid, uuid, integer, text, uuid, text,
     uuid, timestamp with time zone)
-  to "postgres", "service_role";
+  to "postgres";
+
+grant execute
+  on function
+    "public"."_pad_allocate"(uuid, jsonb, text, uuid, uuid, uuid, uuid, integer, text, uuid, text,
+    uuid, timestamp with time zone)
+  to "service_role";
 
 revoke all
   on function "public"."_pad_borrow"(uuid, jsonb, uuid, text, timestamp with time zone)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_pad_borrow"(uuid, jsonb, uuid, text, timestamp with time zone)
-  to "postgres", "service_role";
+  to "postgres";
 
-revoke all on function "public"."_pad_ids"(jsonb) from public;
+grant execute
+  on function "public"."_pad_borrow"(uuid, jsonb, uuid, text, timestamp with time zone)
+  to "service_role";
 
-grant execute on function "public"."_pad_ids"(jsonb) to "postgres", "service_role";
+revoke all on function "public"."_pad_ids"(jsonb) from "postgres";
 
-revoke all on function "public"."_pad_origins"(uuid, uuid[]) from public;
+grant execute on function "public"."_pad_ids"(jsonb) to "postgres";
 
-grant execute on function "public"."_pad_origins"(uuid, uuid[]) to "postgres", "service_role";
+grant execute on function "public"."_pad_ids"(jsonb) to "service_role";
 
-revoke all on function "public"."_payment_status"(bigint, bigint) from public;
+revoke all on function "public"."_pad_origins"(uuid, uuid[]) from "postgres";
 
-grant execute on function "public"."_payment_status"(bigint, bigint) to "postgres", "service_role";
+grant execute on function "public"."_pad_origins"(uuid, uuid[]) to "postgres";
 
-revoke all on function "public"."_pr_ceil_step"(bigint, integer) from public;
+grant execute on function "public"."_pad_origins"(uuid, uuid[]) to "service_role";
 
-grant execute on function "public"."_pr_ceil_step"(bigint, integer) to "postgres", "service_role";
+revoke all on function "public"."_payment_status"(bigint, bigint) from "postgres";
+
+grant execute on function "public"."_payment_status"(bigint, bigint) to "postgres";
+
+grant execute on function "public"."_payment_status"(bigint, bigint) to "service_role";
+
+revoke all on function "public"."_plays"(uuid, timestamp with time zone) from "postgres";
+
+grant execute on function "public"."_plays"(uuid, timestamp with time zone) to "postgres";
+
+grant execute on function "public"."_plays"(uuid, timestamp with time zone) to "service_role";
+
+revoke all on function "public"."_pr_ceil_step"(bigint, integer) from "postgres";
+
+grant execute on function "public"."_pr_ceil_step"(bigint, integer) to "postgres";
+
+grant execute on function "public"."_pr_ceil_step"(bigint, integer) to "service_role";
 
 revoke all
   on function "public"."_pr_charge_key"(text, uuid, integer, text, timestamp
     with time zone, timestamp with time zone, bigint, bigint, integer, bigint, bigint)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_pr_charge_key"(text, uuid, integer, text, timestamp
     with time zone, timestamp with time zone, bigint, bigint, integer, bigint, bigint)
-  to "postgres", "service_role";
+  to "postgres";
 
-revoke all on function "public"."_pr_div"(bigint, bigint) from public;
+grant execute
+  on function "public"."_pr_charge_key"(text, uuid, integer, text, timestamp
+    with time zone, timestamp with time zone, bigint, bigint, integer, bigint, bigint)
+  to "service_role";
 
-grant execute on function "public"."_pr_div"(bigint, bigint) to "postgres", "service_role";
+revoke all on function "public"."_pr_div"(bigint, bigint) from "postgres";
 
-revoke all on function "public"."_pr_group_bill"(uuid, timestamp with time zone) from public;
+grant execute on function "public"."_pr_div"(bigint, bigint) to "postgres";
+
+grant execute on function "public"."_pr_div"(bigint, bigint) to "service_role";
+
+revoke all on function "public"."_pr_group_bill"(uuid, timestamp with time zone) from "postgres";
+
+grant execute on function "public"."_pr_group_bill"(uuid, timestamp with time zone) to "postgres";
 
 grant execute
   on function "public"."_pr_group_bill"(uuid, timestamp with time zone)
-  to "postgres", "service_role";
+  to "service_role";
 
-revoke all on function "public"."_pr_happy"(jsonb, date) from public;
+revoke all on function "public"."_pr_ist_date"(timestamp with time zone) from "postgres";
 
-grant execute on function "public"."_pr_happy"(jsonb, date) to "postgres", "service_role";
+grant execute on function "public"."_pr_ist_date"(timestamp with time zone) to "postgres";
 
-revoke all on function "public"."_pr_ist_date"(timestamp with time zone) from public;
+grant execute on function "public"."_pr_ist_date"(timestamp with time zone) to "service_role";
 
-grant execute
-  on function "public"."_pr_ist_date"(timestamp with time zone)
-  to "postgres", "service_role";
+revoke all on function "public"."_pr_keys"(jsonb, text, uuid, integer) from "postgres";
 
-revoke all on function "public"."_pr_keys"(jsonb, text, uuid, integer) from public;
+grant execute on function "public"."_pr_keys"(jsonb, text, uuid, integer) to "postgres";
 
-grant execute
-  on function "public"."_pr_keys"(jsonb, text, uuid, integer)
-  to "postgres", "service_role";
+grant execute on function "public"."_pr_keys"(jsonb, text, uuid, integer) to "service_role";
 
-revoke all on function "public"."_pr_money"(bigint, integer, text) from public;
+revoke all on function "public"."_pr_money"(bigint, integer, text) from "postgres";
 
-grant execute on function "public"."_pr_money"(bigint, integer, text) to "postgres", "service_role";
+grant execute on function "public"."_pr_money"(bigint, integer, text) to "postgres";
 
-revoke all on function "public"."_pr_policy"(jsonb) from public;
+grant execute on function "public"."_pr_money"(bigint, integer, text) to "service_role";
 
-grant execute on function "public"."_pr_policy"(jsonb) to "postgres", "service_role";
+revoke all on function "public"."_pr_policy"(jsonb) from "postgres";
+
+grant execute on function "public"."_pr_policy"(jsonb) to "postgres";
+
+grant execute on function "public"."_pr_policy"(jsonb) to "service_role";
 
 revoke all
   on function "public"."_pr_quote"(jsonb, text, integer, timestamp with time zone, timestamp
-    with time zone)
-  from public;
+    with time zone, timestamp with time zone)
+  from "postgres";
 
 grant execute
   on function "public"."_pr_quote"(jsonb, text, integer, timestamp with time zone, timestamp
-    with time zone)
-  to "postgres", "service_role";
-
-revoke all on function "public"."_pr_rate"(jsonb, text, text, integer) from public;
+    with time zone, timestamp with time zone)
+  to "postgres";
 
 grant execute
-  on function "public"."_pr_rate"(jsonb, text, text, integer)
-  to "postgres", "service_role";
+  on function "public"."_pr_quote"(jsonb, text, integer, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "service_role";
 
-revoke all on function "public"."_pr_round_step"(bigint, integer) from public;
+revoke all on function "public"."_pr_rate"(jsonb, text, text, integer) from "postgres";
 
-grant execute on function "public"."_pr_round_step"(bigint, integer) to "postgres", "service_role";
+grant execute on function "public"."_pr_rate"(jsonb, text, text, integer) to "postgres";
+
+grant execute on function "public"."_pr_rate"(jsonb, text, text, integer) to "service_role";
+
+revoke all on function "public"."_pr_round_step"(bigint, integer) from "postgres";
+
+grant execute on function "public"."_pr_round_step"(bigint, integer) to "postgres";
+
+grant execute on function "public"."_pr_round_step"(bigint, integer) to "service_role";
+
+revoke all on function "public"."_pr_rule"(jsonb, text, timestamp with time zone) from "postgres";
+
+grant execute on function "public"."_pr_rule"(jsonb, text, timestamp with time zone) to "postgres";
+
+grant execute
+  on function "public"."_pr_rule"(jsonb, text, timestamp with time zone)
+  to "service_role";
+
+revoke all on function "public"."_pr_rule_price"(bigint, integer, jsonb) from "postgres";
+
+grant execute on function "public"."_pr_rule_price"(bigint, integer, jsonb) to "postgres";
+
+grant execute on function "public"."_pr_rule_price"(bigint, integer, jsonb) to "service_role";
 
 revoke all
   on function "public"."_pr_secs"(timestamp with time zone, timestamp with time zone)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_pr_secs"(timestamp with time zone, timestamp with time zone)
-  to "postgres", "service_role";
+  to "postgres";
 
-revoke all on function "public"."_pr_session_bill"(uuid, timestamp with time zone) from public;
+grant execute
+  on function "public"."_pr_secs"(timestamp with time zone, timestamp with time zone)
+  to "service_role";
+
+revoke all on function "public"."_pr_session_bill"(uuid, timestamp with time zone) from "postgres";
+
+grant execute on function "public"."_pr_session_bill"(uuid, timestamp with time zone) to "postgres";
 
 grant execute
   on function "public"."_pr_session_bill"(uuid, timestamp with time zone)
-  to "postgres", "service_role";
+  to "service_role";
 
 revoke all
   on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean)
-  to "postgres", "service_role";
-
-revoke all on function "public"."_price_mismatch"(text, bigint, bigint) from public;
+  to "postgres";
 
 grant execute
-  on function "public"."_price_mismatch"(text, bigint, bigint)
-  to "postgres", "service_role";
+  on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean)
+  to "service_role";
 
-revoke all on function "public"."_pricing_canon"(jsonb) from public;
+revoke all on function "public"."_price_mismatch"(text, bigint, bigint) from "postgres";
 
-grant execute on function "public"."_pricing_canon"(jsonb) to "postgres", "service_role";
+grant execute on function "public"."_price_mismatch"(text, bigint, bigint) to "postgres";
 
-revoke all on function "public"."_pricing_grace"() from public;
+grant execute on function "public"."_price_mismatch"(text, bigint, bigint) to "service_role";
 
-grant execute on function "public"."_pricing_grace"() to "postgres", "service_role";
+revoke all on function "public"."_pricing_canon"(jsonb) from "postgres";
 
-revoke all on function "public"."_pricing_snapshot"(uuid) from public;
+grant execute on function "public"."_pricing_canon"(jsonb) to "postgres";
 
-grant execute on function "public"."_pricing_snapshot"(uuid) to "postgres", "service_role";
+grant execute on function "public"."_pricing_canon"(jsonb) to "service_role";
 
-revoke all on function "public"."_rupees"(bigint) from public;
+revoke all on function "public"."_pricing_grace"() from "postgres";
 
-grant execute on function "public"."_rupees"(bigint) to "postgres", "service_role";
+grant execute on function "public"."_pricing_grace"() to "postgres";
+
+grant execute on function "public"."_pricing_grace"() to "service_role";
+
+revoke all on function "public"."_pricing_snapshot"(uuid) from "postgres";
+
+grant execute on function "public"."_pricing_snapshot"(uuid) to "postgres";
+
+grant execute on function "public"."_pricing_snapshot"(uuid) to "service_role";
+
+revoke all on function "public"."_rupees"(bigint) from "postgres";
+
+grant execute on function "public"."_rupees"(bigint) to "postgres";
+
+grant execute on function "public"."_rupees"(bigint) to "service_role";
 
 revoke all
   on function "public"."_sales"(uuid, timestamp with time zone, timestamp with time zone, uuid)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_sales"(uuid, timestamp with time zone, timestamp with time zone, uuid)
-  to "postgres", "service_role";
+  to "postgres";
 
-revoke all on function "public"."_same_ids"(uuid[], uuid[]) from public;
+grant execute
+  on function "public"."_sales"(uuid, timestamp with time zone, timestamp with time zone, uuid)
+  to "service_role";
 
-grant execute on function "public"."_same_ids"(uuid[], uuid[]) to "postgres", "service_role";
+revoke all on function "public"."_same_ids"(uuid[], uuid[]) from "postgres";
 
-revoke all on function "public"."_seed_arena_catalog"(uuid) from public;
+grant execute on function "public"."_same_ids"(uuid[], uuid[]) to "postgres";
 
-grant execute on function "public"."_seed_arena_catalog"(uuid) to "postgres", "service_role";
+grant execute on function "public"."_same_ids"(uuid[], uuid[]) to "service_role";
+
+revoke all on function "public"."_seed_arena_catalog"(uuid) from "postgres";
+
+grant execute on function "public"."_seed_arena_catalog"(uuid) to "postgres";
+
+grant execute on function "public"."_seed_arena_catalog"(uuid) to "service_role";
 
 revoke all
   on function "public"."_single_supply"(uuid, uuid, text, uuid, integer, integer, uuid, integer)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."_single_supply"(uuid, uuid, text, uuid, integer, integer, uuid, integer)
-  to "postgres", "service_role";
-
-revoke all on function "public"."_stale"(xid8, text) from public;
-
-grant execute on function "public"."_stale"(xid8, text) to "postgres", "service_role";
-
-revoke all on function "public"."_station_free_for_single"(uuid) from public;
-
-grant execute on function "public"."_station_free_for_single"(uuid) to "postgres", "service_role";
-
-revoke all on function "public"."_station_usable"(uuid, uuid) from public;
-
-grant execute on function "public"."_station_usable"(uuid, uuid) to "postgres", "service_role";
-
-revoke all on function "public"."_sync_apply"(uuid, text, jsonb) from public;
-
-grant execute on function "public"."_sync_apply"(uuid, text, jsonb) to "postgres", "service_role";
-
-revoke all on function "public"."_sync_sources"() from public;
-
-grant execute on function "public"."_sync_sources"() to "postgres", "service_role";
-
-revoke all on function "public"."_untracked_busy"(uuid, uuid, uuid[]) from public;
+  to "postgres";
 
 grant execute
-  on function "public"."_untracked_busy"(uuid, uuid, uuid[])
-  to "postgres", "service_role";
+  on function "public"."_single_supply"(uuid, uuid, text, uuid, integer, integer, uuid, integer)
+  to "service_role";
 
-revoke all on function "public"."_usable_pads_at"(uuid, uuid) from public;
+revoke all on function "public"."_stale"(xid8, text) from "postgres";
 
-grant execute on function "public"."_usable_pads_at"(uuid, uuid) to "postgres", "service_role";
+grant execute on function "public"."_stale"(xid8, text) to "postgres";
 
-revoke all on function "public"."_uses_controllers"(uuid, text) from public;
+grant execute on function "public"."_stale"(xid8, text) to "service_role";
 
-grant execute on function "public"."_uses_controllers"(uuid, text) to "postgres", "service_role";
+revoke all on function "public"."_station_free_for_single"(uuid) from "postgres";
 
-revoke all on function "public"."accept_invite"(uuid, text) from public;
+grant execute on function "public"."_station_free_for_single"(uuid) to "postgres";
+
+grant execute on function "public"."_station_free_for_single"(uuid) to "service_role";
+
+revoke all on function "public"."_station_usable"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."_station_usable"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."_station_usable"(uuid, uuid) to "service_role";
+
+revoke all on function "public"."_sync_apply"(uuid, text, jsonb) from "postgres";
+
+grant execute on function "public"."_sync_apply"(uuid, text, jsonb) to "postgres";
+
+grant execute on function "public"."_sync_apply"(uuid, text, jsonb) to "service_role";
+
+revoke all on function "public"."_sync_sources"() from "postgres";
+
+grant execute on function "public"."_sync_sources"() to "postgres";
+
+grant execute on function "public"."_sync_sources"() to "service_role";
+
+revoke all on function "public"."_untracked_busy"(uuid, uuid, uuid[]) from "postgres";
+
+grant execute on function "public"."_untracked_busy"(uuid, uuid, uuid[]) to "postgres";
+
+grant execute on function "public"."_untracked_busy"(uuid, uuid, uuid[]) to "service_role";
+
+revoke all on function "public"."_usable_pads_at"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."_usable_pads_at"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."_usable_pads_at"(uuid, uuid) to "service_role";
+
+revoke all on function "public"."_uses_controllers"(uuid, text) from "postgres";
+
+grant execute on function "public"."_uses_controllers"(uuid, text) to "postgres";
+
+grant execute on function "public"."_uses_controllers"(uuid, text) to "service_role";
+
+grant execute on function "public"."accept_invite"(uuid, text) to "authenticated";
+
+revoke all on function "public"."accept_invite"(uuid, text) from "postgres";
+
+grant execute on function "public"."accept_invite"(uuid, text) to "postgres";
+
+grant execute on function "public"."accept_invite"(uuid, text) to "service_role";
+
+grant execute on function "public"."app_is_owner"(uuid) to "authenticated";
+
+revoke all on function "public"."app_is_owner"(uuid) from "postgres";
+
+grant execute on function "public"."app_is_owner"(uuid) to "postgres";
+
+grant execute on function "public"."app_is_owner"(uuid) to "service_role";
 
 grant execute
-  on function "public"."accept_invite"(uuid, text)
-  to "authenticated", "postgres", "service_role";
+  on function "public"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  to "authenticated";
 
-revoke all on function "public"."app_is_owner"(uuid) from public;
-
-grant execute
-  on function "public"."app_is_owner"(uuid)
-  to "authenticated", "postgres", "service_role";
-
-revoke all on function "public"."arena_invites"(uuid) from public;
+revoke all
+  on function "public"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  from "postgres";
 
 grant execute
-  on function "public"."arena_invites"(uuid)
-  to "authenticated", "postgres", "service_role";
-
-revoke all on function "public"."arena_pricing"(uuid) from public;
+  on function "public"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  to "postgres";
 
 grant execute
-  on function "public"."arena_pricing"(uuid)
-  to "authenticated", "postgres", "service_role";
-
-revoke all on function "public"."arena_sale"(uuid, uuid) from public;
+  on function "public"."arena_activity"(uuid, uuid, uuid, timestamp with time zone, integer)
+  to "service_role";
 
 grant execute
-  on function "public"."arena_sale"(uuid, uuid)
-  to "authenticated", "postgres", "service_role";
+  on function "public"."arena_discount_usage"(uuid, uuid, integer, text)
+  to "authenticated";
+
+revoke all on function "public"."arena_discount_usage"(uuid, uuid, integer, text) from "postgres";
+
+grant execute on function "public"."arena_discount_usage"(uuid, uuid, integer, text) to "postgres";
+
+grant execute
+  on function "public"."arena_discount_usage"(uuid, uuid, integer, text)
+  to "service_role";
+
+grant execute
+  on function "public"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  to "authenticated";
+
+revoke all
+  on function "public"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  from "postgres";
+
+grant execute
+  on function "public"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  to "postgres";
+
+grant execute
+  on function "public"."arena_game_fans"(uuid, uuid, timestamp with time zone, integer)
+  to "service_role";
+
+grant execute
+  on function "public"."arena_game_stats"(uuid, timestamp with time zone)
+  to "authenticated";
+
+revoke all on function "public"."arena_game_stats"(uuid, timestamp with time zone) from "postgres";
+
+grant execute on function "public"."arena_game_stats"(uuid, timestamp with time zone) to "postgres";
+
+grant execute
+  on function "public"."arena_game_stats"(uuid, timestamp with time zone)
+  to "service_role";
+
+grant execute on function "public"."arena_invites"(uuid) to "authenticated";
+
+revoke all on function "public"."arena_invites"(uuid) from "postgres";
+
+grant execute on function "public"."arena_invites"(uuid) to "postgres";
+
+grant execute on function "public"."arena_invites"(uuid) to "service_role";
+
+grant execute
+  on function "public"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  to "authenticated";
+
+revoke all
+  on function "public"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  from "postgres";
+
+grant execute
+  on function "public"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  to "postgres";
+
+grant execute
+  on function "public"."arena_members"(uuid, timestamp with time zone, timestamp
+    with time zone, text, integer, integer)
+  to "service_role";
+
+grant execute
+  on function "public"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  to "authenticated";
+
+revoke all
+  on function "public"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  from "postgres";
+
+grant execute
+  on function "public"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  to "postgres";
+
+grant execute
+  on function "public"."arena_overview"(uuid, timestamp with time zone, timestamp
+    with time zone,
+    timestamp with time zone, timestamp with time zone, text, timestamp with time zone)
+  to "service_role";
+
+grant execute on function "public"."arena_pricing"(uuid) to "authenticated";
+
+revoke all on function "public"."arena_pricing"(uuid) from "postgres";
+
+grant execute on function "public"."arena_pricing"(uuid) to "postgres";
+
+grant execute on function "public"."arena_pricing"(uuid) to "service_role";
+
+grant execute on function "public"."arena_sale"(uuid, uuid) to "authenticated";
+
+revoke all on function "public"."arena_sale"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."arena_sale"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."arena_sale"(uuid, uuid) to "service_role";
+
+grant execute
+  on function "public"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
+  to "authenticated";
 
 revoke all
   on function "public"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
-  from public;
+  from "postgres";
 
 grant execute
   on function "public"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
-  to "authenticated", "postgres", "service_role";
-
-revoke all on function "public"."arena_staff"(uuid) from public;
+  to "postgres";
 
 grant execute
-  on function "public"."arena_staff"(uuid)
-  to "authenticated", "postgres", "service_role";
+  on function "public"."arena_sales"(uuid, timestamp with time zone, timestamp with time zone)
+  to "service_role";
 
-revoke all on function "public"."assert_controller_free_for_allocation"() from public;
+grant execute on function "public"."arena_staff"(uuid) to "authenticated";
 
-grant execute
-  on function "public"."assert_controller_free_for_allocation"()
-  to "postgres", "service_role";
+revoke all on function "public"."arena_staff"(uuid) from "postgres";
 
-revoke all on function "public"."assert_resource_free_for_assignment"() from public;
+grant execute on function "public"."arena_staff"(uuid) to "postgres";
 
-grant execute
-  on function "public"."assert_resource_free_for_assignment"()
-  to "postgres", "service_role";
-
-revoke all on function "public"."assert_resource_free_for_segment"() from public;
+grant execute on function "public"."arena_staff"(uuid) to "service_role";
 
 grant execute
-  on function "public"."assert_resource_free_for_segment"()
-  to "postgres", "service_role";
+  on function "public"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "authenticated";
 
-revoke all on function "public"."bootstrap_owner"(text, text, text) from public;
-
-grant execute on function "public"."bootstrap_owner"(text, text, text) to "postgres", "service_role";
-
-revoke all on function "public"."create_my_arena"(text, text) from public;
+revoke all
+  on function "public"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  from "postgres";
 
 grant execute
-  on function "public"."create_my_arena"(text, text)
-  to "authenticated", "postgres", "service_role";
+  on function "public"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "postgres";
 
-revoke all on function "public"."invite_member"(uuid, text, text, text, text[]) from public;
+grant execute
+  on function "public"."arena_station_stats"(uuid, timestamp with time zone, timestamp
+    with time zone, timestamp with time zone)
+  to "service_role";
+
+revoke all on function "public"."assert_controller_free_for_allocation"() from "postgres";
+
+grant execute on function "public"."assert_controller_free_for_allocation"() to "postgres";
+
+grant execute on function "public"."assert_controller_free_for_allocation"() to "service_role";
+
+revoke all on function "public"."assert_resource_free_for_assignment"() from "postgres";
+
+grant execute on function "public"."assert_resource_free_for_assignment"() to "postgres";
+
+grant execute on function "public"."assert_resource_free_for_assignment"() to "service_role";
+
+revoke all on function "public"."assert_resource_free_for_segment"() from "postgres";
+
+grant execute on function "public"."assert_resource_free_for_segment"() to "postgres";
+
+grant execute on function "public"."assert_resource_free_for_segment"() to "service_role";
+
+revoke all on function "public"."bootstrap_owner"(text, text, text) from "postgres";
+
+grant execute on function "public"."bootstrap_owner"(text, text, text) to "postgres";
+
+grant execute on function "public"."bootstrap_owner"(text, text, text) to "service_role";
+
+grant execute on function "public"."create_my_arena"(text, text) to "authenticated";
+
+revoke all on function "public"."create_my_arena"(text, text) from "postgres";
+
+grant execute on function "public"."create_my_arena"(text, text) to "postgres";
+
+grant execute on function "public"."create_my_arena"(text, text) to "service_role";
 
 grant execute
   on function "public"."invite_member"(uuid, text, text, text, text[])
-  to "authenticated", "postgres", "service_role";
+  to "authenticated";
 
-revoke all on function "public"."my_arenas"() from public;
+revoke all on function "public"."invite_member"(uuid, text, text, text, text[]) from "postgres";
 
-grant execute on function "public"."my_arenas"() to "authenticated", "postgres", "service_role";
+grant execute on function "public"."invite_member"(uuid, text, text, text, text[]) to "postgres";
 
-revoke all on function "public"."op_activity_remove"(uuid, jsonb) from public;
+grant execute on function "public"."invite_member"(uuid, text, text, text, text[]) to "service_role";
 
-grant execute on function "public"."op_activity_remove"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."my_arenas"() to "authenticated";
 
-revoke all on function "public"."op_activity_upsert"(uuid, jsonb) from public;
+revoke all on function "public"."my_arenas"() from "postgres";
 
-grant execute on function "public"."op_activity_upsert"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."my_arenas"() to "postgres";
 
-revoke all on function "public"."op_arena_update"(uuid, jsonb) from public;
+grant execute on function "public"."my_arenas"() to "service_role";
 
-grant execute on function "public"."op_arena_update"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_accessory_kind_remove"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_booking_create"(uuid, jsonb) from public;
+grant execute on function "public"."op_accessory_kind_remove"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_booking_create"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_accessory_kind_remove"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_booking_set_status"(uuid, jsonb) from public;
+revoke all on function "public"."op_accessory_kind_upsert"(uuid, jsonb) from "postgres";
 
-grant execute
-  on function "public"."op_booking_set_status"(uuid, jsonb)
-  to "postgres", "service_role";
+grant execute on function "public"."op_accessory_kind_upsert"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_booking_update"(uuid, jsonb) from public;
+grant execute on function "public"."op_accessory_kind_upsert"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_booking_update"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_activity_remove"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_controller_move"(uuid, jsonb) from public;
+grant execute on function "public"."op_activity_remove"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_controller_move"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_activity_remove"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_controller_set_status"(uuid, jsonb) from public;
+revoke all on function "public"."op_activity_upsert"(uuid, jsonb) from "postgres";
 
-grant execute
-  on function "public"."op_controller_set_status"(uuid, jsonb)
-  to "postgres", "service_role";
+grant execute on function "public"."op_activity_upsert"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_controller_upsert"(uuid, jsonb) from public;
+grant execute on function "public"."op_activity_upsert"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_controller_upsert"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_arena_update"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_customer_create"(uuid, jsonb) from public;
+grant execute on function "public"."op_arena_update"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_customer_create"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_arena_update"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_customer_update"(uuid, jsonb) from public;
+revoke all on function "public"."op_booking_create"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_customer_update"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_booking_create"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_game_delete"(uuid, jsonb) from public;
+grant execute on function "public"."op_booking_create"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_game_delete"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_booking_set_status"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_game_replace_controls"(uuid, jsonb) from public;
+grant execute on function "public"."op_booking_set_status"(uuid, jsonb) to "postgres";
 
-grant execute
-  on function "public"."op_game_replace_controls"(uuid, jsonb)
-  to "postgres", "service_role";
+grant execute on function "public"."op_booking_set_status"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_game_set_active"(uuid, jsonb) from public;
+revoke all on function "public"."op_booking_update"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_game_set_active"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_booking_update"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_game_set_compat"(uuid, jsonb) from public;
+grant execute on function "public"."op_booking_update"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_game_set_compat"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_controller_move"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_game_upsert"(uuid, jsonb) from public;
+grant execute on function "public"."op_controller_move"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_game_upsert"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_controller_move"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_group_add"(uuid, jsonb) from public;
+revoke all on function "public"."op_controller_set_status"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_group_add"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_controller_set_status"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_group_create"(uuid, jsonb) from public;
+grant execute on function "public"."op_controller_set_status"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_group_create"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_controller_upsert"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_group_end"(uuid, jsonb) from public;
+grant execute on function "public"."op_controller_upsert"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_group_end"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_controller_upsert"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_group_end_player"(uuid, jsonb) from public;
+revoke all on function "public"."op_customer_create"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_group_end_player"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_customer_create"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_group_extend"(uuid, jsonb) from public;
+grant execute on function "public"."op_customer_create"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_group_extend"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_customer_update"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_group_switch"(uuid, jsonb) from public;
+grant execute on function "public"."op_customer_update"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_group_switch"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_customer_update"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_group_void"(uuid, jsonb) from public;
+revoke all on function "public"."op_discount_delete"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_group_void"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_discount_delete"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_holiday_delete"(uuid, jsonb) from public;
+grant execute on function "public"."op_discount_delete"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_holiday_delete"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_discount_set_active"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_holiday_upsert"(uuid, jsonb) from public;
+grant execute on function "public"."op_discount_set_active"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_holiday_upsert"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_discount_set_active"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_payment"(uuid, jsonb) from public;
+revoke all on function "public"."op_discount_upsert"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_payment"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_discount_upsert"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_payment_correct"(uuid, jsonb) from public;
+grant execute on function "public"."op_discount_upsert"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_payment_correct"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_game_delete"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_policy_save"(uuid, jsonb) from public;
+grant execute on function "public"."op_game_delete"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_policy_save"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_game_delete"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_rate_delete"(uuid, jsonb) from public;
+revoke all on function "public"."op_game_replace_controls"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_rate_delete"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_game_replace_controls"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_rate_upsert"(uuid, jsonb) from public;
+grant execute on function "public"."op_game_replace_controls"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_rate_upsert"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_game_set_active"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_resource_set_mode"(uuid, jsonb) from public;
+grant execute on function "public"."op_game_set_active"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_resource_set_mode"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_game_set_active"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_resource_set_status"(uuid, jsonb) from public;
+revoke all on function "public"."op_game_set_compat"(uuid, jsonb) from "postgres";
 
-grant execute
-  on function "public"."op_resource_set_status"(uuid, jsonb)
-  to "postgres", "service_role";
+grant execute on function "public"."op_game_set_compat"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_resource_upsert"(uuid, jsonb) from public;
+grant execute on function "public"."op_game_set_compat"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_resource_upsert"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_game_upsert"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_session_end"(uuid, jsonb) from public;
+grant execute on function "public"."op_game_upsert"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_session_end"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_game_upsert"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_session_extend"(uuid, jsonb) from public;
+revoke all on function "public"."op_group_add"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_session_extend"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_group_add"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_session_reconfigure"(uuid, jsonb) from public;
+grant execute on function "public"."op_group_add"(uuid, jsonb) to "service_role";
 
-grant execute
-  on function "public"."op_session_reconfigure"(uuid, jsonb)
-  to "postgres", "service_role";
+revoke all on function "public"."op_group_create"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_session_start"(uuid, jsonb) from public;
+grant execute on function "public"."op_group_create"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_session_start"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_group_create"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."op_session_void"(uuid, jsonb) from public;
+revoke all on function "public"."op_group_end"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."op_session_void"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_group_end"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."op_settings_save"(uuid, jsonb) from public;
+grant execute on function "public"."op_group_end"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."op_settings_save"(uuid, jsonb) to "postgres", "service_role";
+revoke all on function "public"."op_group_end_player"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."op_staff_update"(uuid, jsonb) from public;
+grant execute on function "public"."op_group_end_player"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."op_staff_update"(uuid, jsonb) to "postgres", "service_role";
+grant execute on function "public"."op_group_end_player"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."revoke_invite"(uuid, uuid) from public;
+revoke all on function "public"."op_group_extend"(uuid, jsonb) from "postgres";
 
-grant execute
-  on function "public"."revoke_invite"(uuid, uuid)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "public"."op_group_extend"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."set_updated_at"() from public;
+grant execute on function "public"."op_group_extend"(uuid, jsonb) to "service_role";
 
-grant execute on function "public"."set_updated_at"() to "postgres", "service_role";
+revoke all on function "public"."op_group_switch"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."sync_fetch_entity"(uuid, jsonb) from public;
+grant execute on function "public"."op_group_switch"(uuid, jsonb) to "postgres";
 
-grant execute
-  on function "public"."sync_fetch_entity"(uuid, jsonb)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "public"."op_group_switch"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."sync_pull"(uuid, text, integer) from public;
+revoke all on function "public"."op_group_void"(uuid, jsonb) from "postgres";
 
-grant execute
-  on function "public"."sync_pull"(uuid, text, integer)
-  to "authenticated", "postgres", "service_role";
+grant execute on function "public"."op_group_void"(uuid, jsonb) to "postgres";
 
-revoke all on function "public"."sync_push"(uuid, jsonb, text) from public;
+grant execute on function "public"."op_group_void"(uuid, jsonb) to "service_role";
 
-grant execute
-  on function "public"."sync_push"(uuid, jsonb, text)
-  to "authenticated", "postgres", "service_role";
+revoke all on function "public"."op_holiday_delete"(uuid, jsonb) from "postgres";
 
-revoke all on function "public"."sync_record_delete"() from public;
+grant execute on function "public"."op_holiday_delete"(uuid, jsonb) to "postgres";
 
-grant execute on function "public"."sync_record_delete"() to "postgres", "service_role";
+grant execute on function "public"."op_holiday_delete"(uuid, jsonb) to "service_role";
 
-revoke all on function "public"."sync_stamp"() from public;
+revoke all on function "public"."op_holiday_upsert"(uuid, jsonb) from "postgres";
 
-grant execute on function "public"."sync_stamp"() to "postgres", "service_role";
+grant execute on function "public"."op_holiday_upsert"(uuid, jsonb) to "postgres";
 
-grant usage on schema "private" to "authenticated";
+grant execute on function "public"."op_holiday_upsert"(uuid, jsonb) to "service_role";
 
-grant create, usage on schema "private" to "postgres";
+revoke all on function "public"."op_payment"(uuid, jsonb) from "postgres";
 
-grant usage on schema "private" to "service_role";
+grant execute on function "public"."op_payment"(uuid, jsonb) to "postgres";
 
-grant select, update, usage
-  on sequence "public"."sync_tombstones_id_seq"
-  to "postgres", "service_role";
+grant execute on function "public"."op_payment"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_payment_correct"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_payment_correct"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_payment_correct"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_policy_save"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_policy_save"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_policy_save"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_rate_delete"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_rate_delete"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_rate_delete"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_rate_upsert"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_rate_upsert"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_rate_upsert"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_resource_set_mode"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_resource_set_mode"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_resource_set_mode"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_resource_set_status"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_resource_set_status"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_resource_set_status"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_resource_upsert"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_resource_upsert"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_resource_upsert"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_rule_delete"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_rule_delete"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_rule_delete"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_rule_reorder"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_rule_reorder"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_rule_reorder"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_rule_upsert"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_rule_upsert"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_rule_upsert"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_session_end"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_session_end"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_session_end"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_session_extend"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_session_extend"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_session_extend"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_session_reconfigure"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_session_reconfigure"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_session_reconfigure"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_session_start"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_session_start"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_session_start"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_session_void"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_session_void"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_session_void"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_settings_save"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_settings_save"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_settings_save"(uuid, jsonb) to "service_role";
+
+revoke all on function "public"."op_staff_update"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."op_staff_update"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."op_staff_update"(uuid, jsonb) to "service_role";
+
+grant execute on function "public"."revoke_invite"(uuid, uuid) to "authenticated";
+
+revoke all on function "public"."revoke_invite"(uuid, uuid) from "postgres";
+
+grant execute on function "public"."revoke_invite"(uuid, uuid) to "postgres";
+
+grant execute on function "public"."revoke_invite"(uuid, uuid) to "service_role";
+
+revoke all on function "public"."set_updated_at"() from "postgres";
+
+grant execute on function "public"."set_updated_at"() to "postgres";
+
+grant execute on function "public"."set_updated_at"() to "service_role";
+
+grant execute on function "public"."sync_fetch_entity"(uuid, jsonb) to "authenticated";
+
+revoke all on function "public"."sync_fetch_entity"(uuid, jsonb) from "postgres";
+
+grant execute on function "public"."sync_fetch_entity"(uuid, jsonb) to "postgres";
+
+grant execute on function "public"."sync_fetch_entity"(uuid, jsonb) to "service_role";
+
+grant execute on function "public"."sync_pull"(uuid, text, integer) to "authenticated";
+
+revoke all on function "public"."sync_pull"(uuid, text, integer) from "postgres";
+
+grant execute on function "public"."sync_pull"(uuid, text, integer) to "postgres";
+
+grant execute on function "public"."sync_pull"(uuid, text, integer) to "service_role";
+
+grant execute on function "public"."sync_push"(uuid, jsonb, text) to "authenticated";
+
+revoke all on function "public"."sync_push"(uuid, jsonb, text) from "postgres";
+
+grant execute on function "public"."sync_push"(uuid, jsonb, text) to "postgres";
+
+grant execute on function "public"."sync_push"(uuid, jsonb, text) to "service_role";
+
+revoke all on function "public"."sync_record_delete"() from "postgres";
+
+grant execute on function "public"."sync_record_delete"() to "postgres";
+
+grant execute on function "public"."sync_record_delete"() to "service_role";
+
+revoke all on function "public"."sync_stamp"() from "postgres";
+
+grant execute on function "public"."sync_stamp"() to "postgres";
+
+grant execute on function "public"."sync_stamp"() to "service_role";
+
+grant usage on schema "private" to "authenticated", "service_role";
+
+revoke all on sequence "public"."sync_tombstones_id_seq" from "postgres";
+
+grant select, update, usage on sequence "public"."sync_tombstones_id_seq" to "postgres";
+
+grant select, update, usage on sequence "public"."sync_tombstones_id_seq" to "service_role";
+
+revoke all on table "public"."accessory_kinds" from "authenticated";
+
+grant select on table "public"."accessory_kinds" to "authenticated";
+
+revoke all on table "public"."accessory_kinds" from "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."accessory_kinds"
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."accessory_kinds"
+  to "service_role";
+
+revoke all on table "public"."activities" from "authenticated";
 
 grant select on table "public"."activities" to "authenticated";
 
+revoke all on table "public"."activities" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."activities"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."activities"
+  to "service_role";
+
+revoke all on table "public"."arenas" from "authenticated";
 
 grant select on table "public"."arenas" to "authenticated";
 
+revoke all on table "public"."arenas" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."arenas"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."arenas"
+  to "service_role";
+
+revoke all on table "public"."audit_log" from "authenticated";
 
 grant select on table "public"."audit_log" to "authenticated";
 
+revoke all on table "public"."audit_log" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."audit_log"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."audit_log"
+  to "service_role";
+
+revoke all on table "public"."bill_discounts" from "authenticated";
+
+grant select on table "public"."bill_discounts" to "authenticated";
+
+revoke all on table "public"."bill_discounts" from "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."bill_discounts"
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."bill_discounts"
+  to "service_role";
+
+revoke all on table "public"."billing_policies" from "authenticated";
 
 grant select on table "public"."billing_policies" to "authenticated";
 
+revoke all on table "public"."billing_policies" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."billing_policies"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."billing_policies"
+  to "service_role";
+
+revoke all on table "public"."bookings" from "authenticated";
 
 grant select on table "public"."bookings" to "authenticated";
 
+revoke all on table "public"."bookings" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."bookings"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."bookings"
+  to "service_role";
+
+revoke all on table "public"."controller_allocations" from "authenticated";
 
 grant select on table "public"."controller_allocations" to "authenticated";
 
+revoke all on table "public"."controller_allocations" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."controller_allocations"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."controller_allocations"
+  to "service_role";
+
+revoke all on table "public"."controller_moves" from "authenticated";
 
 grant select on table "public"."controller_moves" to "authenticated";
 
+revoke all on table "public"."controller_moves" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."controller_moves"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."controller_moves"
+  to "service_role";
+
+revoke all on table "public"."controllers" from "authenticated";
 
 grant select on table "public"."controllers" to "authenticated";
 
+revoke all on table "public"."controllers" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."controllers"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."controllers"
+  to "service_role";
+
+revoke all on table "public"."customers" from "authenticated";
 
 grant select on table "public"."customers" to "authenticated";
 
+revoke all on table "public"."customers" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."customers"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."customers"
+  to "service_role";
+
+revoke all on table "public"."discounts" from "authenticated";
+
+grant select on table "public"."discounts" to "authenticated";
+
+revoke all on table "public"."discounts" from "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."discounts"
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."discounts"
+  to "service_role";
+
+revoke all on table "public"."game_categories" from "authenticated";
 
 grant select on table "public"."game_categories" to "authenticated";
 
+revoke all on table "public"."game_categories" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."game_categories"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."game_categories"
+  to "service_role";
+
+revoke all on table "public"."game_controls" from "authenticated";
 
 grant select on table "public"."game_controls" to "authenticated";
 
+revoke all on table "public"."game_controls" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."game_controls"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."game_controls"
+  to "service_role";
+
+revoke all on table "public"."game_resources" from "authenticated";
 
 grant select on table "public"."game_resources" to "authenticated";
 
+revoke all on table "public"."game_resources" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."game_resources"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."game_resources"
+  to "service_role";
+
+revoke all on table "public"."games" from "authenticated";
 
 grant select on table "public"."games" to "authenticated";
 
+revoke all on table "public"."games" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."games"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."games"
+  to "service_role";
+
+revoke all on table "public"."group_assignments" from "authenticated";
 
 grant select on table "public"."group_assignments" to "authenticated";
 
+revoke all on table "public"."group_assignments" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_assignments"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."group_assignments"
+  to "service_role";
+
+revoke all on table "public"."group_charges" from "authenticated";
 
 grant select on table "public"."group_charges" to "authenticated";
 
+revoke all on table "public"."group_charges" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_charges"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."group_charges"
+  to "service_role";
+
+revoke all on table "public"."group_extensions" from "authenticated";
 
 grant select on table "public"."group_extensions" to "authenticated";
 
+revoke all on table "public"."group_extensions" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_extensions"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."group_extensions"
+  to "service_role";
+
+revoke all on table "public"."group_payments" from "authenticated";
 
 grant select on table "public"."group_payments" to "authenticated";
 
+revoke all on table "public"."group_payments" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_payments"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."group_payments"
+  to "service_role";
+
+revoke all on table "public"."group_sessions" from "authenticated";
 
 grant select on table "public"."group_sessions" to "authenticated";
 
+revoke all on table "public"."group_sessions" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."group_sessions"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."group_sessions"
+  to "service_role";
+
+revoke all on table "public"."holidays" from "authenticated";
 
 grant select on table "public"."holidays" to "authenticated";
 
+revoke all on table "public"."holidays" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."holidays"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."holidays"
+  to "service_role";
+
+revoke all on table "public"."payments" from "authenticated";
 
 grant select on table "public"."payments" to "authenticated";
 
+revoke all on table "public"."payments" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."payments"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."payments"
+  to "service_role";
+
+revoke all on table "public"."pricing_catalog_history" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."pricing_catalog_history"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."pricing_catalog_history"
+  to "service_role";
+
+revoke all on table "public"."pricing_rules" from "authenticated";
+
+grant select on table "public"."pricing_rules" to "authenticated";
+
+revoke all on table "public"."pricing_rules" from "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."pricing_rules"
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."pricing_rules"
+  to "service_role";
+
+revoke all on table "public"."rate_bands" from "authenticated";
 
 grant select on table "public"."rate_bands" to "authenticated";
 
+revoke all on table "public"."rate_bands" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."rate_bands"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."rate_bands"
+  to "service_role";
+
+revoke all on table "public"."rate_cards" from "authenticated";
 
 grant select on table "public"."rate_cards" to "authenticated";
 
+revoke all on table "public"."rate_cards" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."rate_cards"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."rate_cards"
+  to "service_role";
+
+revoke all on table "public"."rates" from "authenticated";
 
 grant select on table "public"."rates" to "authenticated";
 
+revoke all on table "public"."rates" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."rates"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."rates"
+  to "service_role";
+
+revoke all on table "public"."resource_activities" from "authenticated";
 
 grant select on table "public"."resource_activities" to "authenticated";
 
+revoke all on table "public"."resource_activities" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."resource_activities"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."resource_activities"
+  to "service_role";
+
+revoke all on table "public"."resources" from "authenticated";
 
 grant select on table "public"."resources" to "authenticated";
 
+revoke all on table "public"."resources" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."resources"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."resources"
+  to "service_role";
+
+revoke all on table "public"."session_charges" from "authenticated";
 
 grant select on table "public"."session_charges" to "authenticated";
 
+revoke all on table "public"."session_charges" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."session_charges"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."session_charges"
+  to "service_role";
+
+revoke all on table "public"."session_extensions" from "authenticated";
 
 grant select on table "public"."session_extensions" to "authenticated";
 
+revoke all on table "public"."session_extensions" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."session_extensions"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."session_extensions"
+  to "service_role";
+
+revoke all on table "public"."session_segments" from "authenticated";
 
 grant select on table "public"."session_segments" to "authenticated";
 
+revoke all on table "public"."session_segments" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."session_segments"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."session_segments"
+  to "service_role";
+
+revoke all on table "public"."sessions" from "authenticated";
 
 grant select on table "public"."sessions" to "authenticated";
 
+revoke all on table "public"."sessions" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sessions"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sessions"
+  to "service_role";
+
+revoke all on table "public"."settings" from "authenticated";
 
 grant select on table "public"."settings" to "authenticated";
 
+revoke all on table "public"."settings" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."settings"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."settings"
+  to "service_role";
+
+revoke all on table "public"."staff_invites" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."staff_invites"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."staff_invites"
+  to "service_role";
+
+revoke all on table "public"."staff_profiles" from "authenticated";
 
 grant select on table "public"."staff_profiles" to "authenticated";
 
+revoke all on table "public"."staff_profiles" from "postgres";
+
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."staff_profiles"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."staff_profiles"
+  to "service_role";
+
+revoke all on table "public"."sync_ops" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sync_ops"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sync_ops"
+  to "service_role";
+
+revoke all on table "public"."sync_tombstones" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sync_tombstones"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sync_tombstones"
+  to "service_role";
+
+revoke all on table "public"."sync_v_arenas" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sync_v_arenas"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sync_v_arenas"
+  to "service_role";
+
+revoke all on table "public"."sync_v_bookings" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sync_v_bookings"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sync_v_bookings"
+  to "service_role";
+
+revoke all on table "public"."sync_v_rates" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sync_v_rates"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sync_v_rates"
+  to "service_role";
+
+revoke all on table "public"."sync_v_resource_activities" from "postgres";
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."sync_v_resource_activities"
-  to "postgres", "service_role";
+  to "postgres";
+
+grant delete, insert, maintain, references, select, trigger, truncate, update
+  on table "public"."sync_v_resource_activities"
+  to "service_role";
 
 alter default privileges for role "postgres" in schema "private" revoke all on FUNCTIONS from public;
 
