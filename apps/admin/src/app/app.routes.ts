@@ -5,6 +5,7 @@ import { NAV_ITEMS } from './core/layout/nav';
 import { capabilityGuard } from './core/venue/venue';
 import { Shell } from './core/layout/shell';
 import { CONFIG_PROBLEM } from './core/supabase/supabase';
+import { MATERIAL_DEFAULTS } from './shared/material/material-defaults';
 
 /** Screens built so far replace their placeholder here with lazy-loaded feature routes. */
 const BUILT: Readonly<Record<string, () => Promise<Routes>>> = {
@@ -64,6 +65,13 @@ const APP_ROUTES: Routes = [
     canMatch: [signedInGuard, arenaGuard],
     children: [
       { path: '', pathMatch: 'full', redirectTo: 'overview' },
+      // Self-service setup for a new venue (create-arena lands here); not in the nav.
+      {
+        path: 'setup',
+        title: 'Set up your venue · ArenaOS',
+        providers: [MATERIAL_DEFAULTS],
+        loadComponent: () => import('./features/setup/setup-page').then((m) => m.SetupPage),
+      },
       // Accessories moved into Stations; keep old links working.
       { path: 'controllers', pathMatch: 'full', redirectTo: 'stations' },
       // A nav entry without a BUILT screen shows a placeholder.

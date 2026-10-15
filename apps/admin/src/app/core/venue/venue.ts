@@ -86,10 +86,18 @@ export function nounFor(types: readonly Pick<CatalogType, 'noun'>[]): ResourceNo
   return nouns.size === 1 ? [...nouns][0] : 'station';
 }
 
+/** What the dashboard reads about the venue in one go. */
+export interface VenueData {
+  readonly types: VenueType[];
+  readonly noun: ResourceNoun;
+  /** Whether the owner has saved opening hours (setup resumes at that step otherwise). */
+  readonly hoursSaved: boolean;
+}
+
 /** Reads type flags and the profile (RLS), the catalog (client RPC); saves via settings.save. */
 @Service({ factory: () => new SupabaseVenueApi() })
 export abstract class VenueApi {
-  abstract load(arenaId: string): Promise<{ types: VenueType[]; noun: ResourceNoun }>;
+  abstract load(arenaId: string): Promise<VenueData>;
   abstract catalog(): Promise<CatalogType[]>;
   abstract saveNoun(arenaId: string, noun: ResourceNoun): Promise<void>;
 }
@@ -97,7 +105,7 @@ export abstract class VenueApi {
 class SupabaseVenueApi extends VenueApi {
   private readonly supabase = inject(Supabase);
 
-  async load(arenaId: string): Promise<{ types: VenueType[]; noun: ResourceNoun }> {
+  async load(arenaId: string): Promise<VenueData> {
     const client = await this.supabase.client();
     const [types, profile] = await Promise.all([
       client
@@ -106,13 +114,13 @@ class SupabaseVenueApi extends VenueApi {
         .eq('arena_id', arenaId),
       client
         .from('settings')
-        .select('json')
+        .select('key, json')
         .eq('arena_id', arenaId)
-        .eq('key', 'venue_profile')
-        .maybeSingle(),
+        .in('key', ['venue_profile', 'business_hours']),
     ]);
     if (types.error) throw dbError(types.error);
     if (profile.error) throw dbError(profile.error);
+    const settings = profile.data as { key: string; json: unknown }[];
     return {
       types: (
         types.data as {
@@ -127,7 +135,8 @@ class SupabaseVenueApi extends VenueApi {
         usesControllers: t.uses_controllers,
         active: t.active,
       })),
-      noun: parseNoun((profile.data as { json: unknown } | null)?.json ?? null),
+      noun: parseNoun(settings.find((s) => s.key === 'venue_profile')?.json ?? null),
+      hoursSaved: settings.some((s) => s.key === 'business_hours'),
     };
   }
 
@@ -165,6 +174,7 @@ export class VenueStore {
 
   readonly types = signal<readonly VenueType[] | null>(null);
   readonly noun = signal<ResourceNoun>('station');
+  readonly hoursSaved = signal(false);
   /** Null until loaded: everything shows meanwhile, so a console venue never sees nav flicker. */
   readonly capabilities = computed<ReadonlySet<Capability> | null>(() => {
     const types = this.types();
@@ -188,6 +198,7 @@ export class VenueStore {
       this.pending = null;
       this.types.set(null);
       this.noun.set('station');
+      this.hoursSaved.set(false);
     });
   }
 
@@ -205,10 +216,11 @@ export class VenueStore {
     this.loadedArena = arenaId;
     const call = ++this.latest;
     this.pending = this.api.load(arenaId).then(
-      ({ types, noun }) => {
+      ({ types, noun, hoursSaved }) => {
         if (call !== this.latest) return;
         this.types.set(types);
         this.noun.set(noun);
+        this.hoursSaved.set(hoursSaved);
       },
       () => {
         // Unreadable: keep everything visible (the default) and try again next time.

@@ -15,8 +15,8 @@ const MAX_NAME = 80;
 
 /**
  * A signed-in login with no membership at all — a new owner — creates its own arena
- * (create_my_arena: confirmed logins, one arena per login). It starts empty; the owner builds the
- * catalog here. Floor staff and logins whose access is off never get here (noArenaGuard sends
+ * (create_my_arena: confirmed logins, one arena per login). It starts empty; the owner then
+ * builds it in the setup wizard (/setup). Floor staff and logins whose access is off never get here (noArenaGuard sends
  * them to the account page).
  */
 @Component({
@@ -69,8 +69,8 @@ export class CreateArena implements OnInit {
 
   protected readonly subtitle = computed(
     () =>
-      `Signed in as ${this.session.user()?.email ?? ''}. You will be its owner. It starts ` +
-      'empty: add station types, prices, stations and games here. One arena per login.',
+      `Signed in as ${this.session.user()?.email ?? ''}. You will be its owner; next you tell ` +
+      'us what you run, when you are open and what you charge. One arena per login.',
   );
 
   protected readonly model = signal({ arena: '', owner: '' });
@@ -127,7 +127,7 @@ export class CreateArena implements OnInit {
       await this.session.refresh();
       await this.context.load(true);
       this.context.select(id);
-      await this.router.navigate(['/users']);
+      await this.router.navigate(['/setup']);
     } catch (e) {
       this.error.set(toAppError(e).message);
     } finally {

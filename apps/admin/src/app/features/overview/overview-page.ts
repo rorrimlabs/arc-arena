@@ -62,6 +62,20 @@ import {
         <mat-progress-bar mode="indeterminate" aria-label="Loading figures" />
       }
       <div class="flex flex-col gap-4 p-5">
+        @if (setupNeeded()) {
+          <mat-card appearance="outlined">
+            <div class="flex flex-wrap items-center gap-3 p-5">
+              <span class="icon text-2xl text-primary" aria-hidden="true">rocket_launch</span>
+              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <h2 class="text-base leading-[1.2] font-semibold">Finish setting up</h2>
+                <p class="text-[13px] text-muted">
+                  Tell us what you run, when you are open and what you charge.
+                </p>
+              </div>
+              <button mat-flat-button type="button" (click)="openSetup()">Continue setup</button>
+            </div>
+          </mat-card>
+        }
         <p class="text-sm leading-[1.4] text-muted">{{ subtitle() }}</p>
         @if (store.loadError(); as error) {
           <div class="flex flex-col items-start gap-3">
@@ -274,6 +288,14 @@ export class OverviewPage {
   protected readonly store = inject(OverviewStore);
   private readonly floor = inject(FloorStore);
   protected readonly venue = inject(VenueStore);
+  /** A venue with no active station type or nothing on its floor yet: setup is unfinished. */
+  protected readonly setupNeeded = computed(() => {
+    const types = this.venue.types();
+    if (types === null || !this.floor.stationsReady()) return false;
+    return (
+      !types.some((t) => t.active) || !this.floor.stations().some((s) => s.status !== 'disabled')
+    );
+  });
   protected readonly pricing = inject(PricingStore);
   private readonly arena = inject(ArenaContext);
   private readonly router = inject(Router);
@@ -385,6 +407,10 @@ export class OverviewPage {
   protected height(paise: number): number {
     const top = this.scale().topPaise;
     return paise ? Math.max(1, (paise / top) * 100) : 0;
+  }
+
+  protected openSetup(): void {
+    void this.router.navigate(['/setup']);
   }
 
   protected pick(period: Period): void {

@@ -1,11 +1,13 @@
 import { Component, computed, inject, linkedSignal, output, resource, signal } from '@angular/core';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
+import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSlideToggle } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ARENA_MESSAGES, ArenaApi, ArenaDetails } from '../../../core/arena/arena-api';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { NOUN_WORDS, RESOURCE_NOUNS, ResourceNoun, VenueStore } from '../../../core/venue/venue';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
 import { UnsavedBar } from '../../../shared/list-detail/unsaved-bar';
@@ -42,6 +44,8 @@ const DEFAULT_CLOSE = 23 * 60;
     MatFormField,
     MatLabel,
     MatInput,
+    MatSelect,
+    MatOption,
     MatSlideToggle,
   ],
   template: `
@@ -74,6 +78,24 @@ const DEFAULT_CLOSE = 23 * 60;
             </mat-form-field>
           }
         }
+      </app-detail-section>
+
+      <app-detail-section
+        heading="What you rent out"
+        subtitle="The word staff and you see for your stations, tables or grounds."
+      >
+        <mat-form-field class="max-w-64">
+          <mat-label>Call them</mat-label>
+          <mat-select
+            [value]="venue.noun()"
+            [disabled]="nounBusy() || !arena.canEdit()"
+            (selectionChange)="saveNoun($event.value)"
+          >
+            @for (n of nouns; track n) {
+              <mat-option [value]="n">{{ nounWords[n].many }}</mat-option>
+            }
+          </mat-select>
+        </mat-form-field>
       </app-detail-section>
 
       <app-detail-section
@@ -141,6 +163,10 @@ export class ArenaSettings {
   protected readonly pricing = inject(PricingStore);
   private readonly arenaApi = inject(ArenaApi);
   private readonly snack = inject(MatSnackBar);
+  protected readonly venue = inject(VenueStore);
+  protected readonly nouns = RESOURCE_NOUNS;
+  protected readonly nounWords = NOUN_WORDS;
+  protected readonly nounBusy = signal(false);
 
   readonly closed = output<void>();
 
@@ -196,6 +222,20 @@ export class ArenaSettings {
 
   protected set(day: string, change: Partial<DayDraft>): void {
     this.draft.update((d) => ({ ...d, [day]: { ...d[day], ...change } }));
+  }
+
+  protected async saveNoun(noun: ResourceNoun): Promise<void> {
+    this.nounBusy.set(true);
+    try {
+      await this.venue.saveNoun(noun);
+      this.snack.open(`Now called ${NOUN_WORDS[noun].many.toLowerCase()}`, undefined, {
+        duration: 3200,
+      });
+    } catch (e) {
+      this.snack.open(toAppError(e).message, undefined, { duration: 4000 });
+    } finally {
+      this.nounBusy.set(false);
+    }
   }
 
   protected setInfo(key: keyof ArenaDetails, value: string): void {

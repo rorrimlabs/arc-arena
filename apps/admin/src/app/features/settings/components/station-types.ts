@@ -1,11 +1,13 @@
-import { Component, inject, output, signal } from '@angular/core';
+import { Component, computed, inject, output, resource, signal } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
+import { MatMenu, MatMenuItem, MatMenuTrigger } from '@angular/material/menu';
 import { MatSlideToggle, MatSlideToggleChange } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { CatalogType, VenueApi, VenueStore } from '../../../core/venue/venue';
 import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
@@ -20,7 +22,17 @@ import { TypeDialog, TypeDialogData, TypeDialogResult } from '../dialogs/type-di
  */
 @Component({
   selector: 'app-station-types',
-  imports: [DetailPane, DetailSection, MatButton, MatIconButton, MatIcon, MatSlideToggle],
+  imports: [
+    DetailPane,
+    DetailSection,
+    MatButton,
+    MatIconButton,
+    MatIcon,
+    MatMenu,
+    MatMenuItem,
+    MatMenuTrigger,
+    MatSlideToggle,
+  ],
   template: `
     <app-detail-pane
       crumb="Settings / Station types"
@@ -29,9 +41,22 @@ import { TypeDialog, TypeDialogData, TypeDialogResult } from '../dialogs/type-di
       [subtitle]="arena.current().name"
       (closed)="closed.emit()"
     >
-      <div actions>
+      <div actions class="flex gap-2">
+        <button
+          mat-stroked-button
+          type="button"
+          [disabled]="busy() || !arena.canEdit() || !offered().length"
+          [matMenuTriggerFor]="catalogMenu"
+        >
+          <mat-icon aria-hidden="true">library_add</mat-icon>From catalog
+        </button>
+        <mat-menu #catalogMenu="matMenu">
+          @for (c of offered(); track c.code) {
+            <button mat-menu-item type="button" (click)="adopt(c)">{{ c.name }}</button>
+          }
+        </mat-menu>
         <button mat-flat-button type="button" [disabled]="!arena.canEdit()" (click)="add()">
-          <mat-icon aria-hidden="true">add</mat-icon>Type
+          <mat-icon aria-hidden="true">add</mat-icon>Custom
         </button>
       </div>
       <app-detail-section
@@ -81,7 +106,8 @@ import { TypeDialog, TypeDialogData, TypeDialogResult } from '../dialogs/type-di
               </li>
             } @empty {
               <li class="px-2 text-[13px] leading-[1.45] text-muted">
-                No station types yet. Add one, e.g. Game Station, VR or Pool Table.
+                No station types yet. Pick one from the catalog (PlayStation, Pool table, Football
+                turf…) or add your own.
               </li>
             }
           </ul>
@@ -97,6 +123,15 @@ export class StationTypes {
   private readonly snack = inject(MatSnackBar);
 
   readonly closed = output<void>();
+
+  private readonly venueApi = inject(VenueApi);
+  private readonly venue = inject(VenueStore);
+  private readonly catalog = resource({ loader: () => this.venueApi.catalog() });
+  /** Catalog types the venue doesn't have yet (a code is never added twice). */
+  protected readonly offered = computed(() => {
+    const have = new Set(this.store.types().map((t) => t.code));
+    return this.catalog.hasValue() ? this.catalog.value().filter((c) => !have.has(c.code)) : [];
+  });
 
   protected readonly icon = typeIcon;
   protected readonly busy = signal(false);
@@ -114,6 +149,29 @@ export class StationTypes {
       .join(' · ');
   }
 
+  /** Adds a ready-made type from the global catalog; the owner prices it in Pricing. */
+  protected async adopt(c: CatalogType): Promise<void> {
+    this.busy.set(true);
+    try {
+      await this.store.saveType({
+        id: crypto.randomUUID(),
+        code: c.code,
+        name: c.name,
+        usesControllers: c.usesControllers,
+        usesGames: c.usesGames,
+        durationModel: c.durationModel,
+        sortOrder: this.store.types().length,
+        active: true,
+      });
+      await this.venue.load(true);
+      this.say(`${c.name} added · set its price in Pricing`);
+    } catch (e) {
+      this.say(toAppError(e).message);
+    } finally {
+      this.busy.set(false);
+    }
+  }
+
   protected add(): void {
     this.open({});
   }
@@ -125,7 +183,9 @@ export class StationTypes {
   protected async setActive(t: StationType, event: MatSlideToggleChange): Promise<void> {
     if (!event.checked && t.stations > 0) {
       event.source.checked = true;
-      this.say(`Remove ${t.name} from its ${t.stations} station${t.stations === 1 ? '' : 's'} first`);
+      this.say(
+        `Remove ${t.name} from its ${t.stations} station${t.stations === 1 ? '' : 's'} first`,
+      );
       return;
     }
     this.busy.set(true);
@@ -169,7 +229,11 @@ export class StationTypes {
         this.busy.set(true);
         try {
           const outcome = await this.store.removeType(t.id);
-          this.say(outcome === 'deleted' ? `${t.name} deleted` : `${t.name} turned off · past bills keep it`);
+          this.say(
+            outcome === 'deleted'
+              ? `${t.name} deleted`
+              : `${t.name} turned off · past bills keep it`,
+          );
         } catch (e) {
           this.say(toAppError(e).message);
         } finally {

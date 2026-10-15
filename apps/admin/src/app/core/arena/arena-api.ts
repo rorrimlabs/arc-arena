@@ -78,7 +78,7 @@ export const ARENA_MESSAGES: Readonly<Record<string, string>> = {
 @Service({ factory: () => new SupabaseArenaApi() })
 export abstract class ArenaApi {
   abstract myArenas(): Promise<Membership[]>;
-  /** Creates the arena with the starter catalog and makes the caller its owner. */
+  /** Creates an empty arena and makes the caller its owner (the setup wizard fills it). */
   abstract createArena(arenaName: string, ownerName: string): Promise<string>;
   abstract details(arenaId: string): Promise<ArenaDetails>;
   abstract saveDetails(arenaId: string, details: ArenaDetails): Promise<void>;
