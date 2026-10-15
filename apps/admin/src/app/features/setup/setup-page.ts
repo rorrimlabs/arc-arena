@@ -5,6 +5,7 @@ import { MatCheckbox } from '@angular/material/checkbox';
 import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
 import { MatProgressBar } from '@angular/material/progress-bar';
+import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
@@ -22,13 +23,18 @@ import {
 } from '../../core/venue/venue';
 import { PricingStore } from '../pricing/data/pricing-store';
 import {
+  MAX_UNIT_MINUTES,
   RateChange,
   StationType,
+  TIME_UNITS,
+  TimeUnit,
   WEEKDAYS,
   findRate,
   fromTimeInput,
+  joinUnit,
   perLabel,
   rateRows,
+  splitUnit,
   typeIcon,
 } from '../pricing/data/pricing.models';
 
@@ -94,6 +100,8 @@ function stationKind(noun: ResourceNoun): Station['kind'] {
     MatLabel,
     MatInput,
     MatProgressBar,
+    MatSelect,
+    MatOption,
   ],
   host: { class: 'flex min-h-full flex-col' },
   template: `
@@ -206,7 +214,8 @@ function stationKind(noun: ResourceNoun): Station['kind'] {
               @case ('prices') {
                 <h2 class="text-lg leading-[1.2] font-semibold">How much do you charge?</h2>
                 <p class="text-sm text-muted">
-                  Whole rupees. Happy hours and discounts can be added later in Pricing.
+                  Whole rupees, per the time you choose (minutes, hours or days). Happy hours and
+                  discounts can be added later in Pricing.
                 </p>
                 @for (t of activeTypes(); track t.id) {
                   <fieldset class="flex flex-col gap-2">
@@ -214,6 +223,30 @@ function stationKind(noun: ResourceNoun): Station['kind'] {
                       <span class="icon text-lg text-muted" aria-hidden="true">{{ icon(t) }}</span>
                       {{ t.name }} · {{ per(t) }}
                     </legend>
+                    <div class="flex flex-wrap items-start gap-3">
+                      <mat-form-field class="arena-dense w-28">
+                        <mat-label>Charged per</mat-label>
+                        <input
+                          matInput
+                          type="number"
+                          inputmode="numeric"
+                          min="1"
+                          [value]="units()[t.code]?.count ?? ''"
+                          (input)="setUnit(t.code, { count: $any($event.target).value })"
+                        />
+                      </mat-form-field>
+                      <mat-form-field class="arena-dense w-32">
+                        <mat-label>Unit</mat-label>
+                        <mat-select
+                          [value]="units()[t.code]?.unit ?? 'hours'"
+                          (selectionChange)="setUnit(t.code, { unit: $event.value })"
+                        >
+                          @for (u of timeUnits; track u.key) {
+                            <mat-option [value]="u.key">{{ u.label }}</mat-option>
+                          }
+                        </mat-select>
+                      </mat-form-field>
+                    </div>
                     <div
                       class="grid grid-cols-[minmax(0,1fr)_minmax(0,9rem)] items-center gap-x-3 gap-y-2"
                     >
@@ -362,6 +395,11 @@ export class SetupPage {
   // --- step 3: prices (whole rupees as typed, by type code and controller count)
   protected readonly activeTypes = computed(() => this.pricing.types().filter((t) => t.active));
   protected readonly prices = signal<Readonly<Record<string, string>>>({});
+  /** "Charged per [count] [unit]" per type code, as typed. */
+  protected readonly units = signal<
+    Readonly<Record<string, { readonly count: string; readonly unit: TimeUnit }>>
+  >({});
+  protected readonly timeUnits = TIME_UNITS;
 
   // --- step 4: how many of each
   protected readonly counts = signal<Readonly<Record<string, number>>>({});
@@ -424,7 +462,20 @@ export class SetupPage {
   }
 
   protected per(t: StationType): string {
-    return perLabel(this.unitMinutes(t));
+    return perLabel(this.draftUnit(t) ?? this.unitMinutes(t));
+  }
+
+  protected setUnit(code: string, change: { count?: string; unit?: TimeUnit }): void {
+    this.units.update((u) => {
+      const was = u[code] ?? { count: '1', unit: 'hours' as TimeUnit };
+      return { ...u, [code]: { ...was, ...change } };
+    });
+  }
+
+  /** The drafted unit in minutes; null while what is typed is not a whole count. */
+  private draftUnit(t: StationType): number | null {
+    const u = this.units()[t.code];
+    return u ? joinUnit(Number(u.count), u.unit) : null;
   }
 
   protected priceKey(t: StationType, row: number | null): string {
@@ -527,6 +578,13 @@ export class SetupPage {
   private async savePrices(): Promise<void> {
     const changes: RateChange[] = [];
     for (const t of this.activeTypes()) {
+      const unit = this.draftUnit(t);
+      if (unit == null || unit > MAX_UNIT_MINUTES) {
+        this.error.set(
+          `${t.name}: charge per a whole number of minutes, hours or days, up to 7 days`,
+        );
+        return;
+      }
       for (const row of rateRows(t)) {
         const raw = (this.prices()[this.priceKey(t, row)] ?? '').trim();
         const rupees = Number(raw);
@@ -539,7 +597,7 @@ export class SetupPage {
         changes.push({
           activityCode: t.code,
           controllerCount: row,
-          unitMinutes: this.unitMinutes(t),
+          unitMinutes: unit,
           pricePaise: rupees * 100,
         });
       }
@@ -599,7 +657,12 @@ export class SetupPage {
     const rates = this.pricing.rates();
     const prices: Record<string, string> = { ...this.prices() };
     const counts: Record<string, number> = { ...this.counts() };
+    const units: Record<string, { count: string; unit: TimeUnit }> = { ...this.units() };
     for (const t of this.activeTypes()) {
+      if (!units[t.code]) {
+        const { count, unit } = splitUnit(this.unitMinutes(t));
+        units[t.code] = { count: String(count), unit };
+      }
       for (const row of rateRows(t)) {
         const r = findRate(rates, t.code, row);
         if (r && prices[this.priceKey(t, row)] == null) {
@@ -612,5 +675,6 @@ export class SetupPage {
     }
     this.prices.set(prices);
     this.counts.set(counts);
+    this.units.set(units);
   }
 }

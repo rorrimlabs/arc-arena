@@ -22,3 +22,17 @@ String formatMinutesLabel(Duration d) {
   if (h > 0) return '${h}h';
   return '${m}m';
 }
+
+/// What a price is per, after the slash: `h`, `30 min`, `2 h`, `day`, `3 days`
+/// (rates can be per any whole number of minutes, hours or days).
+String formatPerUnit(int unitMinutes) {
+  if (unitMinutes > 0 && unitMinutes % 1440 == 0) {
+    final days = unitMinutes ~/ 1440;
+    return days == 1 ? 'day' : '$days days';
+  }
+  if (unitMinutes > 0 && unitMinutes % 60 == 0) {
+    final hours = unitMinutes ~/ 60;
+    return hours == 1 ? 'h' : '$hours h';
+  }
+  return '$unitMinutes min';
+}

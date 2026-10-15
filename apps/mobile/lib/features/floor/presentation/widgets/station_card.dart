@@ -334,7 +334,7 @@ class StationCard extends ConsumerWidget {
       controllerCount: usesCtrl ? 1 : null,
     );
     if (rate == null) return null;
-    final unit = rate.unitMinutes == 60 ? '/h' : '/${rate.unitMinutes}m';
+    final unit = '/${formatPerUnit(rate.unitMinutes)}';
     return '${rate.price.display}$unit${usesCtrl ? ' · up to 4' : ''}';
   }
 

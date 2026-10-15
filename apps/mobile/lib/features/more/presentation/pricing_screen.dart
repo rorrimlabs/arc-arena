@@ -5,6 +5,7 @@ import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
+import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -194,7 +195,7 @@ class _RateRow extends StatelessWidget {
     Widget cell(Band band, Rate? rate, Color color) {
       final unit = rate == null
           ? ''
-          : rate.unitMinutes == 60 ? '/hr' : '/${rate.unitMinutes}m';
+          : '/${formatPerUnit(rate.unitMinutes)}';
       return Expanded(
         child: InkWell(
           onTap: () => onEdit(band),

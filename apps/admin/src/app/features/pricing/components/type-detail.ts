@@ -1,6 +1,7 @@
 import { Component, computed, inject, input, linkedSignal, output, signal } from '@angular/core';
-import { MatFormField, MatLabel, MatSuffix } from '@angular/material/form-field';
+import { MatFormField, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
+import { MatOption, MatSelect } from '@angular/material/select';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { toAppError } from '../../../core/auth/auth-api';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
@@ -11,15 +12,20 @@ import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import { PricingStore } from '../data/pricing-store';
 import {
+  MAX_UNIT_MINUTES,
   RateChange,
   StationType,
+  TIME_UNITS,
+  TimeUnit,
   cheapestRate,
   findRate,
+  joinUnit,
   maxPlayers,
   perLabel,
   rateRows,
   rulePrice,
   ruleWhen,
+  splitUnit,
   typeIcon,
   unitMinutesOf,
 } from '../data/pricing.models';
@@ -47,8 +53,9 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
     UnsavedBar,
     MatFormField,
     MatLabel,
-    MatSuffix,
     MatInput,
+    MatSelect,
+    MatOption,
   ],
   template: `
     @let t = type();
@@ -64,21 +71,28 @@ const cell = (controllers: number | null) => String(controllers ?? 'any');
       }}</app-status-pill>
 
       <app-detail-section heading="Base price" [subtitle]="priceHelp()">
-        @if (t.durationModel === 'unit') {
-          <mat-form-field class="max-w-56">
-            <mat-label>Block length</mat-label>
+        <div class="flex flex-wrap items-start gap-3" role="group" aria-label="Charged per">
+          <mat-form-field class="w-32">
+            <mat-label>Charged per</mat-label>
             <input
               matInput
               type="number"
               inputmode="numeric"
-              min="5"
-              max="240"
-              [value]="unitDraft()"
-              (input)="unitDraft.set($any($event.target).value)"
+              min="1"
+              [value]="unitCount()"
+              (input)="unitCount.set($any($event.target).value)"
             />
-            <span matTextSuffix>min</span>
           </mat-form-field>
-        }
+          <mat-form-field class="w-36">
+            <mat-label>Unit</mat-label>
+            <mat-select [value]="unitKind()" (selectionChange)="unitKind.set($event.value)">
+              @for (u of timeUnits; track u.key) {
+                <mat-option [value]="u.key">{{ u.label }}</mat-option>
+              }
+            </mat-select>
+          </mat-form-field>
+        </div>
+        <p class="text-[13px] leading-[1.45] text-muted">{{ unitHelp() }}</p>
         <div
           class="grid grid-cols-[minmax(0,1fr)_minmax(0,9rem)] items-center gap-x-3 gap-y-2"
           role="group"
@@ -201,7 +215,7 @@ export class TypeDetail {
   });
   protected readonly priceHelp = computed(() => {
     const t = this.type();
-    const per = t.durationModel === 'unit' ? 'per block' : 'per hour';
+    const per = perLabel(this.draftUnit() ?? unitMinutesOf(t, this.store.rates()));
     if (t.usesControllers) return `What one station charges ${per} with one controller in use.`;
     return `What one station charges ${per}, however many play.`;
   });
@@ -216,17 +230,26 @@ export class TypeDetail {
     }
     return out;
   });
-  private readonly savedUnit = computed(() =>
-    String(unitMinutesOf(this.type(), this.store.rates())),
-  );
+  private readonly savedUnit = computed(() => unitMinutesOf(this.type(), this.store.rates()));
   protected readonly draft = linkedSignal<Draft>(() => this.saved());
-  protected readonly unitDraft = linkedSignal(() => this.savedUnit());
+  /** "Charged per [count] [unit]", e.g. 30 minutes, 1 hour, 1 day. */
+  protected readonly unitCount = linkedSignal(() => String(splitUnit(this.savedUnit()).count));
+  protected readonly unitKind = linkedSignal<TimeUnit>(() => splitUnit(this.savedUnit()).unit);
+  protected readonly timeUnits = TIME_UNITS;
+  /** The drafted unit in minutes; null while what is typed is not a whole count. */
+  private readonly draftUnit = computed(() => joinUnit(Number(this.unitCount()), this.unitKind()));
+  protected readonly unitHelp = computed(() => {
+    const per = perLabel(this.draftUnit() ?? this.savedUnit());
+    return this.type().durationModel === 'unit'
+      ? `Sold in fixed blocks: each block started is charged in full, at the price ${per} (rounding in Settings › Billing rules).`
+      : `Play is charged for the time used at the price ${per} (in the billing unit set in Settings › Billing rules).`;
+  });
   protected readonly dirty = computed(() => {
     const a = this.draft();
     const b = this.saved();
     const keys = new Set([...Object.keys(a), ...Object.keys(b)]);
     for (const k of keys) if ((a[k] ?? '').trim() !== (b[k] ?? '').trim()) return true;
-    return this.unitDraft().trim() !== this.savedUnit();
+    return this.draftUnit() !== this.savedUnit();
   });
   protected readonly hasStandard = computed(() =>
     rateRows(this.type()).some((row) => (this.saved()[cell(row)] ?? '') !== ''),
@@ -247,18 +270,20 @@ export class TypeDetail {
 
   protected discard(): void {
     this.draft.set(this.saved());
-    this.unitDraft.set(this.savedUnit());
+    const { count, unit } = splitUnit(this.savedUnit());
+    this.unitCount.set(String(count));
+    this.unitKind.set(unit);
     this.error.set('');
   }
 
   protected async save(): Promise<void> {
     const t = this.type();
-    const unit = t.durationModel === 'unit' ? Number(this.unitDraft()) : 60;
-    if (!Number.isInteger(unit) || unit < 5 || unit > 240) {
-      this.error.set('Block length must be 5 to 240 minutes');
+    const unit = this.draftUnit();
+    if (unit == null || unit > MAX_UNIT_MINUTES) {
+      this.error.set('Charge per a whole number of minutes, hours or days, up to 7 days');
       return;
     }
-    const unitChanged = String(unit) !== this.savedUnit();
+    const unitChanged = unit !== this.savedUnit();
     const changes: RateChange[] = [];
     for (const row of this.rows()) {
       const k = cell(row);

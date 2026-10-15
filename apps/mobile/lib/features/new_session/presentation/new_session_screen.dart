@@ -487,7 +487,7 @@ class _PlanLine extends StatelessWidget {
     final q = plan.quote;
     final minutes = q.billedMinutes;
     String rateLine(PricingSegment s) {
-      final per = s.unitMinutes == 60 ? 'h' : '${s.unitMinutes} min';
+      final per = formatPerUnit(s.unitMinutes);
       return '${s.unitPrice.display}/$per × '
           '${formatMinutesLabel(Duration(minutes: s.billedMinutes))} = '
           '${s.amount.display}';

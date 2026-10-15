@@ -163,9 +163,35 @@ export function cheapestRate(type: StationType, rates: readonly Rate[]): Rate | 
   return own.length ? own.reduce((a, b) => (b.pricePaise < a.pricePaise ? b : a)) : null;
 }
 
-/** "per hour", "per 30 min". */
+/** The time a price is charged per, as the owner sets it: so many minutes, hours or days. */
+export type TimeUnit = 'minutes' | 'hours' | 'days';
+export const TIME_UNITS: readonly { key: TimeUnit; label: string; minutes: number }[] = [
+  { key: 'minutes', label: 'minutes', minutes: 1 },
+  { key: 'hours', label: 'hours', minutes: 60 },
+  { key: 'days', label: 'days', minutes: 1440 },
+];
+/** Longest unit a price can be per: a week. */
+export const MAX_UNIT_MINUTES = 7 * 1440;
+
+/** 1440 → 1 day, 120 → 2 hours, 45 → 45 minutes (the largest whole unit). */
+export function splitUnit(minutes: number): { count: number; unit: TimeUnit } {
+  if (minutes > 0 && minutes % 1440 === 0) return { count: minutes / 1440, unit: 'days' };
+  if (minutes > 0 && minutes % 60 === 0) return { count: minutes / 60, unit: 'hours' };
+  return { count: minutes, unit: 'minutes' };
+}
+
+/** Minutes for "count unit", or null when count is not a whole number from 1. */
+export function joinUnit(count: number, unit: TimeUnit): number | null {
+  if (!Number.isInteger(count) || count < 1) return null;
+  return count * (TIME_UNITS.find((u) => u.key === unit)?.minutes ?? 1);
+}
+
+/** "per hour", "per 30 min", "per 2 hours", "per day", "per 3 days". */
 export function perLabel(unitMinutes: number): string {
-  return unitMinutes === 60 ? 'per hour' : `per ${unitMinutes} min`;
+  const { count, unit } = splitUnit(unitMinutes);
+  if (unit === 'minutes') return `per ${count} min`;
+  const one = unit === 'days' ? 'day' : 'hour';
+  return count === 1 ? `per ${one}` : `per ${count} ${one}s`;
 }
 
 /** The list's headline price: the cheapest rate, per its block. */
