@@ -2,7 +2,7 @@ import { Capability } from '../venue/venue';
 
 /**
  * Side-nav destinations. Accessories (controllers, headsets…) live inside Stations, and station
- * and accessory types inside Settings, so neither has its own entry.
+ * types, accessory types and the games library inside Settings, so none has its own entry.
  */
 export interface NavItem {
   /** Top-level route path. */
@@ -34,7 +34,6 @@ export const NAV_GROUPS: readonly NavGroup[] = [
     items: [
       { path: 'stations', label: 'Stations', icon: 'grid_view', venueNoun: true },
       { path: 'pricing', label: 'Pricing', icon: 'sell' },
-      { path: 'games', label: 'Games', icon: 'stadia_controller', requires: 'games' },
     ],
   },
   {

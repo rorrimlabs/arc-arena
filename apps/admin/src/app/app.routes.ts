@@ -14,7 +14,6 @@ const BUILT: Readonly<Record<string, () => Promise<Routes>>> = {
   pricing: () => import('./features/pricing/pricing.routes').then((m) => m.PRICING_ROUTES),
   users: () => import('./features/users/users.routes').then((m) => m.USERS_ROUTES),
   stations: () => import('./features/stations/stations.routes').then((m) => m.STATIONS_ROUTES),
-  games: () => import('./features/games/games.routes').then((m) => m.GAMES_ROUTES),
   members: () => import('./features/members/members.routes').then((m) => m.MEMBERS_ROUTES),
   settings: () => import('./features/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
 };
@@ -72,6 +71,8 @@ const APP_ROUTES: Routes = [
         providers: [MATERIAL_DEFAULTS],
         loadComponent: () => import('./features/setup/setup-page').then((m) => m.SetupPage),
       },
+      // The games library moved into Settings; keep old links working.
+      { path: 'games', pathMatch: 'full', redirectTo: 'settings/games' },
       // Accessories moved into Stations; keep old links working.
       { path: 'controllers', pathMatch: 'full', redirectTo: 'stations' },
       // A nav entry without a BUILT screen shows a placeholder.

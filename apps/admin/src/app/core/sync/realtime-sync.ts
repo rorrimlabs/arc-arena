@@ -356,7 +356,9 @@ export class RealtimeSync {
   private async flush(): Promise<void> {
     const targets = new Set(this.pendingTargets);
     this.pendingTargets.clear();
-    const page = this.router.url.split(/[?#]/)[0].split('/')[1] ?? '';
+    const path = this.router.url.split(/[?#]/)[0];
+    // The games library lives under Settings but reads floor data like its own page.
+    const page = path.startsWith('/settings/games') ? 'games' : (path.split('/')[1] ?? '');
     const on = (...pages: string[]) => pages.includes(page);
     const jobs: Promise<void>[] = [];
 

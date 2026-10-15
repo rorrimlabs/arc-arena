@@ -14,7 +14,7 @@ import { BillingSettings } from './components/billing-settings';
 import { SessionSettings } from './components/session-settings';
 import { StationTypes } from './components/station-types';
 
-type Section = 'arena' | 'types' | 'accessories' | 'billing' | 'rules' | 'sessions';
+type Section = 'arena' | 'types' | 'accessories' | 'games' | 'billing' | 'rules' | 'sessions';
 
 const SECTIONS: readonly {
   key: Section;
@@ -23,6 +23,8 @@ const SECTIONS: readonly {
   sub: string;
   /** Listed only for venues using this capability (core/venue). */
   requires?: Capability;
+  /** Opens its own screen instead of the detail pane. */
+  link?: string;
 }[] = [
   { key: 'arena', icon: 'storefront', title: 'Arena', sub: 'Name, area, hours, what you rent out' },
   {
@@ -37,6 +39,14 @@ const SECTIONS: readonly {
     title: 'Accessory types',
     sub: 'Controller, VR headset, wheel…',
     requires: 'equipment',
+  },
+  {
+    key: 'games',
+    icon: 'stadia_controller',
+    title: 'Games',
+    sub: 'Library, platforms, where each is playable',
+    requires: 'games',
+    link: '/settings/games',
   },
   { key: 'billing', icon: 'payments', title: 'Billing', sub: 'Payment methods, discount limits' },
   { key: 'rules', icon: 'rule', title: 'Billing rules', sub: 'Rounding, grace, minimum charge' },
@@ -82,7 +92,8 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
                   [subtitle]="s.sub"
                   [icon]="s.icon"
                   [selected]="s.key === selected()"
-                  [queryParams]="{ id: s.key }"
+                  [link]="s.link ?? []"
+                  [queryParams]="s.link ? null : { id: s.key }"
                 />
               </li>
             }
@@ -130,7 +141,7 @@ export class SettingsPage {
   });
   protected readonly selected = computed<Section | undefined>(() => {
     const id = this.id();
-    const known = this.sections().find((s) => s.key === id)?.key;
+    const known = this.sections().find((s) => s.key === id && !s.link)?.key;
     if (known) return known;
     return this.layout.wideDetail() ? 'arena' : undefined;
   });
