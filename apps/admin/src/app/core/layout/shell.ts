@@ -6,6 +6,7 @@ import { ACCESS_HOME, ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
 import { RealtimeSync } from '../sync/realtime-sync';
 import { Layout } from './layout';
+import { VenueStore } from '../venue/venue';
 import { NAV_GROUPS } from './nav';
 
 /** App frame from the design: side nav (overlay drawer / 88px rail / 264px full) + routed page. */
@@ -31,7 +32,18 @@ export class Shell {
   private readonly realtime = inject(RealtimeSync);
   private readonly router = inject(Router);
 
-  protected readonly navGroups = NAV_GROUPS;
+  private readonly venue = inject(VenueStore);
+  /** The nav for this venue: capability-gated entries hidden, Stations named by its noun. */
+  protected readonly navGroups = computed(() => {
+    const caps = this.venue.capabilities();
+    const many = this.venue.words().many;
+    return NAV_GROUPS.map((group) => ({
+      ...group,
+      items: group.items
+        .filter((item) => !item.requires || !caps || caps.has(item.requires))
+        .map((item) => (item.venueNoun ? { ...item, label: many } : item)),
+    })).filter((group) => group.items.length);
+  });
   protected readonly rail = computed(() => !this.layout.compact() && this.layout.rail());
   protected readonly navShown = computed(() => !this.layout.compact() || this.layout.navOpen());
   /** The name this arena knows the owner by, else the login's own name or e-mail. */
@@ -49,6 +61,10 @@ export class Shell {
   );
 
   constructor() {
+    // The selected arena's capabilities and noun, for the nav and every screen.
+    effect(() => {
+      if (this.arenaContext.current().id) void this.venue.load();
+    });
     effect(() => {
       // Signed out from elsewhere (another tab, or the refresh token was rejected): leave the
       // dashboard instead of keeping the previous login's figures on screen.

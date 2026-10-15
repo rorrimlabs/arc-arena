@@ -26,8 +26,10 @@ import 'package:arena_ops/domain/repositories/customer_repository.dart';
 import 'package:arena_ops/domain/repositories/group_session_repository.dart';
 import 'package:arena_ops/domain/repositories/session_repository.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
+import 'package:arena_ops/domain/services/venue_capabilities.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/value/floor_options.dart';
+import 'package:arena_ops/domain/value/venue_profile.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// The open database. Overridden in `main()` with a seeded instance (and in
@@ -210,6 +212,26 @@ final floorOptionsProvider = FutureProvider<FloorOptions>(
     return ref.watch(catalogRepositoryProvider).floorOptions();
   },
 );
+
+/// What the venue calls its resources (synced `venue_profile`), refreshed after each sync.
+final venueProfileProvider = FutureProvider<VenueProfile>(
+  (ref) {
+    ref.watch(syncRevisionProvider);
+    return ref.watch(catalogRepositoryProvider).venueProfile();
+  },
+);
+
+/// The noun for the venue's resources: "Table", "Ground"…; stations until the profile loads.
+final resourceNounProvider = Provider<ResourceNoun>(
+  (ref) => (ref.watch(venueProfileProvider).value ?? VenueProfile.defaults).resourceNoun,
+);
+
+/// Optional parts of the floor this venue uses, from its active station types. Everything on
+/// until the catalog loads, so a console venue never sees its screens flicker away.
+final venueCapabilitiesProvider = Provider.autoDispose<VenueCapabilities>((ref) {
+  final activities = ref.watch(activitiesProvider).value;
+  return activities == null ? VenueCapabilities.all : VenueCapabilities.of(activities);
+});
 
 /// Methods offered when taking a payment; every method until the options load.
 final offeredPaymentMethodsProvider = Provider<List<PaymentMethod>>(

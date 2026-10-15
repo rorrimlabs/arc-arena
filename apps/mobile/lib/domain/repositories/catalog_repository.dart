@@ -9,6 +9,7 @@ import 'package:arena_ops/domain/pricing/pricing_snapshot.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/value/floor_options.dart';
+import 'package:arena_ops/domain/value/venue_profile.dart';
 
 /// A game paired with its availability on a particular resource (spec §4–§5),
 /// and the note explaining it ("disc scratched"), if any.
@@ -106,6 +107,10 @@ abstract interface class CatalogRepository {
   /// What the floor offers staff (payment methods, start durations, warning); set on the
   /// admin dashboard, read-only here. [FloorOptions.defaults] until the arena sets them.
   Future<FloorOptions> floorOptions();
+
+  /// What the venue calls its resources (tables, grounds…); set on the admin dashboard,
+  /// read-only here. [VenueProfile.defaults] until the arena sets it.
+  Future<VenueProfile> venueProfile();
 
   Future<List<Holiday>> holidays();
   Future<void> upsertHoliday(Holiday holiday);

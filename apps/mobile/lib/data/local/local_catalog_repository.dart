@@ -19,6 +19,7 @@ import 'package:arena_ops/domain/pricing/rule_engine.dart';
 import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/domain/value/floor_options.dart';
+import 'package:arena_ops/domain/value/venue_profile.dart';
 import 'package:drift/drift.dart';
 
 class LocalCatalogRepository implements CatalogRepository {
@@ -330,6 +331,9 @@ class LocalCatalogRepository implements CatalogRepository {
   /// Synced setting written by the admin dashboard (settings.save, key floor_options).
   static const floorOptionsKey = 'floor_options';
 
+  /// Synced setting written by the admin dashboard (settings.save, key venue_profile).
+  static const venueProfileKey = 'venue_profile';
+
   @override
   Future<Resource> upsertResource(Resource resource) async {
     await _db.transaction(() async {
@@ -500,6 +504,21 @@ class LocalCatalogRepository implements CatalogRepository {
       return FloorOptions.defaults;
     } on TypeError {
       return FloorOptions.defaults;
+    }
+  }
+
+  @override
+  Future<VenueProfile> venueProfile() async {
+    final row = await (_db.select(_db.settings)
+          ..where((t) => t.key.equals(venueProfileKey)))
+        .getSingleOrNull();
+    if (row == null) return VenueProfile.defaults;
+    try {
+      return VenueProfile.fromJson(jsonDecode(row.json) as Map<String, dynamic>);
+    } on FormatException {
+      return VenueProfile.defaults;
+    } on TypeError {
+      return VenueProfile.defaults;
     }
   }
 

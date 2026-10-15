@@ -2,6 +2,7 @@ import { Routes } from '@angular/router';
 import { arenaGuard, noArenaGuard } from './core/arena/arena-context';
 import { signedInGuard, signedOutGuard } from './core/auth/session';
 import { NAV_ITEMS } from './core/layout/nav';
+import { capabilityGuard } from './core/venue/venue';
 import { Shell } from './core/layout/shell';
 import { CONFIG_PROBLEM } from './core/supabase/supabase';
 
@@ -68,7 +69,11 @@ const APP_ROUTES: Routes = [
       // A nav entry without a BUILT screen shows a placeholder.
       ...NAV_ITEMS.map((item) =>
         BUILT[item.path]
-          ? { path: item.path, loadChildren: BUILT[item.path] }
+          ? {
+              path: item.path,
+              canMatch: item.requires ? [capabilityGuard(item.requires)] : [],
+              loadChildren: BUILT[item.path],
+            }
           : {
               path: item.path,
               title: `${item.label} · ArenaOS`,

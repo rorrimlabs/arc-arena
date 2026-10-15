@@ -165,7 +165,7 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
           ),
           if (activity != null)
             _Section(
-              title: n('Station'),
+              title: n(ref.watch(resourceNounProvider).one),
               child: availableResources.isEmpty
                   ? const Text('No stations available for this activity right now.')
                   : Wrap(

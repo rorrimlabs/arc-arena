@@ -9,6 +9,7 @@ import { FloorStore } from '../../core/floor/floor-store';
 import { initials } from '../../core/floor/floor.models';
 import { PageHeader } from '../../core/layout/page-header';
 import { injectNow } from '../../core/time/ticker';
+import { VenueStore } from '../../core/venue/venue';
 import { formatRupees } from '../../shared/money/rupees.pipe';
 import { PricingStore } from '../pricing/data/pricing-store';
 import { LivePane } from './components/live-pane';
@@ -214,25 +215,29 @@ import {
             </div>
           </mat-card>
 
-          <mat-card appearance="outlined">
-            <div class="flex flex-col gap-1 p-5">
-              <h2 class="pb-2 text-base leading-[1.2] font-semibold">Top games</h2>
-              <ol class="flex flex-col gap-1">
-                @for (g of games(); track g.name; let i = $index) {
-                  <li class="flex min-h-9.5 items-center gap-3">
-                    <span
-                      class="w-5 font-mono text-[13px] leading-none font-semibold text-subtle"
-                      >{{ i + 1 }}</span
-                    >
-                    <span class="min-w-0 flex-1 truncate text-sm leading-[1.2]">{{ g.name }}</span>
-                    <span class="text-[13px] leading-none text-muted">{{ g.time }}</span>
-                  </li>
-                } @empty {
-                  <li class="text-[13px] text-muted">No games played yet.</li>
-                }
-              </ol>
-            </div>
-          </mat-card>
+          @if (venue.has('games')) {
+            <mat-card appearance="outlined">
+              <div class="flex flex-col gap-1 p-5">
+                <h2 class="pb-2 text-base leading-[1.2] font-semibold">Top games</h2>
+                <ol class="flex flex-col gap-1">
+                  @for (g of games(); track g.name; let i = $index) {
+                    <li class="flex min-h-9.5 items-center gap-3">
+                      <span
+                        class="w-5 font-mono text-[13px] leading-none font-semibold text-subtle"
+                        >{{ i + 1 }}</span
+                      >
+                      <span class="min-w-0 flex-1 truncate text-sm leading-[1.2]">{{
+                        g.name
+                      }}</span>
+                      <span class="text-[13px] leading-none text-muted">{{ g.time }}</span>
+                    </li>
+                  } @empty {
+                    <li class="text-[13px] text-muted">No games played yet.</li>
+                  }
+                </ol>
+              </div>
+            </mat-card>
+          }
 
           <mat-card appearance="outlined">
             <div class="flex flex-col gap-1 p-5">
@@ -268,6 +273,7 @@ import {
 export class OverviewPage {
   protected readonly store = inject(OverviewStore);
   private readonly floor = inject(FloorStore);
+  protected readonly venue = inject(VenueStore);
   protected readonly pricing = inject(PricingStore);
   private readonly arena = inject(ArenaContext);
   private readonly router = inject(Router);

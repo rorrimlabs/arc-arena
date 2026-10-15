@@ -29,7 +29,7 @@ typedef ServerRow = ({String table, Map<String, dynamic> row});
 
 /// Settings keys that are arena-wide (and so synced). Every other key in the
 /// Drift settings table is device-local and never touched by sync.
-const sharedSettingKeys = {'business_hours', 'floor_options'};
+const sharedSettingKeys = {'business_hours', 'floor_options', 'venue_profile'};
 
 /// Tables that make up the owner's configuration — replaced wholesale when an
 /// owner edit is refused, so the device converges on the server's catalog.

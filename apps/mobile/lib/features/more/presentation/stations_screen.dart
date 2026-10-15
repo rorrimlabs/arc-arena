@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
+import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/features/more/presentation/station_controllers_sheet.dart';
@@ -30,21 +31,27 @@ class StationsScreen extends ConsumerWidget {
       for (final a in groupOpen) a.resourceId,
     };
     final controllers = ref.watch(controllersProvider).value ?? const <Controller>[];
+    final noun = ref.watch(resourceNounProvider);
+    // Types that use controllers: only their stations get a Controllers button.
+    final padTypes = {
+      for (final t in ref.watch(activitiesProvider).value ?? const <Activity>[])
+        if (t.usesControllers) t.code,
+    };
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Stations')),
+      appBar: AppBar(title: Text(noun.many)),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(context, ref, null),
         icon: const Icon(Icons.add),
-        label: const Text('Add station'),
+        label: Text('Add ${noun.word}'),
       ),
       body: resources.isEmpty
           ? Center(
               child: Padding(
                 padding: const EdgeInsets.all(AppSpacing.xxl),
                 child: Text(
-                  'No stations yet. Add your PlayStations, VR rigs, pool '
-                  'tables and rooms to start running the floor.',
+                  'No ${noun.many.toLowerCase()} yet. Add your first '
+                  '${noun.word} to start running the floor.',
                   textAlign: TextAlign.center,
                   style: ArenaType.body.copyWith(color: arena.textMuted),
                 ),
@@ -58,6 +65,7 @@ class StationsScreen extends ConsumerWidget {
                   _StationTile(
                     resource: r,
                     inUse: busy.contains(r.id),
+                    usesControllers: r.activityCodes.any(padTypes.contains),
                     controllersHere: [
                       for (final c in controllers)
                         if (c.currentResourceId == r.id) c,
@@ -122,6 +130,7 @@ class _StationTile extends StatelessWidget {
   const _StationTile({
     required this.resource,
     required this.inUse,
+    required this.usesControllers,
     required this.controllersHere,
     required this.onEdit,
     required this.onStatus,
@@ -130,6 +139,7 @@ class _StationTile extends StatelessWidget {
 
   final Resource resource;
   final bool inUse;
+  final bool usesControllers;
   final List<Controller> controllersHere;
   final VoidCallback onEdit;
   final ValueChanged<ResourceStatus> onStatus;
@@ -204,8 +214,7 @@ class _StationTile extends StatelessWidget {
           ),
           // Shown for any controller-capable station (so the first pad can be
           // added), not only ones that already have pads.
-          if (controllersHere.isNotEmpty ||
-              resource.activityCodes.any((a) => a == 'PS5' || a == 'VR'))
+          if (controllersHere.isNotEmpty || usesControllers)
             IconButton(
               tooltip: 'Controllers',
               icon: const Icon(Icons.videogame_asset_outlined),

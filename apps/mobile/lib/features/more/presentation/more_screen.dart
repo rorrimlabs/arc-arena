@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -73,6 +74,8 @@ class MoreScreen extends ConsumerWidget {
     final user = ref.watch(authControllerProvider);
     final canSettings = user?.can(Permission.settings) ?? false;
     final canMembers = user?.can(Permission.members) ?? false;
+    final caps = ref.watch(venueCapabilitiesProvider);
+    final noun = ref.watch(resourceNounProvider).many.toLowerCase();
     final cloud = ref.watch(cloudBindingProvider);
     final pending = ref.watch(syncStatusProvider).value?.pending ?? 0;
     final alerts = ref.watch(notificationSettingsProvider).value;
@@ -109,7 +112,9 @@ class MoreScreen extends ConsumerWidget {
                 ArenaListRow(
                   icon: Icons.settings_outlined,
                   title: 'Settings',
-                  subtitle: 'Pricing, hours, holidays, stations, games, staff',
+                  subtitle: caps.games
+                      ? 'Pricing, hours, holidays, $noun, games, staff'
+                      : 'Pricing, hours, holidays, $noun, staff',
                   onTap: () => _push(context, const SettingsScreen()),
                 ),
               ]),
@@ -121,12 +126,13 @@ class MoreScreen extends ConsumerWidget {
                   subtitle: 'Profiles, visits and spend',
                   onTap: () => _push(context, const CustomersScreen()),
                 ),
-              ArenaListRow(
-                icon: Icons.dashboard_customize_outlined,
-                title: 'Controller board',
-                subtitle: 'Live station & controller status',
-                onTap: () => _push(context, const ControllerBoardScreen()),
-              ),
+              if (caps.equipment)
+                ArenaListRow(
+                  icon: Icons.dashboard_customize_outlined,
+                  title: 'Controller board',
+                  subtitle: 'Live station & controller status',
+                  onTap: () => _push(context, const ControllerBoardScreen()),
+                ),
               ArenaListRow(
                 icon: Icons.receipt_long_outlined,
                 title: 'Session log',

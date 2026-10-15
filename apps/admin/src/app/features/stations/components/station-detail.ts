@@ -20,6 +20,7 @@ import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
 import { FLOOR_STATE_LABEL, LiveStation, minutesLeft } from '../../../core/floor/floor.models';
+import { VenueStore } from '../../../core/venue/venue';
 import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailRow } from '../../../shared/list-detail/detail-row';
@@ -91,9 +92,13 @@ import { STATE_TONE, activityLines, rateLine, stationIcon } from '../data/statio
       </div>
 
       @if (l.state === 'playing') {
-        <app-detail-section heading="Now playing">
-          <app-detail-row label="Game" [value]="game() ?? '—'" />
-          <app-detail-row label="Players" [value]="l.players.toString()" />
+        <app-detail-section heading="In use">
+          @if (venue.has('games')) {
+            <app-detail-row label="Game" [value]="game() ?? '—'" />
+          }
+          @if (venue.has('equipment')) {
+            <app-detail-row label="Players" [value]="l.players.toString()" />
+          }
           @if (l.endsAt) {
             <app-detail-row label="Time left" [value]="timeLeft(l.endsAt)" />
           }
@@ -158,7 +163,9 @@ import { STATE_TONE, activityLines, rateLine, stationIcon } from '../data/statio
         }
       </app-detail-section>
 
-      <app-station-accessories [station]="s" />
+      @if (venue.has('equipment')) {
+        <app-station-accessories [station]="s" />
+      }
 
       <app-detail-section heading="Recent bills">
         @if (activity.error()) {
@@ -193,6 +200,7 @@ export class StationDetail {
   /** Without the Settings permission the server refuses every change here. */
   protected readonly canEdit = inject(ArenaContext).canEdit;
   private readonly floor = inject(FloorStore);
+  protected readonly venue = inject(VenueStore);
   protected readonly pricing = inject(PricingStore);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);

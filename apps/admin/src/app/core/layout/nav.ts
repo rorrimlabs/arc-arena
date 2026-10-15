@@ -1,3 +1,5 @@
+import { Capability } from '../venue/venue';
+
 /**
  * Side-nav destinations. Accessories (controllers, headsets…) live inside Stations, and station
  * and accessory types inside Settings, so neither has its own entry.
@@ -8,6 +10,10 @@ export interface NavItem {
   readonly label: string;
   /** Material Symbols name. */
   readonly icon: string;
+  /** Shown (and routable) only for venues using this capability (core/venue). */
+  readonly requires?: Capability;
+  /** Labelled with the venue's own noun ("Tables", "Grounds") instead of `label`. */
+  readonly venueNoun?: true;
 }
 
 export interface NavGroup {
@@ -26,9 +32,9 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     heading: 'Configure',
     items: [
-      { path: 'stations', label: 'Stations', icon: 'sports_esports' },
+      { path: 'stations', label: 'Stations', icon: 'grid_view', venueNoun: true },
       { path: 'pricing', label: 'Pricing', icon: 'sell' },
-      { path: 'games', label: 'Games', icon: 'stadia_controller' },
+      { path: 'games', label: 'Games', icon: 'stadia_controller', requires: 'games' },
     ],
   },
   {

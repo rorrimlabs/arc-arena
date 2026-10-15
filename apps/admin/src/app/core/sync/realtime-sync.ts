@@ -11,6 +11,7 @@ import { PricingStore } from '../../features/pricing/data/pricing-store';
 import { SalesStore } from '../../features/sales/data/sales-store';
 import { UsersStore } from '../../features/users/data/users-store';
 import { Supabase } from '../supabase/supabase';
+import { VenueStore } from '../venue/venue';
 import { SYNC_EVENT, arenaTopic } from './push-ops';
 
 export type RefreshTarget =
@@ -151,6 +152,7 @@ export class RealtimeSync {
   private readonly floorOptions = inject(FloorOptionsStore);
   private readonly accessories = inject(AccessoriesStore);
   private readonly users = inject(UsersStore);
+  private readonly venue = inject(VenueStore);
   private readonly router = inject(Router);
 
   private activeChannel: RealtimeChannel | null = null;
@@ -395,6 +397,8 @@ export class RealtimeSync {
       if (on('stations', 'settings')) jobs.push(this.accessories.refresh());
       else this.accessories.stale();
     }
+    // Station types and the venue profile decide the nav on every screen: always read again.
+    if (targets.has('pricing') || targets.has('settings')) jobs.push(this.venue.refresh());
     // Memberships decide what this login may still do: always read again.
     if (targets.has('arena')) jobs.push(this.arena.load(true));
 

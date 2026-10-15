@@ -4,6 +4,7 @@ import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
+import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
@@ -121,6 +122,12 @@ class FloorScreen extends ConsumerWidget {
         };
 
     final warn = ref.watch(warnThresholdProvider);
+    final noun = ref.watch(resourceNounProvider);
+    // Types that pick a game: only their stations get "Games on this station".
+    final gameTypes = {
+      for (final t in ref.watch(activitiesProvider).value ?? const <Activity>[])
+        if (t.active && t.usesGames) t.code,
+    };
     var endingSoon = 0;
     for (final a in active) {
       final st = SessionTimer(
@@ -156,8 +163,9 @@ class FloorScreen extends ConsumerWidget {
     for (final r in resources) {
       (zones[r.kind] ??= []).add(r);
     }
-    const kindLabel = {
-      ResourceKind.station: 'Stations',
+    // A venue's own word ("Tables", "Grounds") heads the main zone.
+    final kindLabel = {
+      ResourceKind.station: noun.many,
       ResourceKind.table: 'Tables',
       ResourceKind.room: 'Rooms',
     };
@@ -188,7 +196,9 @@ class FloorScreen extends ConsumerWidget {
         nextBooking: nextBookingByResource[r.id],
         onStart: a == null ? () => _newSession(context, resource: r) : null,
         onViewGames:
-            a == null && r.kind == ResourceKind.station && r.status.isBookable
+            a == null &&
+                r.status.isBookable &&
+                r.activityCodes.any(gameTypes.contains)
             ? () => showViewGamesSheet(context, r)
             : null,
         onTap: a == null
@@ -218,7 +228,8 @@ class FloorScreen extends ConsumerWidget {
             const ClockBanner(),
             ArenaScreenHeader(
               // The signed-in arena in cloud mode; the demo arena's label locally.
-              overline: ref.watch(cloudBindingProvider)?.arenaName ?? demoArenaLabel,
+              overline:
+                  ref.watch(cloudBindingProvider)?.arenaName ?? demoArenaLabel,
               title: 'Floor',
               status: _FloorStatus(
                 playing: {...byResource.keys, ...groupByResource.keys}.length,
