@@ -360,7 +360,7 @@ class SyncApplier {
           'minimum_charge_minutes', 'early_exit', 'rounding_scope',
           'late_arrival', 'vr_unit_rounding', 'money_rounding_paise',
           'money_rounding_dir', 'payment_timing', 'allow_extend_past_close',
-          'cleaning_gap_minutes', 'group_billing_mode',
+          'cleaning_gap_minutes', 'group_billing_mode', 'overtime_grace_minutes',
         ];
         await _db.into(_db.billingPolicies).insertOnConflictUpdate(
             BillingPolicyRow(

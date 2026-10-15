@@ -41,6 +41,11 @@ class _EndSheet extends ConsumerStatefulWidget {
 class _EndSheetState extends ConsumerState<_EndSheet> {
   late final DateTime _endAt;
   late final SegmentBill _bill;
+
+  /// Past the booked end: the booked time's price and every minute's, shown
+  /// beside the bill (which the overtime grace decides between).
+  SegmentBill? _booked;
+  SegmentBill? _whole;
   final _amountCtrl = TextEditingController();
   final _waiveReasonCtrl = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
@@ -57,9 +62,14 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   void initState() {
     super.initState();
     _endAt = ref.read(clockProvider).now();
-    _bill = ref
-        .read(sessionActionsProvider)
-        .endSummary(_session, widget.active.segments, at: _endAt);
+    final actions = ref.read(sessionActionsProvider);
+    _bill = actions.endSummary(_session, widget.active.segments, at: _endAt);
+    if (_endAt.isAfter(_session.scheduledEndAt)) {
+      _booked = actions.endSummary(_session, widget.active.segments,
+          at: _endAt, bookedOnly: true);
+      _whole = actions.endSummary(_session, widget.active.segments,
+          at: _endAt, wholeTime: true);
+    }
   }
 
   /// Money already taken against this session while it ran (Take payment).
@@ -127,6 +137,18 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           Text(customer?.displayName ?? '', style: theme.textTheme.bodyMedium),
           const SizedBox(height: AppSpacing.sm),
           _BillCard(bill: _bill, resources: resources, games: games),
+          if (_booked != null && _whole != null) ...[
+            const SizedBox(height: AppSpacing.sm),
+            _OvertimeCard(
+              scheduledEnd: _session.scheduledEndAt,
+              over: _endAt.difference(_session.scheduledEndAt),
+              graceMinutes: _session.snapshot.policy.overtimeGraceMinutes,
+              booked: _booked!,
+              whole: _whole!,
+              charged: _bill.total == _whole!.total &&
+                  _whole!.total != _booked!.total,
+            ),
+          ],
           if (_bill.isIncomplete) ...[
             const SizedBox(height: AppSpacing.sm),
             _UnpricedWarning(bill: _bill, resources: resources),
@@ -319,6 +341,76 @@ class _UnpricedWarning extends StatelessWidget {
               ],
             ),
           ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Played past the booked end: what the booked time costs, what the extra
+/// minutes would add, and whether they are on this bill (owner's overtime
+/// grace, Settings › Billing rules). The actual end is stored either way.
+class _OvertimeCard extends StatelessWidget {
+  const _OvertimeCard({
+    required this.scheduledEnd,
+    required this.over,
+    required this.graceMinutes,
+    required this.booked,
+    required this.whole,
+    required this.charged,
+  });
+
+  final DateTime scheduledEnd;
+  final Duration over;
+  final int graceMinutes;
+  final SegmentBill booked;
+  final SegmentBill whole;
+  final bool charged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final arena = context.arena;
+    final extra = whole.total.value - booked.total.value;
+    final overLabel = formatMinutesLabel(over);
+    final note = graceMinutes <= 0
+        ? 'Overtime is billed.'
+        : charged
+            ? 'Over the $graceMinutes-min grace: the whole time is billed.'
+            : 'Within the $graceMinutes-min grace: not charged.';
+    Widget row(String label, String value, {TextStyle? style}) => Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(label, style: style ?? theme.textTheme.bodyMedium),
+              Text(value,
+                  style: AppTextStyles.mono(
+                      (style ?? theme.textTheme.bodyMedium)!)),
+            ],
+          ),
+        );
+    return Container(
+      key: const ValueKey('end-overtime'),
+      padding: const EdgeInsets.all(AppSpacing.md),
+      decoration: BoxDecoration(
+        border: Border.all(color: arena.warning),
+        borderRadius: BorderRadius.circular(12),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Text('Played $overLabel past the booked end '
+              '(${IstTime.format12(scheduledEnd)})',
+              style: theme.textTheme.labelLarge),
+          const SizedBox(height: AppSpacing.xs),
+          row('Booked time', booked.total.display),
+          row('Overtime $overLabel', '+${Paise(extra).display}'),
+          row('With overtime', whole.total.display),
+          const SizedBox(height: AppSpacing.xs),
+          Text(note,
+              style: theme.textTheme.bodySmall?.copyWith(
+                  color: charged ? arena.warning : arena.textMuted)),
         ],
       ),
     );

@@ -45,7 +45,8 @@ create function pg_temp.policy(changes jsonb default '{}') returns jsonb as $$
     "grace_minutes":5,"minimum_charge_minutes":30,"early_exit":"planned","rounding_scope":"segment",
     "late_arrival":"planned","vr_unit_rounding":"prorate","money_rounding_paise":500,
     "money_rounding_dir":"up","payment_timing":"end","allow_extend_past_close":true,
-    "cleaning_gap_minutes":10,"group_billing_mode":"shared_controller_pool"}'::jsonb || changes)
+    "cleaning_gap_minutes":10,"group_billing_mode":"shared_controller_pool",
+    "overtime_grace_minutes":15}'::jsonb || changes)
   $$ language sql;
 create function pg_temp.saved() returns jsonb as $$
   select to_jsonb(p) - array['id','arena_id','name','active','created_at','updated_at','sync_xid']

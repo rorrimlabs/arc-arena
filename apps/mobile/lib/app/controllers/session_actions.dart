@@ -397,12 +397,17 @@ class SessionActions {
     return res;
   }
 
-  /// Live amount so far, billed across all segments (spec §14, §16).
+  /// Live amount so far, billed across all segments (spec §14, §16). It
+  /// stops at the booked end: overtime adds nothing until staff extend; the
+  /// End screen shows what the overtime would cost ([endSummary]).
   SegmentBill liveBill(ActiveSession active, DateTime now) => billing.bill(
     snapshot: active.session.snapshot,
     segments: active.segments,
     openEndAt: now,
     sessionStart: active.session.startedAt,
+    billUntil: now.isAfter(active.session.scheduledEndAt)
+        ? active.session.scheduledEndAt
+        : null,
   );
 
   // --- in-session changes (close current, open new at the exact instant) -----
@@ -636,17 +641,39 @@ class SessionActions {
     return res;
   }
 
-  /// The final bill from all segments, for the End screen (spec §19).
+  /// The final bill from all segments, for the End screen (spec §19). Under
+  /// the overtime grace it stops at the booked end (see [overtimeBillUntil]);
+  /// [bookedOnly] prices just the booked time and [wholeTime] every minute
+  /// played, to show beside it.
   SegmentBill endSummary(
     Session session,
     List<SessionSegment> segments, {
     DateTime? at,
-  }) => billing.bill(
-    snapshot: session.snapshot,
-    segments: segments,
-    openEndAt: at ?? clock.now(),
-    sessionStart: session.startedAt,
-  );
+    bool bookedOnly = false,
+    bool wholeTime = false,
+  }) {
+    final end = at ?? clock.now();
+    var last = end;
+    for (final s in segments) {
+      final e = s.endedAt ?? end;
+      if (e.isAfter(last)) last = e;
+    }
+    return billing.bill(
+      snapshot: session.snapshot,
+      segments: segments,
+      openEndAt: end,
+      sessionStart: session.startedAt,
+      billUntil: wholeTime
+          ? null
+          : bookedOnly
+          ? (last.isAfter(session.scheduledEndAt) ? session.scheduledEndAt : null)
+          : overtimeBillUntil(
+              lastEnd: last,
+              scheduledEnd: session.scheduledEndAt,
+              graceMinutes: session.snapshot.policy.overtimeGraceMinutes,
+            ),
+    );
+  }
 
   Future<Result<Session>> end(
     Session session,

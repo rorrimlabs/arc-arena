@@ -82,6 +82,24 @@ class SegmentBill {
       lines.fold(Duration.zero, (d, l) => d + Duration(seconds: l.quote.playedSeconds));
 }
 
+/// Where a single session's bill stops under the overtime grace
+/// ([BillingPolicy.overtimeGraceMinutes]); null = bill the whole actual time.
+///
+/// Ended past its booked end by no more than the grace: billed to the booked
+/// end only. Past the grace, with no grace, or ended on time or early: the
+/// whole actual time. [lastEnd] is the session's last moment (its actual end).
+/// Port: `_pr_session_bill` computes the same on the server.
+DateTime? overtimeBillUntil({
+  required DateTime lastEnd,
+  required DateTime scheduledEnd,
+  required int graceMinutes,
+}) {
+  if (graceMinutes <= 0 || !lastEnd.isAfter(scheduledEnd)) return null;
+  return lastEnd.difference(scheduledEnd) <= Duration(minutes: graceMinutes)
+      ? scheduledEnd
+      : null;
+}
+
 class SegmentBilling {
   const SegmentBilling({this.pricing = const PricingService()});
   final PricingService pricing;
@@ -89,11 +107,14 @@ class SegmentBilling {
   /// Prices [segments]. The open segment (endedAt == null) is priced up to
   /// [openEndAt] (usually `now` for a live amount, or the actual end at close).
   /// [sessionStart] is the session's `startedAt`: the pricing-rule instant.
+  /// [billUntil] caps the billed time (see [overtimeBillUntil]): every segment
+  /// is priced only up to it, and one starting at or after it bills nothing.
   SegmentBill bill({
     required PricingSnapshot snapshot,
     required List<SessionSegment> segments,
     required DateTime openEndAt,
     required DateTime sessionStart,
+    DateTime? billUntil,
   }) {
     final lines = <SegmentLine>[];
     final charges = <SessionCharge>[];
@@ -102,7 +123,11 @@ class SegmentBilling {
     var chargeIndex = 0;
 
     for (final seg in segments) {
-      final end = seg.endedAt ?? openEndAt;
+      var end = seg.endedAt ?? openEndAt;
+      if (billUntil != null) {
+        if (!seg.startedAt.isBefore(billUntil)) continue;
+        if (end.isAfter(billUntil)) end = billUntil;
+      }
       final quoted = pricing.quote(
         snapshot: snapshot,
         activityCode: seg.activityCode,

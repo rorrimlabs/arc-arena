@@ -31,6 +31,11 @@ export interface BillingPolicy {
   readonly allowExtendPastClose: boolean;
   readonly cleaningGapMinutes: number;
   readonly groupBillingMode: GroupBillingMode;
+  /**
+   * Overtime allowed free past a session's booked end: ended within it, the session is billed
+   * to its booked end; past it, the whole actual time is billed. 0 = all overtime is billed.
+   */
+  readonly overtimeGraceMinutes: number;
 }
 
 /** The server's defaults (_pr_policy), the floor app's BillingPolicy.defaults. */
@@ -49,11 +54,12 @@ export const DEFAULT_POLICY: BillingPolicy = {
   allowExtendPastClose: false,
   cleaningGapMinutes: 0,
   groupBillingMode: 'per_system',
+  overtimeGraceMinutes: 0,
 };
 
 /** The billing_policies columns the dashboard reads. */
 export const POLICY_COLUMNS =
-  'billing_unit, block_rounding, grace_minutes, minimum_charge_minutes, early_exit, rounding_scope, late_arrival, vr_unit_rounding, money_rounding_paise, money_rounding_dir, payment_timing, allow_extend_past_close, cleaning_gap_minutes, group_billing_mode';
+  'billing_unit, block_rounding, grace_minutes, minimum_charge_minutes, early_exit, rounding_scope, late_arrival, vr_unit_rounding, money_rounding_paise, money_rounding_dir, payment_timing, allow_extend_past_close, cleaning_gap_minutes, group_billing_mode, overtime_grace_minutes';
 
 export interface Choice<T> {
   readonly value: T;
@@ -148,6 +154,7 @@ export function parsePolicy(row: Record<string, unknown> | null | undefined): Bi
         : 'either',
     allowExtendPastClose: row['allow_extend_past_close'] === true,
     cleaningGapMinutes: int(row['cleaning_gap_minutes'], d.cleaningGapMinutes),
+    overtimeGraceMinutes: int(row['overtime_grace_minutes'], d.overtimeGraceMinutes),
     groupBillingMode: pick(row['group_billing_mode'], GROUP_MODES, d.groupBillingMode),
   };
 }
@@ -171,6 +178,7 @@ export function policyJson(p: BillingPolicy): Record<string, unknown> {
     payment_timing: p.paymentTiming,
     allow_extend_past_close: p.allowExtendPastClose,
     cleaning_gap_minutes: p.cleaningGapMinutes,
+    overtime_grace_minutes: p.overtimeGraceMinutes,
     group_billing_mode: p.groupBillingMode,
   };
 }
