@@ -7,9 +7,11 @@ import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/core/widgets/arena_placeholder_page.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
+import 'package:arena_ops/features/attendance/presentation/attendance_screen.dart';
 import 'package:arena_ops/features/auth/presentation/change_password_dialog.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_board_screen.dart';
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
+import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
 import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
@@ -91,12 +93,18 @@ class MoreScreen extends ConsumerWidget {
             if (user != null) _AccountCard(name: user.name, role: user.roleLabel),
             _Group('Shift', [
               ArenaListRow(
-                icon: Icons.schedule_rounded,
-                title: 'Shift',
-                subtitle: 'Open and close the day',
-                onTap: () => _notBuilt(context, 'Shift',
-                    'Shift open/close and cash-drawer reconciliation',
-                    Icons.schedule_rounded),
+                icon: Icons.fingerprint_rounded,
+                title: 'Attendance',
+                subtitle: 'Clock in and out, my hours',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const AttendanceScreen())),
+              ),
+              ArenaListRow(
+                icon: Icons.event_busy_rounded,
+                title: 'Leave',
+                subtitle: 'My balance, apply and track requests',
+                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                    builder: (_) => const LeaveScreen())),
               ),
               ArenaListRow(
                 icon: Icons.warning_amber_rounded,

@@ -10,6 +10,7 @@ import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/services/session_timer.dart';
 import 'package:arena_ops/domain/entities/booking.dart';
+import 'package:arena_ops/features/attendance/presentation/widgets/attendance_chip.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/end_session_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/extend_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/session_actions_sheet.dart';
@@ -231,6 +232,7 @@ class FloorScreen extends ConsumerWidget {
               overline:
                   ref.watch(cloudBindingProvider)?.arenaName ?? demoArenaLabel,
               title: 'Floor',
+              trailing: const AttendanceChip(),
               status: _FloorStatus(
                 playing: {...byResource.keys, ...groupByResource.keys}.length,
                 total: resources.length,

@@ -12,7 +12,11 @@ enum Permission {
   stations('stations', 'Manage stations'),
   money('money', 'Money'),
   reports('reports', 'Reports'),
-  settings('settings', 'Settings');
+  settings('settings', 'Settings'),
+  attendanceReview('attendance_review', 'Review attendance'),
+  leaveApprove('leave_approve', 'Approve leave'),
+  payroll('payroll', 'Payroll'),
+  payrollFinalise('payroll_finalise', 'Finalise salary');
 
   const Permission(this.code, this.label);
 

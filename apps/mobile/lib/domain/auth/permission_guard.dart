@@ -17,8 +17,9 @@ class PermissionGuard {
   /// Who is signed in, or null when the session is locked.
   final AppUser? actor;
 
-  /// Null when [permission] is held, otherwise the refusal to return.
-  Failure? check(Permission permission) {
+  /// Null when someone active is signed in, otherwise the refusal to return —
+  /// for actions every member may take on their own behalf (clocking in).
+  Failure? checkSignedIn() {
     final user = actor;
     if (user == null) {
       return const Failure(
@@ -34,6 +35,14 @@ class PermissionGuard {
         code: 'account_inactive',
       );
     }
+    return null;
+  }
+
+  /// Null when [permission] is held, otherwise the refusal to return.
+  Failure? check(Permission permission) {
+    final signedOut = checkSignedIn();
+    if (signedOut != null) return signedOut;
+    final user = actor!;
     if (!user.can(permission)) {
       return Failure(
         message: '${user.name} is not allowed to '
@@ -84,5 +93,9 @@ class PermissionGuard {
         Permission.money => 'see the money screen',
         Permission.reports => 'see reports',
         Permission.settings => 'change settings',
+        Permission.attendanceReview => "see everyone's attendance",
+        Permission.leaveApprove => 'approve leave',
+        Permission.payroll => 'prepare salaries',
+        Permission.payrollFinalise => 'finalise salaries',
       };
 }
