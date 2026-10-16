@@ -25,6 +25,7 @@ import 'package:arena_ops/domain/repositories/attendance_repository.dart';
 import 'package:arena_ops/features/attendance/presentation/attendance_history_screen.dart';
 import 'package:arena_ops/features/attendance/presentation/attendance_labels.dart';
 import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -146,14 +147,13 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
           IconButton(
             tooltip: 'My leave',
             icon: const Icon(Icons.event_busy_rounded),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const LeaveScreen())),
+            onPressed: () => AppNav.to(context, const LeaveScreen()),
           ),
           IconButton(
             tooltip: 'History',
             icon: const Icon(Icons.history_rounded),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                builder: (_) => const AttendanceHistoryScreen())),
+            onPressed: () =>
+                AppNav.to(context, const AttendanceHistoryScreen()),
           ),
         ],
       ),

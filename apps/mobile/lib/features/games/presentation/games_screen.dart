@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -20,9 +21,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen> {
   String _query = '';
 
   void _open(Game? game) {
-    Navigator.of(context).push(
-      MaterialPageRoute(builder: (_) => GameEditScreen(game: game)),
-    );
+    AppNav.to(context, GameEditScreen(game: game));
   }
 
   @override

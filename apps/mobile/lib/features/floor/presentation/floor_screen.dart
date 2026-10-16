@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
@@ -36,19 +37,11 @@ class FloorScreen extends ConsumerWidget {
   static const String demoArenaLabel = '404 Arena · Koratty';
 
   void _newSession(BuildContext context, {Resource? resource}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => NewSessionScreen(initialResource: resource),
-      ),
-    );
+    AppNav.to(context, NewSessionScreen(initialResource: resource));
   }
 
   void _newGroup(BuildContext context, {Resource? resource}) {
-    Navigator.of(context).push(
-      MaterialPageRoute(
-        builder: (_) => GroupSessionScreen(initialResource: resource),
-      ),
-    );
+    AppNav.to(context, GroupSessionScreen(initialResource: resource));
   }
 
   void _showNewMenu(BuildContext context) {
@@ -184,10 +177,9 @@ class FloorScreen extends ConsumerWidget {
           resource: r,
           group: grp.group,
           groupAssignment: grp.seg,
-          onTap: () => Navigator.of(context).push(
-            MaterialPageRoute(
-              builder: (_) => GroupDetailScreen(groupId: grp.group.group.id),
-            ),
+          onTap: () => AppNav.to(
+            context,
+            GroupDetailScreen(groupId: grp.group.group.id),
           ),
         );
       }
@@ -204,11 +196,10 @@ class FloorScreen extends ConsumerWidget {
             : null,
         onTap: a == null
             ? null
-            : () => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => StationDetailScreen(sessionId: a.session.id),
+            : () => AppNav.to(
+                  context,
+                  StationDetailScreen(sessionId: a.session.id),
                 ),
-              ),
         onExtend: a == null ? null : () => showExtendSheet(context, a),
         onBill: a == null ? null : () => showEndSessionSheet(context, a),
         onMore: a == null ? null : () => showSessionActionsSheet(context, a),
@@ -217,6 +208,7 @@ class FloorScreen extends ConsumerWidget {
 
     return Scaffold(
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'floor_fab',
         onPressed: () => _showNewMenu(context),
         icon: const Icon(Icons.add),
         label: const Text('New Session'),

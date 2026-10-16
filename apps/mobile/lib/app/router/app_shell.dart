@@ -37,8 +37,8 @@ class AppShell extends ConsumerWidget {
             final branch = tabs[index].branchIndex;
             navigationShell.goBranch(
               branch,
-              // Tapping the current tab pops to its root.
-              initialLocation: branch == currentBranch,
+              // Keep the current branch state on re-selection without discarding edits.
+              initialLocation: false,
             );
           },
           destinations: [

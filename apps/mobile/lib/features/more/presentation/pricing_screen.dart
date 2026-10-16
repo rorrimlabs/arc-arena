@@ -7,6 +7,7 @@ import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/pricing/rate.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -390,9 +391,7 @@ class _TradingHoursBanner extends StatelessWidget {
                     style: ArenaType.h3.copyWith(color: arena.text)),
               ),
               TextButton(
-                onPressed: () => Navigator.of(context).push(
-                  MaterialPageRoute(builder: (_) => const HoursScreen()),
-                ),
+                onPressed: () => AppNav.to(context, const HoursScreen()),
                 child: const Text('Edit'),
               ),
             ],

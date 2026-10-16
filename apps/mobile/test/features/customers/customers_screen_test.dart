@@ -31,6 +31,7 @@ void main() {
     // Customers live under the More tab as "Members" after the design re-skin.
     await tester.tap(find.text('More'));
     await settle(tester);
+    await tester.scrollUntilVisible(find.text('Members'), 100);
     await tester.tap(find.text('Members'));
     await settle(tester);
 

@@ -7,6 +7,7 @@ library;
 import 'package:arena_ops/app/providers/attendance_providers.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/domain/attendance/attendance_entry.dart';
@@ -43,8 +44,7 @@ class AttendanceChip extends ConsumerWidget {
             side: BorderSide(color: onClock ? arena.success : arena.border)),
         child: InkWell(
           customBorder: const StadiumBorder(),
-          onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-              builder: (_) => const AttendanceScreen())),
+          onTap: () => AppNav.to(context, const AttendanceScreen()),
           child: ConstrainedBox(
             constraints: const BoxConstraints(minHeight: 44),
             child: Padding(

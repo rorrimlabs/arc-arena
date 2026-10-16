@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/booking_actions.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
@@ -196,10 +197,9 @@ class BookingCard extends ConsumerWidget {
             tooltip: 'Booking actions',
             icon: Icon(Icons.more_vert, color: arena.textMuted),
             onSelected: (v) => switch (v) {
-              'edit' => Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => BookingScreen(existing: booking),
-                ),
+              'edit' => AppNav.to(
+                context,
+                BookingScreen(existing: booking),
               ),
               'reminder' => _toggleReminder(context, ref),
               'cancel' => _cancel(context, ref),

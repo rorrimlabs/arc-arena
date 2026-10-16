@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/features/games/presentation/games_screen.dart';
@@ -18,7 +19,7 @@ class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   void _push(BuildContext context, Widget page) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    AppNav.to(context, page);
   }
 
   @override

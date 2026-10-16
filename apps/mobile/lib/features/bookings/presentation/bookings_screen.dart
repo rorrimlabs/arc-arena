@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
@@ -48,9 +49,8 @@ class BookingsScreen extends ConsumerWidget {
     return Scaffold(
       floatingActionButton: canBook
           ? FloatingActionButton.extended(
-              onPressed: () => Navigator.of(
-                context,
-              ).push(MaterialPageRoute(builder: (_) => const BookingScreen())),
+              heroTag: 'bookings_fab',
+              onPressed: () => AppNav.to(context, const BookingScreen()),
               icon: const Icon(Icons.add),
               label: const Text('New Booking'),
             )

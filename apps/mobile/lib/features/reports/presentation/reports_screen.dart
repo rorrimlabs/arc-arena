@@ -1,5 +1,5 @@
 import 'package:arena_ops/app/providers/core_providers.dart';
-import 'package:arena_ops/core/widgets/app_toast.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -233,10 +233,9 @@ class _Report extends StatelessWidget {
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: AppSpacing.x5),
           child: FilledButton.tonalIcon(
-            onPressed: () => Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => SessionHistoryScreen(report: report),
-              ),
+            onPressed: () => AppNav.to(
+              context,
+              SessionHistoryScreen(report: report),
             ),
             icon: const Icon(Icons.receipt_long_outlined),
             label: const Text('Session & customer history'),
