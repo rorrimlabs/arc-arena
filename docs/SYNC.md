@@ -299,7 +299,7 @@ unsent work stays in that person's database file and goes after they sign in.
 
 * **The floor app is staff-only: it only signs in.** New arena owners register
   on the admin dashboard (`apps/admin`): e-mail + password (10+, letters and
-  digits) → the 6-digit code from the confirmation e-mail (`verifyOtp`) →
+  digits) → the link in the confirmation e-mail (opens `/register`) →
   Create your arena → `create_my_arena(arena name, owner name)`. The server
   refuses unconfirmed logins and a second arena per login (`arena_limit`). The
   arena starts **empty**: the owner adds station types (`activity.upsert`),

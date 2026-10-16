@@ -22,7 +22,7 @@ staff member only ever sees the arenas they are an active member of.
 | `seed.sql` | Intentionally empty: arenas start with no catalog (owners build it on the dashboard). |
 | `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station; `run.sh` (station race), `run_pads.sh` (pad races), `fixture.sh` (their own arena, removed on exit). Use `docker exec psql` on the local container (`tool/verify_all.sh --with-psql`). |
 | `audit/security_audit.sql` | Read-only report of the API surface (grants, SECURITY DEFINER, RLS). Its allowlist of client functions predates the invitation/sales/pricing RPCs (it still names `add_staff_by_email`), so it reports the newer client API as `FAIL`; test 13 is the current assertion. |
-| `templates/confirmation.html` | Sign-up confirmation. Without a redirect (an owner signing up) it shows the 6-digit `{{ .Token }}` the dashboard asks for; with one (an invited NEW address, redirect to `/accept-invite`) it shows the invitation link |
+| `templates/confirmation.html` | Sign-up confirmation link. An owner signing up (user metadata `signup`, redirect to `/register`) gets the confirmation wording; an invited NEW address (redirect to `/accept-invite`) gets the invitation wording |
 | `templates/magic_link.html` | Sign-in link, used only for invitations to an address that already has a confirmed login |
 | `config.toml` | Local stack (ports 5443x). Sign-up on with e-mail code confirmation; pg-delta is on. `additional_redirect_urls` include `http://127.0.0.1:4200/**` and `http://localhost:4200/**` (`ng serve`, for `/accept-invite`); `email_sent` limit 30/h; local mail goes to Mailpit at `http://127.0.0.1:54434`. |
 
@@ -78,7 +78,7 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   *owner level* (`app_is_owner`, same rule as the app). Only owner-level members grant or remove
   `money`/`reports` or edit an owner-level member; nobody changes their own perms.
 - **Two routes to ownership; everyone else joins by invitation.** A new arena owner registers on the admin
-  dashboard (`apps/admin`), confirms the e-mail with a 6-digit code, and calls
+  dashboard (`apps/admin`), confirms the e-mail with the e-mailed link, and calls
   `create_my_arena()` (confirmed logins only, one owned arena per login). The operator can also
   attach an owner with `bootstrap_owner()` (SQL editor, no limit). Both go through
   `_create_arena_with_owner`, which creates the arena **empty**: no station types, accessory

@@ -161,9 +161,9 @@ export class SignIn {
     } catch (e) {
       const err = toAppError(e);
       if (err.code === 'email_not_confirmed') {
-        // Signed up but never entered the code: finish that first.
+        // Signed up but never opened the confirmation link: finish that first.
         await this.router.navigate(['/register'], {
-          queryParams: { step: 'code', email: address.trim() },
+          queryParams: { step: 'check', email: address.trim() },
         });
         return;
       }

@@ -172,8 +172,8 @@ enable_refresh_token_rotation = true
 # Requires enable_refresh_token_rotation = true.
 refresh_token_reuse_interval = 10
 # Allow/disallow new user signups to your project.
-# ON: a new arena owner signs up in the app, confirms the e-mail with a 6-digit
-# code ([auth.email] below), then create_my_arena makes their arena (one per
+# ON: a new arena owner signs up in the app, confirms the e-mail with the link
+# ([auth.email] below), then create_my_arena makes their arena (one per
 # login). Staff logins are still added by an owner, never self-registered into
 # an arena: a fresh sign-up belongs to no arena until create_my_arena or
 # add_staff_by_email.
@@ -231,8 +231,8 @@ enable_signup = true
 # addresses. If disabled, only the new email is required to confirm.
 double_confirm_changes = true
 # If enabled, users need to confirm their email address before signing in.
-# ON: an owner's sign-up is confirmed with the 6-digit code in templates/confirmation.html;
-# an invited new address confirms through the link in the same template.
+# ON: an owner's sign-up is confirmed with the link in templates/confirmation.html (it opens
+# the dashboard's /register); an invited new address confirms through the same template.
 enable_confirmations = true
 # If enabled, users will need to reauthenticate or have logged in recently to change their password.
 secure_password_change = false
@@ -253,9 +253,9 @@ otp_expiry = 3600
 # admin_email = "admin@email.com"
 # sender_name = "Admin"
 
-# Sign-up confirmation, two uses: an owner signing up enters the code ({{ .Token }}); a NEW
-# address being invited (the dashboard's signInWithOtp, redirect to /accept-invite) gets the
-# link instead. The template tells them apart by the redirect (owner sign-ups send none).
+# Sign-up confirmation, two uses, both a link: an owner signing up (redirect to /register) and a
+# NEW address being invited (the dashboard's signInWithOtp, redirect to /accept-invite). The
+# template tells them apart by the user metadata the owner sign-up sets (signup = "owner").
 [auth.email.template.confirmation]
 subject = "404 Arena: confirm your e-mail"
 content_path = "./supabase/templates/confirmation.html"

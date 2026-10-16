@@ -73,17 +73,7 @@ export class SampleAuthApi extends AuthApi {
     return 'confirm';
   }
 
-  async verifySignUp(email: string, code: string): Promise<void> {
-    this.calls.push(`verify:${email}:${code}`);
-    const login = this.logins.get(email);
-    if (!login || code !== SampleAuthApi.CODE) {
-      throw new AppError('otp_expired', 'That code is wrong or has expired');
-    }
-    login.confirmed = true;
-    this.set({ id: `id-${email}`, email, name: email });
-  }
-
-  async resendCode(email: string): Promise<void> {
+  async resendConfirmation(email: string): Promise<void> {
     this.calls.push(`resend:${email}`);
   }
 

@@ -110,7 +110,7 @@ export function acceptError(e: PostgrestError | Error): AppError {
 }
 
 /**
- * Sign-in, owner sign-up (email + password, confirmed with the 6-digit code from the email),
+ * Sign-in, owner sign-up (email + password, confirmed with the link in the email),
  * accepting an e-mailed invitation, resetting a forgotten password, and sign-out. The Supabase
  * implementation is the default; tests provide a sample one.
  */
@@ -121,10 +121,12 @@ export abstract class AuthApi {
   /** Called on every sign-in, sign-out and token refresh. Returns an unsubscribe function. */
   abstract onChange(listener: (account: Account | null) => void): () => void;
   abstract signIn(email: string, password: string): Promise<void>;
-  /** 'confirm' when the server e-mailed a code; 'signed-in' when it needs no confirmation. */
+  /**
+   * 'confirm' when the server e-mailed a confirmation link (it opens the dashboard's /register
+   * page, signed in); 'signed-in' when it needs no confirmation.
+   */
   abstract signUp(email: string, password: string): Promise<'confirm' | 'signed-in'>;
-  abstract verifySignUp(email: string, code: string): Promise<void>;
-  abstract resendCode(email: string): Promise<void>;
+  abstract resendConfirmation(email: string): Promise<void>;
   /** Saves the owner's display name on their login (shown in the side nav). */
   abstract setName(name: string): Promise<void>;
   /**
@@ -188,19 +190,29 @@ class SupabaseAuthApi extends AuthApi {
   }
 
   async signUp(email: string, password: string): Promise<'confirm' | 'signed-in'> {
-    const { data, error } = await (await this.auth()).signUp({ email, password });
+    const { data, error } = await (
+      await this.auth()
+    ).signUp({
+      email,
+      password,
+      // `signup: 'owner'` picks the owner wording in templates/confirmation.html (an invited new
+      // address gets the same template without it).
+      options: { emailRedirectTo: this.confirmUrl(), data: { signup: 'owner' } },
+    });
     if (error) throw toAppError(error);
     return data.session ? 'signed-in' : 'confirm';
   }
 
-  async verifySignUp(email: string, code: string): Promise<void> {
-    const { error } = await (await this.auth()).verifyOtp({ type: 'signup', email, token: code });
+  async resendConfirmation(email: string): Promise<void> {
+    const { error } = await (
+      await this.auth()
+    ).resend({ type: 'signup', email, options: { emailRedirectTo: this.confirmUrl() } });
     if (error) throw toAppError(error);
   }
 
-  async resendCode(email: string): Promise<void> {
-    const { error } = await (await this.auth()).resend({ type: 'signup', email });
-    if (error) throw toAppError(error);
+  /** The sign-up confirmation link opens /register on the dashboard's own address. */
+  private confirmUrl(): string {
+    return new URL('/register', this.document.location.origin).href;
   }
 
   async setName(name: string): Promise<void> {
