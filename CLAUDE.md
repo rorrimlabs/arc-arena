@@ -1,77 +1,121 @@
 # CLAUDE.md
 
-`arena_ops` — staff-first gaming-center operations app (404 Arena). Correctness of **timing, pricing and records** is the priority. Plan: `docs/PLAN.md`; unconfirmed business rules: `docs/OWNER_CONFIRMATION.md`; release/backup runbook: `docs/RELEASE.md`; sync design: `docs/SYNC.md`; multi-venue design: `docs/GENERALIZATION.md`.
+`arena_ops` — staff-first gaming-center operations app (404 Arena, generalising to any venue). Correctness of **timing, pricing, money and records** is the priority; token efficiency comes from skipping wasted work, never from cutting correctness.
 
-**Dev = local Supabase only.** Both apps develop and get validated against the local stack (`supabase start`): admin `npm run dev`, floor app `--dart-define-from-file=dart_define.local.json` (`dart_define.local-android.json` on an Android emulator). Going live on the hosted project is manual (`docs/DEPLOY_SUPABASE.md`): never push, deploy or point a dev run at it.
+## Docs (read only when the task touches them)
 
-**Scope (SLC):** the Flutter app is **staff only** (floor: sessions, payments, groups, bookings, controllers, members per permission). **All owner features live on the admin web dashboard** (`apps/admin/`): sales, reports, voids, stations, games, pricing, users, settings. Never build or extend owner features in mobile; its owner screens (Today, Money, Reports, Settings) will be hidden later. UI direction comes from the screens already built (reuse their layout and shared components); there is no design export to follow.
+| Doc | When |
+|---|---|
+| `docs/OWNER_CONFIRMATION.md` | Unconfirmed / decided business rules (pricing #rows, staff S-rows) |
+| `docs/SYNC.md` | Outbox, `sync_push`/`sync_pull`, conflicts, server time |
+| `docs/GENERALIZATION.md` | Multi-venue design |
+| `docs/STAFF.md` / `docs/STAFF_API.md` | Attendance, leave, salary: design / server contract (ops, codes, tables, RPCs) |
+| `docs/RELEASE.md`, `docs/DEPLOY_SUPABASE.md` | Release, backup, going live |
+| `supabase/README.md` | Tables / functions / security map, pgTAP index |
+| `apps/admin/CLAUDE.md` | Angular rules (always follow for admin work) |
+| `docs/PLAN.md` | History only |
+| `.claude/WORKING_STATE.md` | Unfinished multi-session work, if present |
+
+## Environments
+
+- **Dev = local Supabase only** (`supabase start`; `supabase`/`docker` run outside the sandbox, Docker Desktop must run). Admin `npm run dev` (:4200); floor app `--dart-define-from-file=dart_define.local.json` (`…local-android.json` on an emulator).
+- Hosted project: manual go-live only (`docs/DEPLOY_SUPABASE.md`). **Never push, deploy, or point a dev run at it** unless explicitly asked.
+- Release builds are **cloud-only**: Gradle refuses without `AO_BACKEND=supabase` or `android/key.properties`; `AppConfig.problemFor` refuses local mode, non-https/dev URLs, secret/`service_role` keys. Only the publishable key ships.
+
+## Scope (SLC)
+
+- Flutter app = **staff only** (floor: sessions, payments, groups, bookings, controllers, members, own attendance and leave — per permission). Its owner screens (Today, Money, Reports, Settings) will be hidden later; never build or extend owner features there.
+- **All owner features live on the admin web** (`apps/admin/`): sales, reports, voids, stations, games, pricing, users, settings, staff (shifts, corrections, leave approvals, pay setup, payroll).
+- UI direction = the screens already built (reuse their layout and shared components). No design export to follow.
+
+## Layout
 
 | Path | What |
 |---|---|
 | `apps/mobile/` | Flutter staff app. Run every `flutter`/`dart` command from here. |
-| `apps/admin/` | Angular 22 admin (signals, Tailwind 4, Vitest). Follow `apps/admin/CLAUDE.md`. From `apps/admin/`: `npm run dev` (local stack, :4200), `npm run build`, `npm test`; no `npm start`. Prefer the `angular-cli` MCP server over shelling out to `ng`. |
-| `supabase/` | Declarative schema (`schemas/`), generated migrations, pgTAP tests, seed, e-mail templates. No Edge Functions: invitation e-mails are sent by Supabase Auth (the dashboard calls `invite_member` then `signInWithOtp`). Tables/functions/security map: `supabase/README.md`. |
-| `tool/` | `verify_all.sh` (all checks), `sync_it.sh` (cross-app integration incl. the invitation e-mail, local stack), `pricing_parity.sh` (Dart vs SQL pricing). |
-| `.agents/skills/` → `.claude/skills/` | `supabase`, `supabase-postgres-best-practices` — use for any Supabase/Postgres work. |
-
-## Flutter commands (from `apps/mobile/`)
-
-```bash
-flutter analyze                                   # must be clean
-flutter test [file] [--plain-name "name"]
-dart run build_runner build --delete-conflicting-outputs   # regen *.freezed.dart / *.g.dart / database.g.dart
-flutter build apk --release --split-per-abi --dart-define-from-file=dart_define.prod.json   # tablet: app-arm64-v8a-release.apk
-```
-
-- Release builds are **cloud-only**: Gradle refuses without `AO_BACKEND=supabase` or `android/key.properties`; `AppConfig.problemFor` refuses local mode, non-https/development URLs and secret/`service_role` keys.
-- Generated files are committed: regenerate, never hand-edit. Keep `build.yaml` storing Drift `DateTime` as ISO-8601 UTC text.
+| `apps/admin/` | Angular 22 (signals, Tailwind 4, Vitest). `npm run dev` / `npm run build` / `npm test`; no `npm start`. Prefer the `angular-cli` MCP server over shelling out to `ng`. |
+| `supabase/` | Declarative schema (`schemas/`), generated migrations, pgTAP tests, seed, e-mail templates. |
+| `tool/` | `verify_all.sh` (all checks), `sync_it.sh` (cross-app integration, local stack), `pricing_parity.sh` (Dart vs SQL pricing). |
+| `.claude/skills/` | `supabase`, `supabase-postgres-best-practices` — load for any Supabase/Postgres work. |
 
 ## Supabase — declarative schemas only
 
-`supabase/schemas/` is the single source of truth (one object per file with its indexes, triggers, RLS, grants, comments). Migrations in `supabase/migrations/` are **generated by pg-delta — never write/edit/rename/delete them by hand**. `0001`–`0016` are the hand-written baseline.
+`supabase/schemas/` is the single source of truth (one object per file with its indexes, triggers, RLS, grants, comments). Migrations are **generated by pg-delta — never write/edit/rename/delete them by hand** (`0001`–`0016` = hand-written baseline). Never `supabase db diff` (ignores `schemas/`). Data goes in `seed.sql`. Can't express it declaratively → **stop and ask**.
 
-To change the schema:
-1. Edit the end state in `supabase/schemas/` (no `alter` statements; new object = new file).
-2. `supabase db schema declarative sync --name <name> --no-apply` → **read the migration** → `supabase migration up --local`.
-3. Run the sync `--no-apply` again: must say "No schema changes found" (pg-delta can miss grants/revokes; apply any leftover).
-4. `supabase test db --local` and `supabase db advisors --local --type all`.
+Schema change:
+1. Edit the end state in `supabase/schemas/` (no `alter`; new object = new file).
+2. `supabase db schema declarative sync --name <name> --no-apply` → **read the migration** (check for stray `grant … to anon`, drops) → `supabase migration up --local`.
+3. Re-run the sync `--no-apply`: must say "No schema changes found".
+4. `supabase db advisors --local --type all`.
+No destructive migrations without explicit approval.
 
-Don't use `supabase db diff` (ignores `schemas/` here). Data goes in `seed.sql`. Can't express it declaratively → **stop and ask**. Never push to a remote project unless asked. `supabase`/`docker` run outside the sandbox; Docker Desktop must be running.
+Security rules (asserted by `supabase/tests/13_security_hardening_test.sql`):
+- Every table/view/function/sequence file ends with `revoke all … from anon;` + `revoke all … from authenticated;`, then deliberate grants only.
+- `anon` reaches nothing. `authenticated` only `select`s tables (RLS by arena; sensitive ones via `private.app_arena_ids_with(perms)`, own rows via `private.app_my_staff_ids()`) and executes the client API.
+- No SECURITY DEFINER function in an exposed schema is client-executable. New client RPC = definer body in `private/functions/` + same-signature `security invoker` wrapper in `public/functions/` + add it to test 13's client-API allow-list. Server-only definers (`op_*`, `_*`, `bootstrap_owner`) stay in `public` with no client EXECUTE.
+- All writes: `sync_push` → `_sync_apply` (dispatch `case`) → `op_*` (definer, `set search_path`, `_need(arena, perm)`). No insert/update/delete policies. Views `security_invoker = true`.
+- 42501 on a client RPC = refusal or a call without a session: fix the client, never grant to `anon`.
+- Joining = invitation only (`invite_member` → Auth e-mail → `/accept-invite` → `accept_invite`); owners self-register via `create_my_arena`; non-magic-link logins choose a password first. No service-role key outside `tool/sync_it.sh`'s local setup. No Edge Functions.
 
-Security rules (asserted by `supabase/tests/13_security_hardening_test.sql`; details in `supabase/README.md`):
-- Every table/view/function/sequence file ends with `revoke all … from anon;` and `revoke all … from authenticated;`, then any deliberate grant. Check generated migrations for stray `grant … to anon`.
-- `anon` reaches nothing. `authenticated` only `select`s tables (RLS by arena; sensitive tables via `private.app_arena_ids_with(perms)`) and executes the client API.
-- No SECURITY DEFINER function in an exposed schema is executable by clients. New client RPC = definer body in `private/functions/` + same-signature `security invoker` wrapper in `public/functions/`. Server-only definers (`op_*`, `_pr_*`, `_*`, `bootstrap_owner`) stay in `public` with no client EXECUTE.
-- A 42501 on a client RPC = refusal or a call without a session (ran as `anon`): fix the client, never grant to `anon`.
-- Joining an arena is by invitation only (`invite_member` → Supabase Auth e-mail → `/accept-invite` → `accept_invite`); owners self-register via `create_my_arena`. A link that isn't a magic link (new/unconfirmed login) must choose its own password before joining. No service-role key exists outside `tool/sync_it.sh`'s local test setup.
-- All writes go through `sync_push` → `_sync_apply` → `op_*` (definer, `set search_path`, `_need(arena, perm)`). No insert/update/delete policies. Views use `security_invoker = true`.
+Permissions: `text[]` on `staff_profiles`, list in `_known_perms()` (start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise). `role='owner'` holds all. `money`/`reports` = owner level; only owner level grants money, reports, payroll, payroll_finalise. Nobody changes their own permissions.
 
 ## Mobile architecture (`apps/mobile/lib/`, dependencies point inward)
 
 - `core/` — `Clock`, `Result`/`Failure`, money (paise, rounding, rupee input), IST time, theme, shared widgets.
-- `domain/` — pure Dart: Freezed entities, repository interfaces, commands, `pricing/`, `services/`, `reports/`, `auth/` (`PermissionGuard`).
-- `data/local/` — Drift (`database.dart`, `Local*Repository`, `db_safety.dart`); `data/sync/` + `app/sync/` — outbox, `sync_push`/`sync_pull`, realtime nudge.
-- `app/` — Riverpod providers, go_router, action controllers (`controllers/*_actions.dart`).
+- `domain/` — pure Dart: Freezed entities, repository interfaces, commands, `pricing/`, `services/`, `reports/`, `auth/` (`PermissionGuard`), `attendance/`, `leave/`.
+- `data/local/` — Drift (`database.dart`, `Local*Repository`, `db_safety.dart`); `data/sync/` + `app/sync/` — outbox, `sync_push`/`sync_pull`, realtime nudge; `data/remote/` — online-only repositories (attendance, leave) via `online_calls.dart`.
+- `app/` — Riverpod providers, go_router, action controllers (`controllers/*_actions.dart`); `app/sync/cloud_root.dart` overrides cloud-only providers.
 - `features/<area>/` — screens and sheets.
 
-Mutation flow: widget → action controller (`PermissionGuard`, pure pricing, builds command) → repository (re-checks conflicts, atomic write) → `Result<T>`. **No pricing, availability, timestamp math or DB calls in widgets.** `Failure` carries `message` + `fix` + stable `code`; the UI never invents error copy. Permission checks live in the action layer.
+Mutation flow: widget → action controller (`PermissionGuard`, pure pricing, builds command) → repository (re-checks conflicts, atomic write) → `Result<T>`. **No pricing, availability, timestamp math or DB calls in widgets.** `Failure` carries `message` + `fix` + stable `code`; the UI never invents error copy.
 
 Invariants:
-- Money = integer paise. No doubles.
-- Instants are UTC; business rules use Asia/Kolkata +05:30 via `core/time/`. "Now" comes from `clockProvider`, never `DateTime.now()`.
+- Money = integer paise, never doubles. SQL money: exact `numeric`, rounded once to paise.
+- Instants UTC; business rules in Asia/Kolkata +05:30 (`core/time/`, SQL `_pr_ist_date`). "Now" = `clockProvider`, never `DateTime.now()`.
 - Timers derive from stored timestamps, never counters.
 - A session captures an immutable pricing snapshot at start. Switch system / change game / change controllers close the open segment and open a new one; one open segment per resource.
 - Hours, holidays, rates, billing rules, stations are data, not constants. New arenas start empty.
 - Controllers (pads) are tracked physically (allocations, borrow/move history).
-- Only the publishable key ships in the app. Debug builds without defines run an offline demo (Drift only, demo catalog/PINs).
+- Money records are append-only: corrections are new rows (refunds, reversals, superseding entries), never edits. Voids need a reason and land in `audit_log`.
+- Debug builds without defines run an offline demo (Drift only, demo catalog/PINs).
+- Generated files (`*.freezed.dart`, `*.g.dart`, `database.g.dart`) are committed: regenerate with `dart run build_runner build --delete-conflicting-outputs`, never hand-edit. `build.yaml` stores Drift `DateTime` as ISO-8601 UTC text.
 
-Drift schema change (the device DB is the only copy of the day's takings; `DbSafety.protect` backs it up before migrating):
-1. Bump `AppDatabase.expectedSchemaVersion`.
-2. Add an **additive** step to `_steps` in `database.dart` (`_steps[n]` = v`n` → v`n+1`; never drop/rewrite user rows).
-3. Add a case to `test/data/local/migration_test.dart` with real session/segment/payment rows that must survive.
+Drift schema change (the device DB is the only copy of the day's takings; `DbSafety.protect` backs it up first): bump `AppDatabase.expectedSchemaVersion`; add an **additive** step to `_steps` (`_steps[n]` = v`n` → v`n+1`; never drop/rewrite user rows). A gap falls through to a destructive rebuild.
 
-## Tests and verification
+## Staff module (attendance, leave, salary)
 
-`apps/mobile/test/` mirrors `lib/`; `test/sync/`, `test/integration/` and `apps/admin/src/integration/*.it.spec.ts` skip outside `tool/sync_it.sh`. Helpers: `test/support/test_db.dart` (`seededMemoryDb()`, `testOverrides(db, clock: FakeClock(...), auth: TestStaffAuth.new)`), `test/support/pricing_fixtures.dart`. Widget tests cover phone and desktop sizes.
+- **Online only, not in `sync_pull`**: apps read via RLS selects and RPCs (`attendance_days`, `leave_balances`); the floor app sends ops straight to `sync_push` (no outbox). Server time stamps punches; device time is evidence only. Op id = row id so resends replay.
+- One day calculation, `_att_day`, feeds the floor history, the admin calendar and salary (`_pay_build_line`) — never recompute it in the apps.
+- Pay is admin-web only (`payroll` perms); staff read no pay at all. A finalised salary run locks its period (`period_finalised`).
+- Contract and refusal codes: `docs/STAFF_API.md`.
 
-Verify with automated checks only: `bash tool/verify_all.sh` (`--with-it` adds `sync_it.sh`, `--with-psql` adds pricing parity + concurrency races). Run `tool/pricing_parity.sh` after any pricing/money/time change. **No manual or visual testing**: no screenshots/headless browsers, no driving the app, no inspecting `dist/`. When done, hand the user the route/screen and a short click-through checklist.
+## Lean development mode
+
+- Implement what was asked, reusing existing components, utilities, patterns and tables. No unrequested features, abstractions, dependencies, config layers or refactors; don't rewrite working code without a concrete reason.
+- **Tests:** do not create or run tests (unit, widget, component, integration, e2e, mocks, fixtures) unless the user asks. Keep existing tests and scripts; never delete them. If a change makes one outdated, say so briefly.
+- **Checks by default:** focused and cheap — `flutter analyze` (must be clean) for Dart changes; `npm run build` for admin compile; the schema workflow above for SQL. No repo-wide suites (`verify_all.sh`, `flutter test`, `npm test`, `supabase test db`) without being asked.
+- **Risky areas** (pricing, payments, money, migrations incl. Drift, permissions/RLS, sync, session timers/segments, bookings, salary): keep every integrity guarantee, never bypass server validation or authorization to simplify, never change billing semantics without explicit requirements. State the risk and recommend the matching check (`supabase test db`, `tool/pricing_parity.sh`, `tool/sync_it.sh`, a Drift migration test) instead of running it unasked. Before any production step, list critical verification not yet done.
+- **No manual or visual testing** by Claude: no screenshots, headless browsers, driving the app, or inspecting `dist/`. The user tests by hand from a click-through checklist.
+- Never claim something was tested when it wasn't.
+
+## Working efficiently
+
+- Find the module, read only the files needed, search progressively (targeted grep before wide exploration). Don't re-read unchanged files or re-derive settled architecture.
+- Small change → implement directly. Cross-module or architectural change → brief plan first.
+- Don't repeat a failed command unchanged. Use subagents only when parallel work clearly pays off; give them a precise contract and verify their claims.
+- Don't reopen settled decisions (S-rows in `docs/OWNER_CONFIRMATION.md`, this file) without new requirements.
+- **Docs:** no unrequested reports, changelogs or markdown files. Update docs only when asked, when a decision changes, or when they become wrong. For long multi-session work keep `.claude/WORKING_STATE.md` short (objective, done, decisions, key files, open tasks, blockers, next action); update at milestones or before a handoff, not after every edit.
+- **Compaction:** keep the task and outcome, decisions, files changed, constraints, done / remaining work, blockers; drop tool output, superseded plans and debugging history. Re-check a prior change before relying on it.
+
+## Response format
+
+After implementing: **Implemented** (what changed) · **Files** (key ones) · **Verification** (checks run / not run, plus a short click-through checklist for the user) · **Notes** (only real risks or limitations). No restating the request, no long explanations unless asked.
+
+## Known limitations
+
+- Drift migration tests fail on HEAD: `duplicate column name: overtime_grace_minutes` (v16 step, overtime-grace commits) — possible upgrade failure on devices; fix before release.
+- 7 admin specs fail on HEAD (auth "register…", 5 settings, stations "shows a station…"): outdated wording.
+- Admin initial bundle exceeds its 500 kB budget.
+- Admin web admits only owner-level logins, so a `leave_approve`-only member cannot approve anywhere yet.
+- `pushOps` (admin) surfaces refusal codes but not the server hint.
+- Not built yet: push notifications (FCM), who's-in board, shared clock-in tablet.

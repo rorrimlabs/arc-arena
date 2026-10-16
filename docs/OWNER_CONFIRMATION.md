@@ -56,6 +56,41 @@ Legend: 🟡 = pending owner confirmation · ✅ = fixed rule the spec already s
 
 > **#24 note (group feature §9).** When a group spreads across several PS5s, the price depends entirely on this rule, so it is **owner-confirmation-required**. The default `perSystem` is the conservative reading of the spec's warning ("do not automatically assume a three-controller price permits three separate PS5 systems at the same price"): co-located players on one system are combined onto that system's controller rate, while separate systems each bill their own controllers. `sharedControllerPool` is the alternative where the party pays once for the controllers they bought, however many systems they use. The mode is stored on each `GroupSession` (via its snapshot) so historical groups re-price identically; changing the policy only affects new groups.
 
+## Staff module: attendance, leave and salary
+
+The design is in `docs/STAFF.md`. Decided 2026-10-15: staff clock in on their own phone or on a
+registered arena tablet; clock in/out needs a connection and the server stamps the time; who's in,
+leave approvals and flagged review are floor screens gated by permission; leave notifications use
+real push (FCM). Rows marked 🟡 are still open, and the design runs on their default until they
+are answered.
+
+| # | Rule | Default (assumption) | Alternatives | Where |
+|---|------|----------------------|--------------|-------|
+| S1 | Day rate for monthly staff (used for deductions) | ✅ decided 2026-10-15: calendar days in the period; holidays are configured per arena and work on them counts (S2) | — | `pay_policies.policy.day_divisor` |
+| S2 | Work on a week-off or holiday | ✅ decided 2026-10-15: every minute worked is extra hours | — | `_att_day_facts` |
+| S3 | Extra hours | ✅ decided 2026-10-15: minutes beyond a **standard day** (arena default 8 h, per-person override) are extra hours, including on planned long days (a 12 h Sunday = 4 h extra). Paid per person when switched on, at their own extra rate or a derived rate (monthly: salary ÷ days ÷ standard hours; daily: day rate ÷ standard hours; hourly: hourly rate), × the arena multiplier (default 1). "Fixed + overtime" = Monthly with extra hours on | — | `staff_pay_rates.extra_hours_paid`, `extra_hourly_paise`; `pay_policies.policy.extra_multiplier`; `standard_day_min` |
+| S4 | Late marks cut pay for hourly staff | 🟡 no (monthly and daily only) | all pay types | `pay_policies.policy.late_applies_to` |
+| S5 | Leave year and allowance | ✅ decided 2026-10-15: no leave types or carry-forward. Paid-leave days per year (arena default, per-person override), visible to staff in their profile; the year runs from the joining date. Staff apply planned or unplanned; the approver sets the paid / LOP split from the balance; LOP is deducted from salary | — | `settings.leave_rules`, `staff_hr_profiles.paid_leave_days`, `leave_requests.paid_days/lop_days` |
+| S6 | Paid leave beyond balance | ✅ decided 2026-10-15: not refused; the approver marks the excess as LOP | — | `op_leave_decide` |
+| S7 | Approving your own leave / correcting your own attendance | 🟡 owner only | anyone holding the permission | `op_leave_decide`, `op_attendance_correct` |
+| S8 | Staff holidays | 🟡 own list, separate from pricing holidays, with "Copy from arena holidays" | reuse the pricing `holidays` list | `staff_holidays` |
+| S9 | When rule changes take effect | 🟡 time rules: every period not yet finalised; pay rules and rates: from an effective date | everything effective-dated | `settings.attendance`, `pay_policies`, `staff_pay_rates` |
+| S10 | Half-day and absent thresholds | 🟡 full day at ≥ 75% of scheduled minutes, half-day at ≥ 40%, otherwise absent | other percentages / fixed hours | `settings.attendance.hours` |
+| S11 | Weekly overtime across a pay-period boundary | 🟡 counted in the period holding the week's last day | split by day | `_pay_build_line` |
+| S12 | Map tiles | 🟡 OpenStreetMap now; a keyed provider before many arenas | MapTiler / Stadia from day one | admin Leaflet, floor `flutter_map` |
+| S13 | PDF export | 🟡 print-styled page, saved as PDF from the browser | a generated PDF file | Admin › Payroll |
+| S14 | Forgotten clock-out | 🟡 auto-out at the scheduled end, paid, flagged for review | unpaid until reviewed | `_att_close_stale` |
+| S15 | Who is tracked | 🟡 staff yes, owner no (per-person switch) | everyone | `staff_hr_profiles.tracks_attendance` |
+| S16 | Record the payout itself | 🟡 out of scope | "mark paid" with date and method | later phase |
+| S17 | One person at two arenas | 🟡 separate profile, pay and leave per arena | combined payslip | per-arena tables |
+| S18 | Kiosk PIN | 🟡 4 digits; 5 wrong tries lock it for 15 minutes | other length / lockout | `settings.attendance.kiosk` |
+| S19 | Changes inside a finalised period | 🟡 refused; an adjustment goes in the next run | reopen the run | `period_finalised` check |
+| S20 | Salary advance recovery | 🟡 one deduction in the chosen run | instalments | `salary_adjustments` |
+| S21 | Rounding applied to | 🟡 the day's total, after the break | each entry | `_att_day_facts` |
+| S22 | Push for approvers who only use admin web | 🟡 phones only at first | browser push | later phase |
+| S23 | Salary reductions | ✅ decided 2026-10-15: at the end of the period the owner gets a timesheet and decides, per person and per deduction (absent, LOP, half-day, late), whether to reduce pay. The system only suggests; suggestions start as applied | — | `salary_deduction_decisions`, `salary_run.set_deduction` |
+| S24 | Salary in the staff app | ✅ decided 2026-10-15: none. No rates, salary or payslips on the floor app; pay lives on admin web for `payroll` holders only | — | RLS on `staff_pay_rates`, `salary_run_lines` |
+
 ## Fixed facts from the spec (not assumptions)
 
 - Operating hours: **Tue–Sun 14:00–23:00 IST; Monday closed** (brief §8). Editable, see #25.
