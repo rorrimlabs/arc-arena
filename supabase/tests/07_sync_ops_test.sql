@@ -16,6 +16,12 @@ select * from no_plan();
 -- sees. Created inside this transaction and rolled back with it.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000007'::uuid, 'pgtap 07');
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000007'::uuid);
+-- Happy hours are a pricing rule: Tue–Fri 14:00–17:00 IST (08:30–11:30Z), not on holidays,
+-- PS5, 20% lower for the whole session when it starts inside the window.
+insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
+    adjust_kind, adjust_value)
+  values ('e0000000-0000-4000-8000-000000000007'::uuid, 'Happy hours', '{2,3,4,5}', 840, 1020,
+    'skip', '{PS5}', 'percent', -20);
 
 -- ---------------------------------------------------------------- fixture
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
@@ -170,7 +176,7 @@ select is(pg_temp.push('session.extend', jsonb_build_object('session_id','aaaaaa
 select is(pg_temp.push('session.extend', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
     'extension_id','e1000000-0000-0000-0000-000000000001', 'added_minutes', 30,
     'old_end_at','2026-10-01T10:00:00Z', 'new_end_at','2026-10-01T10:30:00Z',
-    'added_amount_paise', 11000))->>'status', 'applied', 'extend from the current end applies');
+    'added_amount_paise', 11200))->>'status', 'applied', 'extend from the current end applies');
 select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
     'ended_at','2026-10-01T10:30:00Z', 'billed_amount_paise', 42000, 'mark_waived', false,
     'expected_segment_ids', jsonb_build_array('bbbbbbbb-0000-0000-0000-000000000002'),
@@ -179,15 +185,15 @@ select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-
 
 -- ------------------------------------------- 8. end releases pads, history preserved
 select is(pg_temp.push('session.end', jsonb_build_object('session_id','aaaaaaaa-0000-0000-0000-000000000002',
-    'ended_at','2026-10-01T10:30:00Z', 'billed_amount_paise', 33000, 'mark_waived', false,
+    'ended_at','2026-10-01T10:30:00Z', 'billed_amount_paise', 33600, 'mark_waived', false,
     'expected_segment_ids', jsonb_build_array('bbbbbbbb-0000-0000-0000-000000000002'),
     'expected_scheduled_end_at','2026-10-01T10:30:00Z',
     'charges', jsonb_build_array(jsonb_build_object('id','c1000000-0000-0000-0000-000000000001',
-      'segment_id','bbbbbbbb-0000-0000-0000-000000000002','segment_index',0,'band_code','happy',
+      'segment_id','bbbbbbbb-0000-0000-0000-000000000002','segment_index',0,'band_code','standard',
       'activity_code','PS5','resource_id', pg_temp.r('VOID'),'controller_count',2,
       'segment_start','2026-10-01T09:00:00Z','segment_end','2026-10-01T10:30:00Z',
-      'played_minutes',90,'billed_minutes',90,'unit_minutes',60,'unit_price_paise',22000,
-      'amount_paise',33000)))) ->>'status', 'applied', 'VOID session ends (happy hour, 2 pads)');
+      'played_minutes',90,'billed_minutes',90,'unit_minutes',60,'unit_price_paise',22400,
+      'amount_paise',33600)))) ->>'status', 'applied', 'VOID session ends (happy hours rule, 2 pads)');
 select is((select count(*)::int from controller_allocations
             where session_id = 'aaaaaaaa-0000-0000-0000-000000000002' and ended_at is null), 0,
   'ending released both pads');
@@ -286,7 +292,7 @@ select is(pg_temp.push('group.end', jsonb_build_object('group_id','99999999-0000
     'expected_scheduled_end_at','2026-10-01T12:00:00Z',
     'charges', jsonb_build_array(jsonb_build_object('id','c9000000-0000-0000-0000-000000000001',
       'assignment_id','98000000-0000-0000-0000-000000000001','player_number',1,'charge_index',0,
-      'band_code','happy','activity_code','PS5','resource_id', pg_temp.r('VOID'),'controller_count',1,
+      'band_code','standard','activity_code','PS5','resource_id', pg_temp.r('VOID'),'controller_count',1,
       'segment_start','2026-10-01T11:00:00Z','segment_end','2026-10-01T11:30:00Z',
       'played_minutes',30,'billed_minutes',30,'unit_minutes',60,'unit_price_paise',12000,
       'amount_paise',6000))))->>'status', 'applied',

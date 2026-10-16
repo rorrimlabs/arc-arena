@@ -1,0 +1,11 @@
+// Angular Material theme, built on the arena tokens (see tokens/_arena-material.scss).
+@use './tokens/arena-material';
+
+html {
+  @include arena-material.apply-theme();
+}
+
+// Dialog / overlay scrim: the design's overlay colour (CDK backdrop, not a Material token).
+.cdk-overlay-dark-backdrop {
+  background: var(--arena-overlay);
+}

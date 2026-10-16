@@ -1,10 +1,24 @@
-/** Side-nav destinations, in the design's order (`const NAV` in design/admin.html). */
+import { Capability } from '../venue/venue';
+
+/**
+ * Side-nav destinations. Accessories (controllers, headsets…) live inside Stations, and station
+ * types, accessory types and the games library inside Settings, so none has its own entry.
+ */
 export interface NavItem {
   /** Top-level route path. */
   readonly path: string;
   readonly label: string;
   /** Material Symbols name. */
   readonly icon: string;
+  /** Shown (and routable) only for venues using this capability (core/venue). */
+  readonly requires?: Capability;
+  /**
+   * Shown (and routable) only for members holding this permission in the current arena; the
+   * owner holds every permission (ArenaContext.hasPerm).
+   */
+  readonly perm?: string;
+  /** Labelled with the venue's own noun ("Tables", "Grounds") instead of `label`. */
+  readonly venueNoun?: true;
 }
 
 export interface NavGroup {
@@ -23,16 +37,30 @@ export const NAV_GROUPS: readonly NavGroup[] = [
   {
     heading: 'Configure',
     items: [
-      { path: 'stations', label: 'Stations', icon: 'sports_esports' },
+      { path: 'stations', label: 'Stations', icon: 'grid_view', venueNoun: true },
       { path: 'pricing', label: 'Pricing', icon: 'sell' },
-      { path: 'games', label: 'Games', icon: 'stadia_controller' },
     ],
   },
   {
     heading: 'People',
     items: [
       { path: 'members', label: 'Members', icon: 'group' },
-      { path: 'staff', label: 'Staff', icon: 'badge' },
+    ],
+  },
+  {
+    // Three screens: employees (and everything about each) on Team, leave requests under
+    // Attendance; the venue's shifts, holidays and rules in Settings › Staff.
+    heading: 'Staff',
+    items: [
+      // Everyone who can open the dashboard sees the team; each tab checks its permission.
+      { path: 'staff/team', label: 'Team', icon: 'badge' },
+      {
+        path: 'staff/attendance',
+        label: 'Attendance',
+        icon: 'how_to_reg',
+        perm: 'attendance_review',
+      },
+      { path: 'staff/payroll', label: 'Payroll', icon: 'payments', perm: 'payroll' },
     ],
   },
   { heading: 'Arena', items: [{ path: 'settings', label: 'Settings', icon: 'settings' }] },

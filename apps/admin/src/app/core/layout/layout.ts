@@ -4,7 +4,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { map } from 'rxjs';
 
 /**
- * Responsive layout state. Breakpoints come from the design (`renderVals()` in design/admin.html):
+ * Responsive layout state. Breakpoints:
  * - compact (< 900px): the nav is an overlay drawer opened from the page header's menu button
  * - rail (900–1399px): the nav collapses to an 88px icon rail
  * - full (≥ 1400px): 264px nav with labels and group headings

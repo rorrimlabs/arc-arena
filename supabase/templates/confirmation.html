@@ -1,0 +1,11 @@
+{{ if .Data.signup }}
+<h2>Confirm your 404 Arena sign-up</h2>
+<p>Open this link to confirm {{ .Email }} and create your arena:</p>
+<p><a href="{{ .ConfirmationURL }}">Confirm my e-mail</a></p>
+<p>The link expires in one hour. If you did not sign up, ignore this e-mail.</p>
+{{ else }}
+<h2>You're invited to 404 Arena</h2>
+<p>Open this link to choose your password and join:</p>
+<p><a href="{{ .ConfirmationURL }}">Accept the invitation</a></p>
+<p>The link expires in one hour; after that, ask for a new invitation. If you were not expecting this, ignore this e-mail.</p>
+{{ end }}

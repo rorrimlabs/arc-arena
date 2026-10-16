@@ -1,9 +1,12 @@
 #!/usr/bin/env bash
-# Pricing parity: the app (Dart) and the server (migration 0013, plpgsql) must
+# Pricing parity: the app (Dart) and the server (plpgsql _pr_* functions) must
 # price every bill identically, to the paisa. Run this after ANY change to
-# lib/domain/pricing, lib/domain/services/{segment,group}_billing.dart,
+# apps/mobile/lib/domain/pricing, lib/domain/services/{segment,group}_billing.dart,
 # lib/domain/services/session_planner.dart, lib/core/money, lib/core/time, or
-# the server's _pr_* functions — and in tool/verify_all.sh.
+# the server's _pr_* functions — and via `tool/verify_all.sh --with-psql`.
+#
+# Talks to the LOCAL database container directly (docker cp / docker exec psql),
+# inside one transaction that is rolled back; it never touches a hosted project.
 #
 #   bash tool/pricing_parity.sh                 # parity + self-tests
 #   bash tool/pricing_parity.sh --random 10000  # more random cases
@@ -50,9 +53,9 @@ run() {
 }
 
 echo "== generating cases (seed $SEED, $RANDOM_N random + boundary corpus)"
-dart run tool/pricing_parity/generate.dart --seed "$SEED" --random "$RANDOM_N" > "$WORK/cases.ndjson" 2>"$WORK/gen.log" \
+(cd apps/mobile && dart run tool/pricing_parity/generate.dart --seed "$SEED" --random "$RANDOM_N") > "$WORK/cases.ndjson" 2>"$WORK/gen.log" \
   || { cat "$WORK/gen.log" >&2; exit 1; }
-dart run tool/pricing_parity/generate.dart --seed "$SEED" --random 200 --skew-paise 1 > "$WORK/skew.ndjson" 2>/dev/null
+(cd apps/mobile && dart run tool/pricing_parity/generate.dart --seed "$SEED" --random 200 --skew-paise 1) > "$WORK/skew.ndjson" 2>/dev/null
 
 echo "== parity: app vs server"
 M=$(run "$WORK/cases.ndjson" false)

@@ -2,9 +2,10 @@
 -- that is not its own, and refuses a session frozen on a price list the arena
 -- never had.
 --
--- Seed price list (Thu 2026-10-01; happy hour 14:00–17:00 IST = 08:30–11:30Z):
---   PS5 standard 1/2 pads ₹150/₹280 per hour, happy ₹120/₹220. Per-minute
---   billing, session rounding scope, cash rounded to the nearest ₹1.
+-- Seed price list (Thu 2026-10-01): PS5 1/2 pads ₹150/₹280 per hour, plus a
+--   'Happy hours' pricing rule: PS5 started Tue–Fri 14:00–17:00 IST (08:30–11:30Z)
+--   is 20% lower (₹120/₹224) for the whole session. Per-minute billing, session
+--   rounding scope, cash rounded to the nearest ₹1.
 -- The parity of every rule with lib/domain/pricing is proven separately by a
 -- Dart-vs-SQL differential run (docs/SYNC.md); these cases pin the op wiring.
 begin;
@@ -17,6 +18,10 @@ select * from no_plan();
 -- sees. Created inside this transaction and rolled back with it.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000008'::uuid, 'pgtap 08');
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000008'::uuid);
+insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
+    adjust_kind, adjust_value)
+  values ('e0000000-0000-4000-8000-000000000008'::uuid, 'Happy hours', '{2,3,4,5}', 840, 1020,
+    'skip', '{PS5}', 'percent', -20);
 
 -- ---------------------------------------------------------------- fixture
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
@@ -94,25 +99,29 @@ select is(pg_temp.push('session.start', pg_temp.start(
                   from jsonb_array_elements(pg_temp.snap()->'rates') with ordinality x(r, n)))))
     ->>'status', 'applied', 'the arena''s own list starts (card name and order do not matter)');
 
--- ------------------------------------------- 2. happy-hour split: under-billing refused
--- HEX, 1 pad, 16:30–17:30 IST: 30 min happy (₹60) + 30 min standard (₹75) = ₹135.
-select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
-    '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 12000,
-    jsonb_build_array(pg_temp.ch('b8000000-0000-0000-0000-000000000001','happy','HEX',1,
-      '2026-10-01T11:00:00Z','2026-10-01T12:00:00Z',60,60,12000,12000))))->>'error',
-  'price_mismatch', 'the whole hour billed at the happy rate (under-billing) is refused');
-select matches(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
-    '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 0,
-    '[]'::jsonb))->>'detail', 'server 13500 paise, device 0 paise',
-  'the refusal names the server''s bill and the device''s');
+-- ------------------------------------------- 2. happy hours rule: wrong bills refused
+-- HEX, 1 pad, 16:30–17:30 IST: started inside happy hours, so the whole hour is 20% lower
+-- (₹120), also the half hour after the window closes.
 select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
     '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 13500,
+    jsonb_build_array(
+      pg_temp.ch('b8000000-0000-0000-0000-000000000001','standard','HEX',1,
+        '2026-10-01T11:00:00Z','2026-10-01T11:30:00Z',30,30,12000,6000),
+      pg_temp.ch('b8000000-0000-0000-0000-000000000001','standard','HEX',1,
+        '2026-10-01T11:30:00Z','2026-10-01T12:00:00Z',30,30,15000,7500))))->>'error',
+  'price_mismatch', 'a bill split at the window end (₹135) is refused: the start decides');
+select matches(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
+    '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 0,
+    '[]'::jsonb))->>'detail', 'server 12000 paise, device 0 paise',
+  'the refusal names the server''s bill and the device''s');
+select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
+    '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 12000,
     jsonb_build_array(pg_temp.ch('b8000000-0000-0000-0000-000000000001','standard','HEX',1,
-      '2026-10-01T11:00:00Z','2026-10-01T12:00:00Z',60,60,13500,13500))))->>'error',
+      '2026-10-01T11:00:00Z','2026-10-01T12:00:00Z',60,60,15000,12000))))->>'error',
   'price_mismatch', 'the right total over invented charge rows is refused');
 select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
     '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 15000,
-    '[]'::jsonb))->>'error', 'price_mismatch', 'over-billing is refused too (0 paise tolerance)');
+    '[]'::jsonb))->>'error', 'price_mismatch', 'the rule-free price (over-billing) is refused too (0 paise tolerance)');
 select is((select status from sessions where id = 'a8000000-0000-0000-0000-000000000001'), 'active',
   'after the refusals the session is still running');
 select is((select count(*)::int from session_charges where session_id = 'a8000000-0000-0000-0000-000000000001'), 0,
@@ -123,15 +132,12 @@ select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-00
     '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T10:59:00Z', 0,
     '[]'::jsonb))->>'error', 'invalid', 'an end before the session started is refused');
 select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-000000000001',
-    '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 13500,
-    jsonb_build_array(
-      pg_temp.ch('b8000000-0000-0000-0000-000000000001','happy','HEX',1,
-        '2026-10-01T11:00:00Z','2026-10-01T11:30:00Z',30,30,12000,6000),
-      pg_temp.ch('b8000000-0000-0000-0000-000000000001','standard','HEX',1,
-        '2026-10-01T11:30:00Z','2026-10-01T12:00:00Z',30,30,15000,7500))))->>'status',
-  'applied', 'the correct happy/standard split is accepted');
+    '["b8000000-0000-0000-0000-000000000001"]', '2026-10-01T12:00:00Z', '2026-10-01T12:00:00Z', 12000,
+    jsonb_build_array(pg_temp.ch('b8000000-0000-0000-0000-000000000001','standard','HEX',1,
+      '2026-10-01T11:00:00Z','2026-10-01T12:00:00Z',60,60,12000,12000))))->>'status',
+  'applied', 'the whole hour at the happy hours price is accepted');
 select is((select billed_amount_paise from sessions where id = 'a8000000-0000-0000-0000-000000000001'),
-  13500::bigint, 'billed ₹135');
+  12000::bigint, 'billed ₹120');
 
 -- ------------------------------------------- 3. extension + switch + cash rounding
 -- RIFT, Fri 18:30 IST (standard). 2 pads 13:00–13:30Z, then 1 pad to 14:15Z.
@@ -176,7 +182,7 @@ select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-00
   'applied', 'two segments, rounded once to ₹253, accepted (row order is the device''s)');
 
 -- ------------------------------------------- 4. waived
--- VOID, Sat (no happy hour) 10:00–11:00Z, 1 pad = ₹150.
+-- VOID, Sat (no happy hours) 10:00–11:00Z, 1 pad = ₹150.
 select is(pg_temp.push('session.start', pg_temp.start(
     'a8000000-0000-0000-0000-000000000004','b8000000-0000-0000-0000-000000000004','VOID', 1,
     '2026-10-03T10:00:00Z','2026-10-03T11:00:00Z'))->>'status', 'applied', 'VOID starts');
@@ -217,17 +223,18 @@ select is(pg_temp.push('group.create', pg_temp.grp('98880000-0000-0000-0000-0000
     ->>'status', 'applied', 'two players share GHOST (one system, 2 pads)');
 select is(pg_temp.push('group.extend', jsonb_build_object('group_id','98880000-0000-0000-0000-000000000001',
     'extension_id', gen_random_uuid(), 'added_minutes', 30, 'old_end_at','2026-10-01T12:00:00Z',
-    'new_end_at','2026-10-01T12:30:00Z', 'added_amount_paise', 7500))->>'error', 'price_mismatch',
+    'new_end_at','2026-10-01T12:30:00Z', 'added_amount_paise', 6000))->>'error', 'price_mismatch',
   'a group extension quoted at the 1-pad rate is refused');
 select is(pg_temp.push('group.extend', jsonb_build_object('group_id','98880000-0000-0000-0000-000000000001',
     'extension_id', gen_random_uuid(), 'added_minutes', 30, 'old_end_at','2026-10-01T12:00:00Z',
-    'new_end_at','2026-10-01T12:30:00Z', 'added_amount_paise', 14000))->>'status', 'applied',
-  'the 2-pad rate for +30 min (₹140) is accepted');
--- 16:30–17:30 IST at the 2-pad rate: ₹110 happy + ₹140 standard = ₹250.
-create function pg_temp.gch(p_band text, p_s text, p_e text, p_price int, p_amount int) returns jsonb as $$
-  select jsonb_build_object('id', gen_random_uuid(), 'charge_index', 0, 'band_code', p_band,
+    'new_end_at','2026-10-01T12:30:00Z', 'added_amount_paise', 11200))->>'status', 'applied',
+  'the 2-pad happy hours rate for +30 min (₹112) is accepted (the rule follows the group start)');
+-- 16:30–17:30 IST at the 2-pad rate, started in happy hours: ₹224 for the whole hour.
+create function pg_temp.gch(p_price int, p_amount int) returns jsonb as $$
+  select jsonb_build_object('id', gen_random_uuid(), 'charge_index', 0, 'band_code', 'standard',
     'activity_code','PS5','resource_id', pg_temp.r('GHOST'),'controller_count',2,
-    'segment_start', p_s, 'segment_end', p_e, 'played_minutes',30,'billed_minutes',30,
+    'segment_start', '2026-10-01T11:00:00Z', 'segment_end', '2026-10-01T12:00:00Z',
+    'played_minutes',60,'billed_minutes',60,
     'unit_minutes',60,'unit_price_paise', p_price,'amount_paise', p_amount) $$ language sql;
 create function pg_temp.gend(p_billed bigint, p_charges jsonb) returns jsonb as $$
   select jsonb_build_object('group_id','98880000-0000-0000-0000-000000000001',
@@ -235,17 +242,15 @@ create function pg_temp.gend(p_billed bigint, p_charges jsonb) returns jsonb as 
     'expected_assignment_ids', '["98800000-0000-0000-0000-000000000001","98800000-0000-0000-0000-000000000002"]'::jsonb,
     'expected_scheduled_end_at','2026-10-01T12:30:00Z','charges', p_charges) $$ language sql;
 select is(pg_temp.push('group.end', pg_temp.gend(12000, jsonb_build_array(
-    pg_temp.gch('happy','2026-10-01T11:00:00Z','2026-10-01T11:30:00Z',12000,6000),
-    pg_temp.gch('standard','2026-10-01T11:30:00Z','2026-10-01T12:00:00Z',12000,6000))))->>'error',
+    pg_temp.gch(12000,12000))))->>'error',
   'price_mismatch', 'billing the shared system at the 1-pad rate (under-billing) is refused');
 select is((select status from group_sessions where id = '98880000-0000-0000-0000-000000000001'), 'active',
   'the group is still running');
-select is(pg_temp.push('group.end', pg_temp.gend(25000, jsonb_build_array(
-    pg_temp.gch('happy','2026-10-01T11:00:00Z','2026-10-01T11:30:00Z',22000,11000),
-    pg_temp.gch('standard','2026-10-01T11:30:00Z','2026-10-01T12:00:00Z',28000,14000))))->>'status',
-  'applied', 'the happy/standard split at the 2-pad rate is accepted');
+select is(pg_temp.push('group.end', pg_temp.gend(22400, jsonb_build_array(
+    pg_temp.gch(22400,22400))))->>'status',
+  'applied', 'the whole hour at the 2-pad happy hours rate is accepted');
 select is((select billed_amount_paise from group_sessions where id = '98880000-0000-0000-0000-000000000001'),
-  25000::bigint, 'group billed ₹250');
+  22400::bigint, 'group billed ₹224');
 
 -- ------------------------------------------- 6. a device offline across a price change
 create temp table old_list as select pg_temp.snap() as s;
@@ -281,12 +286,12 @@ select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-00
 
 -- ------------------------------------------- 7. no client surface
 select ok(not has_function_privilege('authenticated', f, 'execute'), f || ' is not client-callable')
-  from unnest(array['_pr_quote(jsonb,text,int,timestamptz,timestamptz)',
+  from unnest(array['_pr_quote(jsonb,text,int,timestamptz,timestamptz,timestamptz)',
+    '_pr_rule(jsonb,text,timestamptz)','_pr_rule_price(bigint,int,jsonb)',
     '_pr_session_bill(uuid,timestamptz)','_pr_group_bill(uuid,timestamptz)',
-    '_pricing_snapshot(uuid)','_assert_snapshot(uuid,jsonb)','op_session_end(uuid,jsonb)',
-    '_op_session_end_v1(uuid,jsonb)','op_group_end(uuid,jsonb)','_op_group_end_v1(uuid,jsonb)',
+    '_pricing_snapshot(uuid)','_assert_snapshot(uuid,jsonb)','op_session_end(uuid,jsonb)','op_group_end(uuid,jsonb)',
     'op_session_start(uuid,jsonb)','op_group_create(uuid,jsonb)','op_session_extend(uuid,jsonb)',
-    'op_group_extend(uuid,jsonb)','_sync_apply(uuid,text,jsonb)','_sync_apply_v1(uuid,text,jsonb)']) f;
+    'op_group_extend(uuid,jsonb)','_sync_apply(uuid,text,jsonb)']) f;
 select ok(not has_table_privilege('authenticated', 'pricing_catalog_history', 'select'),
   'price-list history is server-only');
 

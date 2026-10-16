@@ -4,8 +4,10 @@
 -- Loads the cases generate.dart priced with the app's own code and checks the
 -- server agrees to the paisa, at two levels:
 --   1. FUNCTIONS — _pr_quote / _pr_session_bill / _pr_group_bill (migration
---      0013) against PricingService / SegmentBilling / GroupBilling; same total
---      and the same charge rows.
+--      0013, with the pricing rules _pr_rule / _pr_rule_price) against
+--      PricingService / SegmentBilling / GroupBilling; same total and the same
+--      charge rows. Rules travel inside each case's snapshot (the frozen
+--      pricing_snapshot), so no pricing_rules rows are needed.
 --   2. OPERATIONS — the real session.end / group.end (incl. waived) and
 --      session.extend / group.extend through sync_push: the app's exact money
 --      must be APPLIED, and the same op one paisa off (in the total, in one
@@ -32,11 +34,11 @@ $m$ language sql immutable strict;
 
 -- ---------------------------------------------------------- isolated fixture
 insert into arenas(id, name) values ('f0000000-0000-4000-8000-0000000000a0', 'pricing-parity (rolled back)');
-insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model, happy_hour_eligible)
-  values ('f0000000-0000-4000-8000-0000000000a0', 'PS5', 'PS5', true, true, 'hourly', true),
-         ('f0000000-0000-4000-8000-0000000000a0', 'VR', 'VR', false, true, 'unit', false),
-         ('f0000000-0000-4000-8000-0000000000a0', 'POOL', 'Pool', false, false, 'hourly', true),
-         ('f0000000-0000-4000-8000-0000000000a0', 'LOUNGE', 'Lounge', false, false, 'flat_hourly', false);
+insert into activities(arena_id, code, name, uses_controllers, uses_games, duration_model)
+  values ('f0000000-0000-4000-8000-0000000000a0', 'PS5', 'PS5', true, true, 'hourly'),
+         ('f0000000-0000-4000-8000-0000000000a0', 'VR', 'VR', false, true, 'unit'),
+         ('f0000000-0000-4000-8000-0000000000a0', 'POOL', 'Pool', false, false, 'hourly'),
+         ('f0000000-0000-4000-8000-0000000000a0', 'LOUNGE', 'Lounge', false, false, 'flat_hourly');
 insert into resources(id, arena_id, name, kind) values
   ('f0000000-0000-4000-8000-000000000001', 'f0000000-0000-4000-8000-0000000000a0', 'HEX', 'station'),
   ('f0000000-0000-4000-8000-000000000002', 'f0000000-0000-4000-8000-0000000000a0', 'VOID', 'station'),
@@ -80,7 +82,9 @@ begin
     -- ============================================================ quotes
     if j->>'k' = 'q' then
       insert into ran values ('function');
-      q := _pr_quote(j->'snap', j->>'act', (j->>'cc')::int, (j->>'s')::timestamptz, (j->>'e')::timestamptz);
+      -- rule_at: the session start a later piece is priced under (null = s).
+      q := _pr_quote(j->'snap', j->>'act', (j->>'cc')::int, (j->>'s')::timestamptz, (j->>'e')::timestamptz,
+        (j->>'rule_at')::timestamptz);
       if (q is null) <> (j->'exp' = 'null'::jsonb) then
         insert into bad values (c.n, 'function', j->>'label', format('priced? server %s app %s', q is not null, j->'exp' <> 'null'));
         continue;

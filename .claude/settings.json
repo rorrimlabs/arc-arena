@@ -2,15 +2,51 @@
   "sandbox": {
     "enabled": true,
     "excludedCommands": ["supabase *", "docker *"],
-    "network": {
-      "allowLocalBinding": true
-    }
+    "network": { "allowLocalBinding": true }
   },
   "permissions": {
-    "defaultMode": "default",
-    "disableAutoMode": "disable",
+    "defaultMode": "auto",
     "deny": [
-      "Edit(supabase/migrations/**)"
+      "Edit(supabase/migrations/**)",
+      "Bash(sudo *)",
+      "Bash(su *)",
+      "Bash(chmod 777 *)",
+      "Bash(chown *)",
+      "Bash(rm -rf /*)",
+      "Bash(rm -rf ~*)",
+      "Bash(shutdown *)",
+      "Bash(reboot*)",
+      "Bash(systemctl *)",
+      "Bash(launchctl *)",
+      "Bash(brew uninstall *)",
+      "Bash(apt *)",
+      "Bash(npm i -g *)",
+      "Bash(npm install -g *)",
+      "Bash(pnpm add -g *)",
+      "Bash(bash *.sh*)",
+      "Bash(sh *.sh*)",
+      "Bash(zsh *.sh*)",
+      "Bash(./*.sh*)",
+      "Bash(source *)",
+      "Bash(. *)",
+      "Bash(curl *| *sh*)",
+      "Bash(curl *| *bash*)",
+      "Bash(wget *| *sh*)",
+      "Bash(eval *)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(.env.production)",
+      "Edit(~/.zshrc)",
+      "Edit(~/.bashrc)",
+      "Edit(~/.ssh/**)"
+    ],
+    "ask": [
+      "Bash(supabase db push*)",
+      "Bash(supabase db reset*)",
+      "Bash(docker *)",
+      "Bash(git push*)",
+      "Bash(npm publish*)",
+      "Bash(rm -rf *)"
     ]
   }
 }

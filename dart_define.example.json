@@ -1,5 +1,0 @@
-{
-  "AO_BACKEND": "supabase",
-  "AO_SUPABASE_URL": "https://YOUR-PROJECT.supabase.co",
-  "AO_SUPABASE_ANON_KEY": "the project's anon / publishable key (public) — NEVER the service-role key"
-}

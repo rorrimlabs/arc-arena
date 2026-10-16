@@ -2,8 +2,9 @@
 --
 -- Since 0012 there is exactly one client write path — sync_push — so this file
 -- checks the other half: members can READ their arena (RLS), nobody (owner
--- included) can WRITE a table directly, the legacy RPCs are not executable by
--- clients, and non-members see nothing. Op-level permissions are in 07.
+-- included) can WRITE a table directly, the retired pre-sync RPCs are not
+-- executable by clients, and non-members see nothing. Op-level permissions are
+-- in 07/10/11.
 --
 -- Note: function grants are asserted with has_function_privilege rather than by
 -- calling a revoked function under SET ROLE: in the local Supabase image a
@@ -52,30 +53,45 @@ from unnest(array[
   'controller_allocations','controller_moves','audit_log']) t;
 
 select ok(not has_function_privilege('authenticated', f, 'EXECUTE'),
-  'legacy/internal function not client-executable: ' || f)
+  'internal function not client-executable: ' || f)
+from unnest(array['op_session_start(uuid,jsonb)', '_sync_apply(uuid,text,jsonb)']) f;
+
+-- The pre-sync RPCs (0003–0009) are retired and dropped: their guarantees are
+-- asserted through sync_push in 11/12. The *_v1 bodies that 0013/0016 wrapped
+-- are folded into their op_* functions and dropped too.
+select hasnt_function('public', f, 'retired function is gone: ' || f)
 from unnest(array[
-  'start_session(uuid,jsonb,text)', 'end_session(uuid,timestamptz,jsonb,bigint,boolean)',
-  'record_payment(uuid,bigint,text,text,text,text,text,uuid)', 'void_session(uuid,text)',
-  'release_controllers(uuid,uuid[],timestamptz)', 'claim_arena(uuid,text)',
-  'borrow_controllers(uuid,uuid[],uuid,text,timestamptz)',
-  'op_session_start(uuid,jsonb)', '_sync_apply(uuid,text,jsonb)']) f;
+  'start_session', 'end_session', 'extend_session', 'reconfigure_session', 'void_session',
+  'record_payment', 'create_group', 'add_assignment', 'end_assignment', 'switch_assignment',
+  'end_group', 'extend_group', 'void_group', 'record_group_payment', 'allocate_controllers',
+  'release_controllers', 'borrow_controllers', 'move_controller', 'assert_group_colocation_ok',
+  'claim_arena', 'create_arena', 'app_owner_arena_ids', '_group_arena_active',
+  '_op_session_start_v1', '_op_session_extend_v1', '_op_session_end_v1', '_op_group_create_v1',
+  '_op_group_end_v1', '_op_group_extend_v1', '_op_payment_v1', '_op_resource_upsert_v1',
+  '_op_staff_update_v1', '_op_controller_move_v1', '_sync_apply_v1']) f;
 
 select ok(has_function_privilege('authenticated', f, 'EXECUTE'), 'client API: ' || f)
 from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
   'sync_fetch_entity(uuid,jsonb)', 'my_arenas()',
-  'add_staff_by_email(uuid,text,text,text[])']) f;
--- Owner-managed accounts (0015): no client can create an arena / owner.
+  'invite_member(uuid,text,text,text,text[])', 'create_my_arena(text,text)',
+  'arena_staff(uuid)', 'accept_invite(uuid,text)', 'revoke_invite(uuid,uuid)', 'arena_invites(uuid)',
+  'arena_sales(uuid,timestamptz,timestamptz)', 'arena_sale(uuid,uuid)', 'arena_pricing(uuid)']) f;
+-- The only app route to ownership is create_my_arena (confirmed login, one arena
+-- each); the operator tool and the shared body stay server-only.
 select ok(not has_function_privilege('authenticated', f, 'EXECUTE'), 'not client API: ' || f)
-from unnest(array['create_arena(text,text)', 'bootstrap_owner(text,text,text)']) f;
+from unnest(array['bootstrap_owner(text,text,text)', '_create_arena_with_owner(uuid,text,text)',
+  '_sales(uuid,timestamptz,timestamptz,uuid)']) f;
 
+-- my_arenas included: a 42501 on it means the app called without a sign-in
+-- (refused refresh → publishable key only); the fix is the app, never a grant.
 select ok(not has_function_privilege('anon', f, 'EXECUTE'), 'anon cannot call ' || f)
 from unnest(array['sync_push(uuid,jsonb,text)', 'sync_pull(uuid,text,integer)',
-  'create_arena(text,text)', 'bootstrap_owner(text,text,text)']) f;
+  'bootstrap_owner(text,text,text)', 'create_my_arena(text,text)', 'my_arenas()']) f;
 
 -- ===================== as STAFF (reads) =====================
 set local role authenticated;
 select set_config('request.jwt.claims','{"sub":"22222222-2222-2222-2222-222222222222","role":"authenticated"}', true);
-select is((select count(*)::int from rates), 12, 'staff can READ config (rates)');
+select is((select count(*)::int from rates), 7, 'staff can READ config (rates)');
 select is((select count(*)::int from staff_profiles), 2, 'staff can READ the roster');
 select throws_ok($$ insert into customers(arena_id,name) values ('e0000000-0000-4000-8000-000000000001'::uuid,'x') $$,
   '42501', NULL, 'staff CANNOT insert a customer directly (sync_push only)');
@@ -89,7 +105,7 @@ select throws_ok($$
   insert into rates(arena_id,rate_card_id,activity_id,band_id,unit_minutes,price_paise)
     select 'e0000000-0000-4000-8000-000000000001'::uuid, rc.id, a.id, b.id, 60, 9900
     from rate_cards rc, activities a, rate_bands b
-    where a.code='LOUNGE' and b.code='happy' limit 1 $$,
+    where a.code='LOUNGE' and b.code='standard' limit 1 $$,
   '42501', NULL, 'even an owner CANNOT write config directly (sync_push only)');
 select throws_ok($$
   insert into staff_profiles(arena_id,user_id,name,role,perms)

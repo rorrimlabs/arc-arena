@@ -30,8 +30,8 @@ migrate_working_dir/
 .flutter-plugins-dependencies
 .pub-cache/
 .pub/
-/build/
-/coverage/
+/apps/mobile/build/
+/apps/mobile/coverage/
 
 # Symbolication related
 app.*.symbols
@@ -40,9 +40,9 @@ app.*.symbols
 app.*.map.json
 
 # Android Studio will place build artifacts here
-/android/app/debug
-/android/app/profile
-/android/app/release
+/apps/mobile/android/app/debug
+/apps/mobile/android/app/profile
+/apps/mobile/android/app/release
 
 # Widget Preview related
 .widget_preview/
@@ -68,6 +68,9 @@ dart_define*.json
 !*.example.env
 !dart_define.example.json
 !*.example.json
+# The local Supabase stack (fixed localhost URL + its publishable key, same as apps/admin environment.ts).
+!dart_define.local.json
+!dart_define.local-android.json
 
 # Private signing keys, keystores, and certificate files
 *.keystore
@@ -107,3 +110,20 @@ supabase/.env.*
 *.sqlite-shm
 *.sqlite-journal
 arena_ops-backups/
+
+# Sentry: the downloaded setup wizard (a large executable), the CLI's auth-token
+# config and upload settings, and symbol/source-map upload output. The DSN and
+# the auth token are passed at build time (dart-defines / SENTRY_AUTH_TOKEN),
+# never committed.
+sentry-wizard
+**/sentry-wizard
+.sentryclirc
+**/.sentryclirc
+sentry.properties
+**/sentry.properties
+.env.sentry-build-plugin
+**/.env.sentry-build-plugin
+**/sentry_debug_symbols/
+
+# Node dependencies at any level (apps/admin has its own ignore too).
+node_modules/

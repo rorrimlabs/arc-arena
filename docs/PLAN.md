@@ -1,5 +1,16 @@
 # arena_ops — Implementation Plan & Checklist
 
+> **Status (2026-10-14).** This plan is kept as history. *Backend strategy*,
+> *Architecture* (the directory tree) and the *Phase 5+* section describe the
+> pre-sync plan and are superseded; the Phase 0–4 checklists record what was
+> built for the floor app. Current state: Supabase sync with Realtime nudges is
+> built and verified on the local stack only (hosted dev has migrations up to
+> 0015; nothing later is pushed); owner features live on the admin dashboard (`apps/admin`);
+> staff join by invitation; release builds are cloud-only. Current docs:
+> [`CLAUDE.md`](../CLAUDE.md) (scope, architecture, conventions),
+> [`SYNC.md`](SYNC.md), [`DEPLOY_SUPABASE.md`](DEPLOY_SUPABASE.md),
+> [`RELEASE.md`](RELEASE.md), [`supabase/README.md`](../supabase/README.md).
+
 Staff-first Gaming Center Operations app. One Flutter codebase, responsive phone (personal)
 + tablet (counter). Correctness of **timing, pricing, and records** outranks everything else.
 
@@ -107,17 +118,20 @@ resource** (also RIFT PS5⊕VR).
 
 > `supabase/migrations/0004_segments_groups_and_config.sql` now carries the segment, group,
 > per-system-availability and configuration tables. Unapplied and unexecuted — review it
-> against a real Postgres before trusting it.
+> against a real Postgres before trusting it. *(2026-10-14: superseded — 0004 is part of the
+> applied migration history; see the status banner.)*
 
 ### Phase 4 — owner configuration ✅
 - [x] Stations: add / edit / disable / maintenance, refused while a station is in use
-- [x] Opening hours per weekday + happy-hour window, persisted (was hardcoded)
+- [x] Opening hours per weekday + happy-hour window, persisted (was hardcoded). *2026-10-15: the happy-hour window, band and per-type flag are gone; happy hours are a pricing rule.*
 - [x] Holidays, with a per-holiday "closed all day" switch
 - [x] Rate card editor (price + unit per activity/band/controller count)
 - [x] Billing rules editor (every OWNER CONFIRMATION knob)
 - [x] Staff & roles editor, with a guard against removing the last Settings access
 
 ### Phase 5+ — Supabase sync, multi-device conflict policy (later)
+*(2026-10-14: superseded — sync, the outbox and the conflict policy are built; see
+[`SYNC.md`](SYNC.md). The paragraph below is the original plan.)*
 `supabase/migrations/0004_segments_groups_and_config.sql` brings the SQL up to the shipped
 schema (segments, groups, per-system game availability, config). It is **written but never
 applied or executed** — there is no Supabase project and no local Postgres — so it is a
