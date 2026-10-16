@@ -2,8 +2,8 @@
 --
 -- Operator tool, run from the SQL editor: the login must already exist and be
 -- confirmed in auth.users. Creates the arena through _create_arena_with_owner
--- (name defaults to 'Arena', starter catalog, role='owner' profile with all
--- eight permissions, name defaults to 'Owner'). Unlike the app's
+-- (name defaults to 'Arena', starter catalog, role='owner' profile with every
+-- permission, name defaults to 'Owner'). Unlike the app's
 -- create_my_arena it has no one-arena limit: every call creates another arena.
 -- Raises 'no_account' or 'account_not_confirmed'. Returns the new arena id.
 -- SECURITY DEFINER. Server-only: not executable by anon/authenticated.

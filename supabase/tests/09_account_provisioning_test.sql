@@ -55,9 +55,9 @@ select throws_ok($$ select bootstrap_owner('pending09@shop.invalid', 'X') $$,
   'account_not_confirmed', 'bootstrap_owner refuses an unconfirmed login');
 select lives_ok($$ select bootstrap_owner('OWNER09@shop.invalid', 'Shop 09', 'Prashanth') $$,
   'bootstrap_owner attaches a confirmed login (e-mail match is case-insensitive)');
-select is((select role || '/' || array_length(perms, 1) from staff_profiles sp join arenas a on a.id = sp.arena_id
+select is((select role || '/' || (perms = _known_perms()) from staff_profiles sp join arenas a on a.id = sp.arena_id
             where a.name = 'Shop 09' and sp.user_id = '91000000-0000-4000-8000-000000000001'),
-  'owner/8', 'the bootstrapped login is the arena''s owner with every permission');
+  'owner/true', 'the bootstrapped login is the arena''s owner with every permission');
 select is(pg_temp.catalog_rows((select id from arenas where name = 'Shop 09')), 0,
   'the new arena starts empty: no types, prices, stations, games or controllers');
 
@@ -126,9 +126,9 @@ select throws_ok($$ select create_my_arena(repeat('x', 81), 'Me') $$,
 create temp table signup09 as select create_my_arena('  Signup Arena  ', ' Sam ') as arena;
 select is((select name from arenas where id = (select arena from signup09)),
   'Signup Arena', 'the arena is created with the trimmed name');
-select is((select name || '/' || role || '/' || array_length(perms, 1) || '/' || active
+select is((select name || '/' || role || '/' || (perms = _known_perms()) || '/' || active
              from staff_profiles where arena_id = (select arena from signup09)),
-  'Sam/owner/8/true', 'the caller is its only member: an active owner with every permission');
+  'Sam/owner/true/true', 'the caller is its only member: an active owner with every permission');
 select is(pg_temp.catalog_rows((select arena from signup09)), 0,
   'the signed-up arena starts empty too: the owner builds the catalog on the dashboard');
 select is((select jsonb_agg(e ->> 'role') from jsonb_array_elements(my_arenas()) e),

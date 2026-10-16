@@ -1,8 +1,9 @@
 -- _known_perms() — the permission codes a staff profile may hold
 --
--- Returns {start, bill, discount, members, stations, money, reports, settings}.
+-- Returns {start, bill, discount, members, stations, money, reports, settings,
+-- attendance_review, leave_approve, payroll, payroll_finalise}.
 -- Used by _assert_known_perms and by op_staff_update (an owner's profile is
--- kept holding all of them). bootstrap_owner spells the same list out inline.
+-- kept holding all of them) and by _create_arena_with_owner (a new owner gets them all).
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._known_perms()
   returns text[]
@@ -10,10 +11,11 @@ create or replace function public._known_perms()
   immutable
   set search_path to 'public'
   AS $function$
-  select array['start','bill','discount','members','stations','money','reports','settings'];
+  select array['start','bill','discount','members','stations','money','reports','settings',
+               'attendance_review','leave_approve','payroll','payroll_finalise'];
 $function$;
 
-comment on function public._known_perms() is 'The eight permission codes a staff profile may hold: start, bill, discount, members, stations, money, reports, settings.';
+comment on function public._known_perms() is 'The permission codes a staff profile may hold: start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise.';
 
 grant execute on function "public"."_known_perms"() to "postgres", "service_role";
 

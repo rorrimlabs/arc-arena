@@ -58,6 +58,14 @@ begin
       raise exception 'forbidden' using errcode = '42501',
         hint = 'only an owner can grant money or reports, or change an owner-level member';
     end if;
+    -- Pay is owner-level business too: only an owner-level member hands out or takes away
+    -- payroll / payroll_finalise.
+    if not private.app_is_owner(p_arena)
+       and (('payroll' = any(v_perms)) <> ('payroll' = any(v_old_perms))
+            or ('payroll_finalise' = any(v_perms)) <> ('payroll_finalise' = any(v_old_perms))) then
+      raise exception 'forbidden' using errcode = '42501',
+        hint = 'only an owner can grant or remove payroll permissions';
+    end if;
   end if;
 
   update staff_profiles set name = coalesce(nullif(btrim(p->>'name'), ''), name),

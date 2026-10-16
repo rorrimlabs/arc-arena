@@ -222,7 +222,7 @@ update staff_profiles set perms = array['start','settings'] where user_id = '170
 -- ------------------------------------------- 4. owners
 select pg_temp.as_user('17000000-0000-4000-8000-000000000001');
 insert into inv values ('co', pg_temp.invite('coowner17@test.local', 'owner', array['start']));
-select is((select array_length(perms, 1) from staff_invites where id = pg_temp.id('co')), 8,
+select is((select perms from staff_invites where id = pg_temp.id('co')), _known_perms(),
   'an owner invite carries every permission, whatever was asked');
 select pg_temp.as_user('17000000-0000-4000-8000-000000000002');
 select throws_ok($$ select pg_temp.invite('coowner17@test.local', 'staff', array['start']) $$,
