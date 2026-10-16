@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/features/games/presentation/game_edit_screen.dart';
 import 'package:arena_ops/features/games/presentation/games_screen.dart';
@@ -5,18 +6,16 @@ import 'package:flutter/material.dart';
 
 /// Opens the game library (add / edit games and their per-system compatibility).
 void openGameLibrary(BuildContext context) {
-  Navigator.of(context)
-      .push(MaterialPageRoute(builder: (_) => const GamesScreen()));
+  AppNav.to(context, const GamesScreen());
 }
 
 /// Opens the add-game form, optionally prefilled with a searched name.
 void openAddGame(BuildContext context, {String? name}) {
   final trimmed = name?.trim();
-  Navigator.of(context).push(
-    MaterialPageRoute(
-      builder: (_) => GameEditScreen(
-        initialName: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
-      ),
+  AppNav.to(
+    context,
+    GameEditScreen(
+      initialName: (trimmed == null || trimmed.isEmpty) ? null : trimmed,
     ),
   );
 }

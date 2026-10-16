@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_bar_chart.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
@@ -46,8 +47,7 @@ class TodayScreen extends ConsumerWidget {
             b.scheduledStart.toUtc().isAfter(now))
         .length;
 
-    void openBookings() => Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const BookingScreen()));
+    void openBookings() => AppNav.to(context, const BookingScreen());
 
     return Scaffold(
       body: SafeArea(
@@ -63,17 +63,15 @@ class TodayScreen extends ConsumerWidget {
                 mainAxisSize: MainAxisSize.min,
                 children: [
                   IconButton(
-                    tooltip: 'Bookings',
-                    onPressed: openBookings,
-                    icon: Icon(Icons.event_available_outlined,
-                        color: context.arena.text),
+                     tooltip: 'Bookings',
+                     onPressed: openBookings,
+                     icon: Icon(Icons.event_available_outlined,
+                         color: context.arena.text),
                   ),
                   IconButton(
                     tooltip: 'Notifications',
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                          builder: (_) => const NotificationsScreen()),
-                    ),
+                    onPressed: () =>
+                        AppNav.to(context, const NotificationsScreen()),
                     icon: Badge(
                       isLabelVisible: bookingCount > 0,
                       // Lime, not the default error-red: an upcoming-booking

@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
@@ -50,8 +51,8 @@ class NotificationsScreen extends ConsumerWidget {
           IconButton(
             tooltip: 'Alert settings',
             icon: const Icon(Icons.tune_rounded),
-            onPressed: () => Navigator.of(context).push(MaterialPageRoute(
-                builder: (_) => const NotificationSettingsScreen())),
+            onPressed: () =>
+                AppNav.to(context, const NotificationSettingsScreen()),
           ),
         ],
       ),
@@ -101,8 +102,7 @@ class NotificationsScreen extends ConsumerWidget {
   }
 
   void _openBookings(BuildContext context) {
-    Navigator.of(context)
-        .push(MaterialPageRoute(builder: (_) => const BookingScreen()));
+    AppNav.to(context, const BookingScreen());
   }
 }
 

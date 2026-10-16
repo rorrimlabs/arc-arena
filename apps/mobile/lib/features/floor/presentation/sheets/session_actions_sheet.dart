@@ -8,6 +8,7 @@ import 'package:arena_ops/features/floor/presentation/sheets/extend_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/session_history_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/switch_system_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/take_payment_sheet.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/features/floor/presentation/station_detail_screen.dart';
 import 'package:arena_ops/features/games/presentation/controls_sheet.dart';
 import 'package:flutter/material.dart';
@@ -78,11 +79,9 @@ class _SessionActionsSheet extends ConsumerWidget {
               leading: const Icon(Icons.open_in_full),
               title: const Text('View session'),
               onTap: () => run(
-                () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) =>
-                        StationDetailScreen(sessionId: active.session.id),
-                  ),
+                () => AppNav.to(
+                  context,
+                  StationDetailScreen(sessionId: active.session.id),
                 ),
               ),
             ),

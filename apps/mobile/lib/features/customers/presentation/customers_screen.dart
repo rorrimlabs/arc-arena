@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
 import 'package:arena_ops/features/customers/presentation/customer_create_dialog.dart';
@@ -30,9 +31,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
   }
 
   void _open(Customer c) {
-    Navigator.of(context).push(MaterialPageRoute(
-      builder: (_) => CustomerProfileScreen(customerId: c.id),
-    ));
+    AppNav.to(context, CustomerProfileScreen(customerId: c.id));
   }
 
   @override
@@ -43,6 +42,7 @@ class _CustomersScreenState extends ConsumerState<CustomersScreen> {
     return Scaffold(
       appBar: AppBar(title: const Text('Customers')),
       floatingActionButton: FloatingActionButton.extended(
+        heroTag: 'customers_fab',
         onPressed: () async {
           final created = await showCreateCustomerDialog(context, ref);
           if (created != null && context.mounted) _open(created);

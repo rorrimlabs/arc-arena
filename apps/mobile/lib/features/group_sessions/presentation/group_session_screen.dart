@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/controllers/group_session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
@@ -461,9 +462,10 @@ class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
     setState(() => _starting = false);
     r.fold(
       (group) {
-        Navigator.of(context).pushReplacement(MaterialPageRoute(
-          builder: (_) => GroupDetailScreen(groupId: group.id),
-        ));
+        AppNav.replace(
+          context,
+          GroupDetailScreen(groupId: group.id),
+        );
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Started group · ${_customer?.displayName ?? ''}')),
         );

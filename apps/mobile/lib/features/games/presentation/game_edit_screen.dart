@@ -4,6 +4,7 @@ import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/features/games/presentation/controls_edit_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -184,10 +185,9 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
                 if (!_isNew) ...[
                   const SizedBox(height: AppSpacing.lg),
                   OutlinedButton.icon(
-                    onPressed: () => Navigator.of(context).push(
-                      MaterialPageRoute(
-                        builder: (_) => ControlsEditScreen(game: widget.game!),
-                      ),
+                    onPressed: () => AppNav.to(
+                      context,
+                      ControlsEditScreen(game: widget.game!),
                     ),
                     icon: const Icon(Icons.gamepad_outlined),
                     label: const Text('Controls guide'),

@@ -4,6 +4,7 @@ import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/value/enums.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/features/games/presentation/controls_sheet.dart';
 import 'package:arena_ops/features/new_session/presentation/new_session_screen.dart';
 import 'package:flutter/material.dart';
@@ -86,9 +87,10 @@ class _ViewGamesSheet extends ConsumerWidget {
               onPressed: resource.status.isBookable
                   ? () {
                       Navigator.of(context).pop();
-                      Navigator.of(context).push(MaterialPageRoute(
-                        builder: (_) => NewSessionScreen(initialResource: resource),
-                      ));
+                      AppNav.to(
+                        context,
+                        NewSessionScreen(initialResource: resource),
+                      );
                     }
                   : null,
               icon: const Icon(Icons.play_arrow),

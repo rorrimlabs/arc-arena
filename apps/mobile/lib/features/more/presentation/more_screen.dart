@@ -2,6 +2,7 @@ import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
@@ -28,7 +29,7 @@ class MoreScreen extends ConsumerWidget {
   static const String path = '/more';
 
   void _push(BuildContext context, Widget page) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => page));
+    AppNav.to(context, page);
   }
 
   /// An honest dead end: the design has this area, this build does not. Says
@@ -96,15 +97,13 @@ class MoreScreen extends ConsumerWidget {
                 icon: Icons.fingerprint_rounded,
                 title: 'Attendance',
                 subtitle: 'Clock in and out, my hours',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const AttendanceScreen())),
+                onTap: () => _push(context, const AttendanceScreen()),
               ),
               ArenaListRow(
                 icon: Icons.event_busy_rounded,
                 title: 'Leave',
                 subtitle: 'My balance, apply and track requests',
-                onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
-                    builder: (_) => const LeaveScreen())),
+                onTap: () => _push(context, const LeaveScreen()),
               ),
               ArenaListRow(
                 icon: Icons.warning_amber_rounded,

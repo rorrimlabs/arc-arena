@@ -1,3 +1,4 @@
+import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/data/sync/sync_engine.dart';
@@ -117,8 +118,7 @@ class ConnectionStatus extends ConsumerWidget {
     if (!cloud) return strip;
     return GestureDetector(
       behavior: HitTestBehavior.opaque,
-      onTap: () => Navigator.of(context)
-          .push(MaterialPageRoute(builder: (_) => const SyncScreen())),
+      onTap: () => AppNav.to(context, const SyncScreen()),
       child: strip,
     );
   }

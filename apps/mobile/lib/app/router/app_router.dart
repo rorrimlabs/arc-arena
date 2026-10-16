@@ -13,6 +13,35 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
+import 'package:arena_ops/features/attendance/presentation/attendance_history_screen.dart';
+import 'package:arena_ops/features/attendance/presentation/attendance_screen.dart';
+import 'package:arena_ops/features/bookings/presentation/booking_screen.dart';
+import 'package:arena_ops/features/controllers/presentation/controller_board_screen.dart';
+import 'package:arena_ops/features/customers/presentation/customer_profile_screen.dart';
+import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
+import 'package:arena_ops/features/floor/presentation/station_detail_screen.dart';
+import 'package:arena_ops/features/games/presentation/games_screen.dart';
+import 'package:arena_ops/features/group_sessions/presentation/group_detail_screen.dart';
+import 'package:arena_ops/features/group_sessions/presentation/group_session_screen.dart';
+import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
+import 'package:arena_ops/features/more/presentation/billing_rules_screen.dart';
+import 'package:arena_ops/features/more/presentation/help_screen.dart';
+import 'package:arena_ops/features/more/presentation/holidays_screen.dart';
+import 'package:arena_ops/features/more/presentation/hours_screen.dart';
+import 'package:arena_ops/features/more/presentation/pricing_screen.dart';
+import 'package:arena_ops/features/more/presentation/settings_screen.dart';
+import 'package:arena_ops/features/more/presentation/staff_screen.dart';
+import 'package:arena_ops/features/more/presentation/stations_screen.dart';
+import 'package:arena_ops/features/new_session/presentation/new_session_screen.dart';
+import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
+import 'package:arena_ops/features/notifications/presentation/notifications_screen.dart';
+import 'package:arena_ops/features/reports/presentation/session_log_screen.dart';
+import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
+
+/// The root navigator key for full-screen dialogs and secondary pages that sit
+/// above the tab shell (hiding the bottom navigation bar).
+final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'rootNav');
+
 /// Six bottom tabs: Today · Floor · Bookings · Money · Reports · More.
 /// Which ones show depends on the signed-in user's role (owners see Money /
 /// Reports / Today; staff see Floor + Bookings + More). Customers ("Members")
@@ -24,6 +53,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
+    navigatorKey: rootNavigatorKey,
     initialLocation: LoginScreen.path,
     refreshListenable: refresh,
     redirect: (context, state) {
@@ -40,14 +70,25 @@ final goRouterProvider = Provider<GoRouter>((ref) {
           return defaultPathFor(user);
         }
       }
+
+      // Block secondary routes the user can't access.
+      if (loc.startsWith('/settings') && !user.can(Permission.settings)) {
+        return defaultPathFor(user);
+      }
+      if (loc.startsWith('/customers') && !user.can(Permission.members)) {
+        return defaultPathFor(user);
+      }
+
       return null;
     },
     routes: [
       GoRoute(
         path: LoginScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const LoginScreen(),
       ),
       StatefulShellRoute.indexedStack(
+        parentNavigatorKey: rootNavigatorKey,
         builder: (context, state, navigationShell) =>
             AppShell(navigationShell: navigationShell),
         branches: [
@@ -88,6 +129,133 @@ final goRouterProvider = Provider<GoRouter>((ref) {
             ),
           ]),
         ],
+      ),
+      // Full-screen secondary routes (covering the AppShell and bottom navigation):
+      GoRoute(
+        path: AttendanceScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AttendanceScreen(),
+      ),
+      GoRoute(
+        path: AttendanceHistoryScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const AttendanceHistoryScreen(),
+      ),
+      GoRoute(
+        path: LeaveScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const LeaveScreen(),
+      ),
+      GoRoute(
+        path: SessionLogScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const SessionLogScreen(),
+      ),
+      GoRoute(
+        path: CustomersScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const CustomersScreen(),
+      ),
+      GoRoute(
+        path: '/customers/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => CustomerProfileScreen(
+          customerId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/settings',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const SettingsScreen(),
+      ),
+      GoRoute(
+        path: PricingScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const PricingScreen(),
+      ),
+      GoRoute(
+        path: HoursScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const HoursScreen(),
+      ),
+      GoRoute(
+        path: HolidaysScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const HolidaysScreen(),
+      ),
+      GoRoute(
+        path: StationsScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const StationsScreen(),
+      ),
+      GoRoute(
+        path: BillingRulesScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const BillingRulesScreen(),
+      ),
+      GoRoute(
+        path: StaffScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const StaffScreen(),
+      ),
+      GoRoute(
+        path: GamesScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const GamesScreen(),
+      ),
+      GoRoute(
+        path: HelpScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const HelpScreen(),
+      ),
+      GoRoute(
+        path: NotificationsScreen.path,
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const NotificationsScreen(),
+      ),
+      GoRoute(
+        path: '/notifications/settings',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const NotificationSettingsScreen(),
+      ),
+      GoRoute(
+        path: '/sync',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const SyncScreen(),
+      ),
+      GoRoute(
+        path: '/controllers',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const ControllerBoardScreen(),
+      ),
+      GoRoute(
+        path: '/bookings/new',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const BookingScreen(),
+      ),
+      GoRoute(
+        path: '/sessions/new',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const NewSessionScreen(),
+      ),
+      GoRoute(
+        path: '/groups/new',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => const GroupSessionScreen(),
+      ),
+      GoRoute(
+        path: '/sessions/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => StationDetailScreen(
+          sessionId: state.pathParameters['id']!,
+        ),
+      ),
+      GoRoute(
+        path: '/groups/:id',
+        parentNavigatorKey: rootNavigatorKey,
+        builder: (context, state) => GroupDetailScreen(
+          groupId: state.pathParameters['id']!,
+        ),
       ),
     ],
   );
