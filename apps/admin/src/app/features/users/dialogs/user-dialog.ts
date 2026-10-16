@@ -21,6 +21,11 @@ export interface UserDialogData {
   readonly user?: ArenaUser;
   /** The signed-in login may invite owners (it is an owner itself). */
   readonly canAddOwners?: boolean;
+  /**
+   * Invite exactly this role, with no switch: 'staff' from Team › Add staff, 'owner' from
+   * Settings › Owners & access (only offered to owners; the server refuses anyone else).
+   */
+  readonly role?: UserRole;
 }
 
 /** What the page shows in the snackbar after the dialog closes; undefined when cancelled. */
@@ -56,12 +61,12 @@ const SUBTITLES: Readonly<Record<UserRole, string>> = {
     MatButton,
   ],
   template: `
-    <h2 mat-dialog-title>{{ editing ? 'Edit details' : 'Invite user' }}</h2>
+    <h2 mat-dialog-title>{{ title }}</h2>
     <form novalidate (submit)="save($event)">
       <mat-dialog-content>
         <div class="flex flex-col gap-5 pt-1">
           <p class="text-sm leading-[1.4] text-muted">{{ subtitle() }}</p>
-          @if (!editing && data.canAddOwners) {
+          @if (!editing && data.canAddOwners && !data.role) {
             <div>
               <mat-button-toggle-group
                 aria-label="Role"
@@ -112,7 +117,14 @@ export class UserDialog {
   private readonly store = inject(UsersStore);
 
   protected readonly editing = !!this.data.user;
-  protected readonly role = signal<UserRole>('staff');
+  protected readonly role = signal<UserRole>(this.data.role ?? 'staff');
+  protected readonly title = this.editing
+    ? 'Edit details'
+    : this.data.role === 'owner'
+      ? 'Invite an owner'
+      : this.data.role === 'staff'
+        ? 'Add staff'
+        : 'Invite user';
   protected readonly subtitle = computed(() =>
     this.editing ? 'Changes apply next time they sign in.' : SUBTITLES[this.role()],
   );

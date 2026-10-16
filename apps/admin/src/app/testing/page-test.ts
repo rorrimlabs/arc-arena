@@ -20,6 +20,26 @@ import { SampleFloorOptionsApi } from '../features/settings/data/floor-options.s
 import { SamplePricingApi } from '../features/pricing/data/pricing-api.sample';
 import { SalesApi } from '../features/sales/data/sales-api';
 import { SampleSalesApi } from '../features/sales/data/sales-api.sample';
+import { AttendanceApi } from '../features/attendance/data/attendance-api';
+import { SampleAttendanceApi } from '../features/attendance/data/attendance-api.sample';
+import { AttendanceRulesApi } from '../features/settings/data/attendance-rules';
+import { SampleAttendanceRulesApi } from '../features/settings/data/attendance-rules.sample';
+import { WorkHoursApi } from '../features/settings/data/work-hours';
+import { SampleWorkHoursApi } from '../features/settings/data/work-hours.sample';
+import { ShiftsApi } from '../features/shifts/data/shifts-api';
+import { SampleShiftsApi } from '../features/shifts/data/shifts-api.sample';
+import { CalendarApi } from '../features/calendar/data/calendar-api';
+import { SampleCalendarApi } from '../features/calendar/data/calendar-api.sample';
+import { LeaveApi } from '../features/leave/data/leave-api';
+import { SampleLeaveApi } from '../features/leave/data/leave-api.sample';
+import { LeaveRulesApi } from '../features/settings/data/leave-rules';
+import { SampleLeaveRulesApi } from '../features/settings/data/leave-rules.sample';
+import { PaySetupApi } from '../features/pay-setup/data/pay-setup-api';
+import { SamplePaySetupApi } from '../features/pay-setup/data/pay-setup-api.sample';
+import { PayrollApi } from '../features/payroll/data/payroll-api';
+import { SamplePayrollApi } from '../features/payroll/data/payroll-api.sample';
+import { LEAFLET } from '../shared/map/geo-map';
+import { fakeLeaflet } from './fake-leaflet';
 
 /** 7:30 pm IST on a Tuesday: the sample floor's "now". */
 export const NOW = new Date('2026-10-13T14:00:00Z');
@@ -50,6 +70,15 @@ export async function startPage(
     sales: SampleSalesApi;
     accessories: SampleAccessoriesApi;
     arena: SampleArenaApi;
+    attendance: SampleAttendanceApi;
+    attendanceRules: SampleAttendanceRulesApi;
+    workHours: SampleWorkHoursApi;
+    shifts: SampleShiftsApi;
+    calendar: SampleCalendarApi;
+    leave: SampleLeaveApi;
+    leaveRules: SampleLeaveRulesApi;
+    paySetup: SamplePaySetupApi;
+    payroll: SamplePayrollApi;
   }) => void = () => undefined,
 ) {
   const floor = new SampleFloorApi(NOW);
@@ -58,7 +87,32 @@ export async function startPage(
   const floorOptions = new SampleFloorOptionsApi();
   const accessories = new SampleAccessoriesApi();
   const arena = new SampleArenaApi();
-  setup({ floor, pricing, sales, accessories, arena });
+  const attendance = new SampleAttendanceApi();
+  const attendanceRules = new SampleAttendanceRulesApi();
+  const workHours = new SampleWorkHoursApi();
+  const shifts = new SampleShiftsApi();
+  const calendar = new SampleCalendarApi();
+  const leave = new SampleLeaveApi();
+  const leaveRules = new SampleLeaveRulesApi();
+  const paySetup = new SamplePaySetupApi();
+  const payroll = new SamplePayrollApi();
+  const leaflet = fakeLeaflet();
+  setup({
+    floor,
+    pricing,
+    sales,
+    accessories,
+    arena,
+    attendance,
+    attendanceRules,
+    workHours,
+    shifts,
+    calendar,
+    leave,
+    leaveRules,
+    paySetup,
+    payroll,
+  });
   TestBed.configureTestingModule({
     providers: [
       provideRouter(routes, withComponentInputBinding()),
@@ -69,6 +123,16 @@ export async function startPage(
       { provide: PricingApi, useValue: pricing },
       { provide: SalesApi, useValue: sales },
       { provide: FloorOptionsApi, useValue: floorOptions },
+      { provide: AttendanceApi, useValue: attendance },
+      { provide: AttendanceRulesApi, useValue: attendanceRules },
+      { provide: WorkHoursApi, useValue: workHours },
+      { provide: ShiftsApi, useValue: shifts },
+      { provide: CalendarApi, useValue: calendar },
+      { provide: LeaveApi, useValue: leave },
+      { provide: LeaveRulesApi, useValue: leaveRules },
+      { provide: PaySetupApi, useValue: paySetup },
+      { provide: PayrollApi, useValue: payroll },
+      { provide: LEAFLET, useValue: () => Promise.resolve(leaflet.api) },
       { provide: Clock, useValue: { now: () => NOW } },
       { provide: BreakpointObserver, useValue: breakpoints(width) },
       { provide: MATERIAL_ANIMATIONS, useValue: { animationsDisabled: true } },
@@ -131,6 +195,17 @@ export async function startPage(
     sales,
     floorOptions,
     accessories,
+    arena,
+    attendance,
+    attendanceRules,
+    workHours,
+    shifts,
+    calendar,
+    leave,
+    leaveRules,
+    paySetup,
+    payroll,
+    leaflet,
     settle,
     doc,
     text,

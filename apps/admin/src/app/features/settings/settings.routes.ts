@@ -10,6 +10,13 @@ export const SETTINGS_ROUTES: Routes = [
     loadComponent: () => import('./settings-page').then((m) => m.SettingsPage),
   },
   {
+    // The venue's shifts, weekly roster and staff holidays (from Settings › Staff).
+    path: 'schedule',
+    providers: [MATERIAL_DEFAULTS],
+    title: 'Shifts & holidays · ArenaOS',
+    loadComponent: () => import('../shifts/shifts-page').then((m) => m.ShiftsPage),
+  },
+  {
     // The games library: its own list/detail screen under Settings, for venues with game types.
     path: 'games',
     canMatch: [capabilityGuard('games')],

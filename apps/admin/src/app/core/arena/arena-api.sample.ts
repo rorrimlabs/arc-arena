@@ -1,7 +1,17 @@
 import { AppError } from '../auth/auth-api';
 import { ARENA_MESSAGES, ArenaApi, ArenaDetails, Membership } from './arena-api';
 
-const ALL = ['start', 'bill', 'discount', 'members', 'stations', 'money', 'reports', 'settings'];
+const ALL = [
+  'start',
+  'bill',
+  'discount',
+  'members',
+  'stations',
+  'money',
+  'reports',
+  'settings',
+  'attendance_review',
+];
 
 /** Deterministic in-memory ArenaApi for tests: the design's two arenas, owned by the caller. */
 export class SampleArenaApi extends ArenaApi {

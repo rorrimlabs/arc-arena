@@ -5,6 +5,15 @@ import { ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
 import { FloorRead, FloorStore } from '../floor/floor-store';
 import { AccessoriesStore } from '../../features/accessories/data/accessories-store';
+import { AttendanceStore } from '../../features/attendance/data/attendance-store';
+import { AttendanceRulesStore } from '../../features/settings/data/attendance-rules';
+import { WorkHoursStore } from '../../features/settings/data/work-hours';
+import { CalendarStore } from '../../features/calendar/data/calendar-store';
+import { ShiftsStore } from '../../features/shifts/data/shifts-store';
+import { LeaveStore } from '../../features/leave/data/leave-store';
+import { LeaveRulesStore } from '../../features/settings/data/leave-rules';
+import { PaySetupStore } from '../../features/pay-setup/data/pay-setup-store';
+import { PayrollStore } from '../../features/payroll/data/payroll-store';
 import { FloorOptionsStore } from '../../features/settings/data/floor-options';
 import { OverviewStore } from '../../features/overview/data/overview-store';
 import { PricingStore } from '../../features/pricing/data/pricing-store';
@@ -27,6 +36,10 @@ export type RefreshTarget =
   | 'settings'
   | 'users'
   | 'accessories'
+  | 'attendance'
+  | 'shifts'
+  | 'leave'
+  | 'pay'
   | 'arena';
 
 /** How long a burst of events is gathered before one refresh. */
@@ -38,9 +51,10 @@ const PRICES: readonly RefreshTarget[] = ['pricing', 'settings'];
  * A staff change may be the signed-in login's own (deactivated, permissions changed): the
  * memberships reload too (ArenaContext), so lost access applies without a page reload. The
  * login's own deactivation never arrives as a row change (RLS hides the row from it by then): it
- * comes as the writer's broadcast nudge, or shows as the channel being refused.
+ * comes as the writer's broadcast nudge, or shows as the channel being refused. The attendance
+ * log names staff, so a rename shows there too.
  */
-const STAFF: readonly RefreshTarget[] = ['users', 'arena'];
+const STAFF: readonly RefreshTarget[] = ['users', 'arena', 'attendance', 'shifts', 'leave', 'pay'];
 
 /**
  * The published tables the dashboard shows, and what each one's changes refresh. Bookings are
@@ -94,6 +108,10 @@ const ALL_TARGETS: readonly RefreshTarget[] = [
   'settings',
   'users',
   'accessories',
+  'attendance',
+  'shifts',
+  'leave',
+  'pay',
   'arena',
 ];
 
@@ -120,6 +138,18 @@ const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
   ['accessory_kind.', ['accessories']],
   ['rule.', PRICES],
   ['discount.', PRICES],
+  // Clock-ins and clock-outs (attendance_* tables are in no publication: only this nudge).
+  ['attendance.', ['attendance']],
+  // Shifts, assignments and staff holidays (in no publication either: only this nudge).
+  ['shift.', ['shifts']],
+  ['staff_holiday.', ['shifts']],
+  // Leave, HR profiles, pay rates and rules, salary runs (in no publication: only this nudge).
+  ['leave.', ['leave']],
+  ['hr_profile.', ['pay', 'leave']],
+  ['pay_rate.', ['pay']],
+  ['pay_policy.', ['pay']],
+  ['salary_run.', ['pay']],
+  ['salary_adjustment.', ['pay']],
   // Floor-only records the dashboard does not show.
   ['booking.', []],
 ];
@@ -152,6 +182,15 @@ export class RealtimeSync {
   private readonly floorOptions = inject(FloorOptionsStore);
   private readonly accessories = inject(AccessoriesStore);
   private readonly users = inject(UsersStore);
+  private readonly attendance = inject(AttendanceStore);
+  private readonly attendanceRules = inject(AttendanceRulesStore);
+  private readonly workHours = inject(WorkHoursStore);
+  private readonly shifts = inject(ShiftsStore);
+  private readonly calendar = inject(CalendarStore);
+  private readonly leave = inject(LeaveStore);
+  private readonly leaveRules = inject(LeaveRulesStore);
+  private readonly paySetup = inject(PaySetupStore);
+  private readonly payroll = inject(PayrollStore);
   private readonly venue = inject(VenueStore);
   private readonly router = inject(Router);
 
@@ -390,9 +429,55 @@ export class RealtimeSync {
     if (targets.has('settings')) {
       if (on('settings')) jobs.push(this.floorOptions.refresh());
       else this.floorOptions.stale();
+      // The attendance rules (geofence) show on Settings and on the attendance log's maps.
+      if (on('settings', 'staff')) jobs.push(this.attendanceRules.refresh());
+      else this.attendanceRules.stale();
+    }
+    if (targets.has('attendance')) {
+      if (on('staff')) jobs.push(this.attendance.refresh());
+      else this.attendance.stale();
+    }
+    if (targets.has('settings')) {
+      // Working hours (settings key work_hours) show on Settings and shape the calendar.
+      if (on('settings')) jobs.push(this.workHours.refresh());
+      else this.workHours.stale();
+    }
+    if (targets.has('shifts')) {
+      if (on('staff', 'settings')) jobs.push(this.shifts.refresh());
+      else this.shifts.stale();
+    }
+    // The calendar's figures follow clock-ins, corrections, shifts, holidays, working hours and
+    // leave.
+    if (
+      targets.has('attendance') ||
+      targets.has('shifts') ||
+      targets.has('settings') ||
+      targets.has('leave')
+    ) {
+      if (on('staff')) jobs.push(this.calendar.refresh());
+      else this.calendar.stale();
+    }
+    // Leave, pay setup and payroll: reloaded only on the screens showing them (leave requests
+    // on Attendance, balances and pay on Team).
+    const sub = path.split('/')[2] ?? '';
+    const onStaff = (...screens: string[]) => on('staff') && screens.includes(sub);
+    if (targets.has('leave') || targets.has('settings')) {
+      // Balances follow the leave rules (settings key leave_rules) too.
+      if (onStaff('attendance', 'team')) jobs.push(this.leave.refresh());
+      else this.leave.stale();
+    }
+    if (targets.has('settings')) {
+      if (on('settings')) jobs.push(this.leaveRules.refresh());
+      else this.leaveRules.stale();
+    }
+    if (targets.has('pay')) {
+      if (onStaff('team') || on('settings')) jobs.push(this.paySetup.refresh());
+      else this.paySetup.stale();
+      if (onStaff('payroll')) jobs.push(this.payroll.refresh());
+      else this.payroll.stale();
     }
     if (targets.has('users')) {
-      if (on('users')) jobs.push(this.users.refresh());
+      if (on('settings') || onStaff('team')) jobs.push(this.users.refresh());
       else this.users.stale();
     }
     if (targets.has('accessories')) {

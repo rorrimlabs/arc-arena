@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject, input } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatSnackBar } from '@angular/material/snack-bar';
@@ -20,13 +20,13 @@ import { PendingInvite } from '../data/user.models';
   template: `
     <section aria-labelledby="users-invites">
       <h2 id="users-invites" class="px-3 pt-4 pb-2 text-xs leading-none font-semibold text-subtle">
-        Pending invitations · {{ store.invites().length }}
+        {{ heading() }} · {{ invites().length }}
       </h2>
       @if (store.invitesError(); as error) {
         <p role="alert" class="px-3 py-2 text-sm text-danger">{{ error }}</p>
       }
       <ul class="flex flex-col gap-0.5">
-        @for (i of store.invites(); track i.inviteId) {
+        @for (i of invites(); track i.inviteId) {
           <li class="flex min-h-16 items-center gap-3 rounded-card px-3 py-2.5">
             <span
               class="icon grid size-10 flex-none place-items-center rounded-full bg-info-soft text-[20px] leading-none text-muted"
@@ -64,6 +64,13 @@ export class InviteList {
   /** Without the Settings permission the server refuses every change here. */
   protected readonly canEdit = inject(ArenaContext).canEdit;
   protected readonly store = inject(UsersStore);
+
+  /** Only this role's invitations (Team lists staff, Settings › Owners & access owners). */
+  readonly role = input<'owner' | 'staff' | null>(null);
+  readonly heading = input('Pending invitations');
+  protected readonly invites = computed(() =>
+    this.store.invites().filter((i) => !this.role() || i.role === this.role()),
+  );
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
 

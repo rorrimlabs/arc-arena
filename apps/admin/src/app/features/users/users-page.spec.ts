@@ -127,10 +127,92 @@ describe('Users', () => {
       'true',
       'false',
       'false',
+      'false',
+      'false',
+      'false',
+      'false',
     ]);
     toggles[2].click(); // Give discounts
     await settle();
     expect(api.users.find((u) => u.userId === 'u2')?.perms).toEqual(['start', 'bill', 'discount']);
+  });
+
+  it('Review attendance is a toggle a Settings holder grants', async () => {
+    await start('/users?id=u2');
+    expect(detail()?.textContent).toContain('Review attendance');
+    expect(detail()?.textContent).toContain(
+      'See everyone’s clock-ins, the location log and flagged entries',
+    );
+    const toggles = [
+      ...detail()!.querySelectorAll('mat-slide-toggle button'),
+    ] as HTMLButtonElement[];
+    toggles[4].click();
+    await settle();
+    expect(api.users.find((u) => u.userId === 'u2')?.perms).toEqual([
+      'start',
+      'bill',
+      'attendance_review',
+    ]);
+  });
+
+  it('Approve leave, Payroll and Finalise salary are toggles too; an owner grants payroll', async () => {
+    await start('/users?id=u2');
+    const text = detail()!.textContent ?? '';
+    expect(text).toContain('Approve leave');
+    expect(text).toContain('Payroll');
+    expect(text).toContain('Pay setup and salary drafts');
+    expect(text).toContain('Finalise salary');
+    expect(text).not.toContain('Only an owner can give or take away Payroll');
+    const toggles = [
+      ...detail()!.querySelectorAll('mat-slide-toggle button'),
+    ] as HTMLButtonElement[];
+    expect(toggles.slice(5).map((t) => t.disabled)).toEqual([false, false, false]);
+    toggles[5].click(); // Approve leave
+    await settle();
+    toggles[6].click(); // Payroll
+    await settle();
+    expect(api.users.find((u) => u.userId === 'u2')?.perms).toEqual([
+      'start',
+      'bill',
+      'leave_approve',
+      'payroll',
+    ]);
+  });
+
+  it('only an owner may switch Payroll and Finalise salary', async () => {
+    await start('/users?id=u2');
+    arenas.memberships = arenas.memberships.map((m) => ({ ...m, role: 'staff' }));
+    const { ArenaContext } = await import('../../core/arena/arena-context');
+    await TestBed.inject(ArenaContext).load(true);
+    await settle();
+    expect(detail()!.textContent).toContain(
+      'Only an owner can give or take away Payroll and Finalise salary.',
+    );
+    const toggles = [
+      ...detail()!.querySelectorAll('mat-slide-toggle button'),
+    ] as HTMLButtonElement[];
+    // Floor ones, Review attendance and Approve leave stay a Settings holder's to change.
+    expect(toggles.map((t) => t.disabled)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      true,
+      true,
+    ]);
+  });
+
+  it('none of the staff-module permissions is in the invite default', async () => {
+    const { DEFAULT_STAFF_PERMS } = await import('./data/user.models');
+    expect(DEFAULT_STAFF_PERMS).toEqual(['start', 'bill', 'members']);
+  });
+
+  it('an owner holding every permission (attendance_review too) shows as the owner', async () => {
+    await start('/users?id=u0');
+    expect(detail()?.textContent).toContain('Owner account');
+    expect(detail()?.querySelectorAll('mat-slide-toggle')).toHaveLength(0);
   });
 
   it('deactivating staff asks first, then marks them Off and says they are signed out', async () => {
@@ -288,6 +370,10 @@ describe('Users', () => {
     expect(after.map((t) => t.getAttribute('aria-checked'))).toEqual([
       'true',
       'true',
+      'false',
+      'false',
+      'false',
+      'false',
       'false',
       'false',
     ]);

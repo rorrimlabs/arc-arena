@@ -1,5 +1,5 @@
 import { Component, input } from '@angular/core';
-import { QueryParamsHandling, RouterLink } from '@angular/router';
+import { Params, QueryParamsHandling, RouterLink } from '@angular/router';
 
 /**
  * One row of a list pane (design: `item()`): 40px initials or icon tile, bold title over a
@@ -50,7 +50,7 @@ export class ListRow {
   readonly selected = input(false);
   /** Router link of the row (default: the current page, selection in the query params). */
   readonly link = input<string | readonly unknown[]>([]);
-  readonly queryParams = input<Record<string, string> | null>(null);
+  readonly queryParams = input<Params | null>(null);
   /** 'merge' keeps the page's other query params (e.g. list filters) when selecting. */
   readonly queryParamsHandling = input<QueryParamsHandling>('');
 }

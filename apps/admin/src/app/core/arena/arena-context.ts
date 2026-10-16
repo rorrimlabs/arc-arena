@@ -75,6 +75,15 @@ export class ArenaContext {
     return !!m && m.active && (m.role === 'owner' || m.perms.includes('settings'));
   });
 
+  /**
+   * Holds `perm` in the current arena: an active owner holds every permission, anyone else needs
+   * it in their perms. Visibility only — the server checks every read (RLS) and write itself.
+   */
+  hasPerm(perm: string): boolean {
+    const m = this.currentMembership();
+    return !!m && m.active && (m.role === 'owner' || m.perms.includes(perm));
+  }
+
   constructor() {
     // A different login (or sign-out) must not see the previous login's arenas.
     inject(LoginScope).onEnd(() => {
@@ -161,6 +170,23 @@ export const arenaGuard: CanMatchFn = async () => {
   const access = context.access();
   return access === 'owner' || router.createUrlTree([ACCESS_HOME[access]]);
 };
+
+/**
+ * Route guard: the screen exists only for members holding `perm` in the current arena (the
+ * owner holds every permission); anyone else lands on Overview.
+ */
+export function permGuard(perm: string): CanMatchFn {
+  return async () => {
+    const context = inject(ArenaContext);
+    const router = inject(Router);
+    try {
+      await context.load();
+    } catch {
+      return router.createUrlTree(['/account']);
+    }
+    return context.hasPerm(perm) || router.parseUrl('/overview');
+  };
+}
 
 /** Create Arena is only for a login with no membership at all (a new owner). */
 export const noArenaGuard: CanMatchFn = async () => {

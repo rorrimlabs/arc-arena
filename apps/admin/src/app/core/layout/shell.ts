@@ -33,7 +33,10 @@ export class Shell {
   private readonly router = inject(Router);
 
   private readonly venue = inject(VenueStore);
-  /** The nav for this venue: capability-gated entries hidden, Stations named by its noun. */
+  /**
+   * The nav for this venue and member: capability-gated entries hidden, permission-gated ones
+   * shown only to holders (the owner holds every permission), Stations named by its noun.
+   */
   protected readonly navGroups = computed(() => {
     const caps = this.venue.capabilities();
     const many = this.venue.words().many;
@@ -41,6 +44,7 @@ export class Shell {
       ...group,
       items: group.items
         .filter((item) => !item.requires || !caps || caps.has(item.requires))
+        .filter((item) => !item.perm || this.arenaContext.hasPerm(item.perm))
         .map((item) => (item.venueNoun ? { ...item, label: many } : item)),
     })).filter((group) => group.items.length);
   });

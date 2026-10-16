@@ -14,7 +14,7 @@ import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { StatTile } from '../../../shared/stat-tile/stat-tile';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import { UsersStore } from '../data/users-store';
-import { ArenaUser, FLOOR_PERMS } from '../data/user.models';
+import { ArenaUser, FLOOR_PERMS, OWNER_ONLY_PERMS } from '../data/user.models';
 import { UserDialog, UserDialogData, UserDialogResult } from '../dialogs/user-dialog';
 import { initials, statusTone } from './user-format';
 
@@ -82,6 +82,10 @@ import { initials, statusTone } from './user-format';
         >
           @if (accessNote(); as note) {
             <p role="note" class="text-[13px] leading-[1.45] text-muted">{{ note }}</p>
+          } @else if (!isOwner()) {
+            <p role="note" class="text-[13px] leading-[1.45] text-muted">
+              Only an owner can give or take away Payroll and Finalise salary.
+            </p>
           }
           @for (p of perms; track p.code) {
             <div class="flex items-center justify-between gap-4">
@@ -94,7 +98,7 @@ import { initials, statusTone } from './user-format';
               <mat-slide-toggle
                 hideIcon
                 [checked]="u.perms.includes(p.code)"
-                [disabled]="busy() || !u.active || !canChangeAccess()"
+                [disabled]="busy() || !u.active || !canChangeAccess() || ownerOnlyLocked(p.code)"
                 [aria-labelledby]="'perm-' + p.code"
                 [aria-describedby]="'perm-sub-' + p.code"
                 (change)="togglePerm(p.code, $event)"
@@ -155,6 +159,13 @@ export class UserDetail {
     return '';
   });
   protected readonly canChangeAccess = computed(() => this.canEdit() && !this.accessNote());
+  /** The signed-in login is an owner here (owner-only permissions are theirs to grant). */
+  protected readonly isOwner = computed(() => this.arena.currentRole() === 'owner');
+
+  /** Payroll and Finalise salary: only an owner may switch them (staff.update refuses others). */
+  protected ownerOnlyLocked(code: string): boolean {
+    return OWNER_ONLY_PERMS.includes(code) && !this.isOwner();
+  }
 
   protected edit(): void {
     this.dialog

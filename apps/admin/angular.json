@@ -25,7 +25,12 @@
                 "input": "public"
               }
             ],
-            "styles": ["src/styles.css", "src/material.scss"]
+            "styles": [
+              "node_modules/leaflet/dist/leaflet.css",
+              "src/styles.css",
+              "src/material.scss"
+            ],
+            "allowedCommonJsDependencies": ["leaflet"]
           },
           "configurations": {
             "production": {

@@ -14,6 +14,8 @@ describe('Settings', () => {
       ['Billing', 'Payment methods, discount limits'],
       ['Billing rules', 'Rounding, grace, minimum charge'],
       ['Sessions', 'Time options and warnings'],
+      ['Attendance', 'Arena location, clock-in rules'],
+      ['Working hours', 'Late grace, half days, extra hours'],
     ]);
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     expect(t.text(arena.querySelector('h2'))).toBe('Arena');

@@ -1,5 +1,5 @@
 import { Routes } from '@angular/router';
-import { arenaGuard, noArenaGuard } from './core/arena/arena-context';
+import { arenaGuard, noArenaGuard, permGuard } from './core/arena/arena-context';
 import { signedInGuard, signedOutGuard } from './core/auth/session';
 import { NAV_ITEMS } from './core/layout/nav';
 import { capabilityGuard } from './core/venue/venue';
@@ -12,10 +12,13 @@ const BUILT: Readonly<Record<string, () => Promise<Routes>>> = {
   overview: () => import('./features/overview/overview.routes').then((m) => m.OVERVIEW_ROUTES),
   sales: () => import('./features/sales/sales.routes').then((m) => m.SALES_ROUTES),
   pricing: () => import('./features/pricing/pricing.routes').then((m) => m.PRICING_ROUTES),
-  users: () => import('./features/users/users.routes').then((m) => m.USERS_ROUTES),
   stations: () => import('./features/stations/stations.routes').then((m) => m.STATIONS_ROUTES),
   members: () => import('./features/members/members.routes').then((m) => m.MEMBERS_ROUTES),
   settings: () => import('./features/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
+  'staff/team': () => import('./features/team/team.routes').then((m) => m.TEAM_ROUTES),
+  'staff/attendance': () =>
+    import('./features/attendance/attendance.routes').then((m) => m.ATTENDANCE_ROUTES),
+  'staff/payroll': () => import('./features/payroll/payroll.routes').then((m) => m.PAYROLL_ROUTES),
 };
 
 const APP_ROUTES: Routes = [
@@ -75,16 +78,28 @@ const APP_ROUTES: Routes = [
       { path: 'games', pathMatch: 'full', redirectTo: 'settings/games' },
       // Accessories moved into Stations; keep old links working.
       { path: 'controllers', pathMatch: 'full', redirectTo: 'stations' },
+      // The Staff screens were folded into Team, Attendance and Payroll; keep old links working.
+      { path: 'staff/calendar', pathMatch: 'full', redirectTo: 'staff/attendance?view=calendar' },
+      { path: 'staff/leave', pathMatch: 'full', redirectTo: 'staff/attendance/leave' },
+      { path: 'staff/shifts', pathMatch: 'full', redirectTo: 'settings/schedule' },
+      { path: 'staff/team/schedule', pathMatch: 'full', redirectTo: 'settings/schedule' },
+      // Users was split: employees and their access on Team, owners in Settings.
+      { path: 'users', pathMatch: 'full', redirectTo: 'staff/team' },
+      { path: 'staff/pay-setup', pathMatch: 'full', redirectTo: 'staff/team' },
       // A nav entry without a BUILT screen shows a placeholder.
       ...NAV_ITEMS.map((item) =>
         BUILT[item.path]
           ? {
               path: item.path,
-              canMatch: item.requires ? [capabilityGuard(item.requires)] : [],
+              canMatch: [
+                ...(item.requires ? [capabilityGuard(item.requires)] : []),
+                ...(item.perm ? [permGuard(item.perm)] : []),
+              ],
               loadChildren: BUILT[item.path],
             }
           : {
               path: item.path,
+              canMatch: item.perm ? [permGuard(item.perm)] : [],
               title: `${item.label} · ArenaOS`,
               // Overview is a plain page; every other screen is a list/detail frame.
               data: { heading: item.label, kind: item.path === 'overview' ? 'page' : 'list' },
