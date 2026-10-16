@@ -217,7 +217,13 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
                 signs them out here and signs you in.
               </p>
             }
-            <button mat-flat-button type="button" class="arena-cta" (click)="openDashboard()">
+            <button
+              mat-flat-button
+              type="button"
+              class="arena-cta"
+              [disabled]="busy()"
+              (click)="openDashboard()"
+            >
               Open dashboard
             </button>
           </app-auth-card>
@@ -445,6 +451,7 @@ export class AcceptInvite {
    * dashboard sign-in (replacing anyone else's, as the page said), then the dashboard opens.
    */
   protected async openDashboard(): Promise<void> {
+    if (this.busy()) return;
     const joined = this.result();
     const tokens = this.invitee.tokens();
     this.busy.set(true);

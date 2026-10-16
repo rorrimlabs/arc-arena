@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
@@ -152,11 +153,9 @@ class _SwitchSheetState extends ConsumerState<_SwitchSheet> {
     r.fold(
       (_) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Switched to ${target.name}')));
+        showToast(context, 'Switched to ${target.name}');
       },
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (f) => showFailure(context, f),
     );
   }
 }

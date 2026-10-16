@@ -6,6 +6,7 @@ import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
 import 'package:arena_ops/domain/services/segment_billing.dart';
@@ -232,22 +233,23 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   final Set<String> _returning = {};
 
   Future<void> _confirm() async {
+    if (_saving) return;
     setState(() => _saving = true);
+    final toast = AppToast.of(context);
     final actions = ref.read(sessionActionsProvider);
     final end = await actions.end(_session, widget.active.segments,
         markWaived: _waived,
         waiveReason: _waived ? _waiveReasonCtrl.text : null,
         at: _endAt);
     if (end.isErr) {
-      if (mounted) {
-        setState(() => _saving = false);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(end.failureOrNull!.display)));
-      }
+      if (mounted) setState(() => _saving = false);
+      toast.failure(end.failureOrNull!);
       return;
     }
     // The session no longer holds its pads: record the ticked returns.
-    if (_returning.isNotEmpty) await returnPadsHome(ref, _returning);
+    final notReturned = _returning.isEmpty
+        ? 0
+        : _returning.length - await returnPadsHome(ref, _returning);
 
     final billed = _bill.total.value - _collected();
     String message = 'Session ended';
@@ -282,10 +284,13 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
       message = 'Ended. ${Paise(billed).display} pending.';
     }
 
-    if (mounted) {
-      Navigator.of(context).pop();
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+    if (notReturned > 0) {
+      message = '$message $notReturned pad${notReturned == 1 ? ' was' : 's were'} '
+          'not marked returned; mark ${notReturned == 1 ? 'it' : 'them'} on the controller board.';
     }
+    if (mounted) Navigator.of(context).pop();
+    toast.show(message,
+        kind: message.startsWith('Ended, but') ? ToastKind.error : ToastKind.success);
   }
 
   String _methodLabel(PaymentMethod m) => switch (m) {

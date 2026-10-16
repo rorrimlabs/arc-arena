@@ -310,10 +310,12 @@ export class PersonBreakdown {
     code: RunLine['deductions'][number]['code'],
     d: DeductionDecision,
   ): Promise<void> {
+    if (this.busy()) return;
     this.busy.set(true);
     this.error.set('');
     try {
       await this.store.setDeduction(this.run().id, this.line().staffId, code, d.applied, d.note);
+      this.snack.open('Deduction updated', undefined, { duration: 3200 });
     } catch (e) {
       this.error.set(toAppError(e).message);
     } finally {

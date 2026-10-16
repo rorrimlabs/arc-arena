@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/group_session_actions.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -109,6 +110,7 @@ class _GroupExtendSheetState extends ConsumerState<_GroupExtendSheet> {
   }
 
   Future<void> _confirm() async {
+    if (_busy) return;
     setState(() => _busy = true);
     final r = await ref
         .read(groupSessionActionsProvider)
@@ -116,9 +118,11 @@ class _GroupExtendSheetState extends ConsumerState<_GroupExtendSheet> {
     if (!mounted) return;
     setState(() => _busy = false);
     r.fold(
-      (_) => Navigator.of(context).pop(),
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (_) {
+        showToast(context, 'Group extended by $_minutes min');
+        Navigator.of(context).pop();
+      },
+      (f) => showFailure(context, f),
     );
   }
 }

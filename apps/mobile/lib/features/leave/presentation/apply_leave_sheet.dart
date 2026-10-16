@@ -9,6 +9,7 @@ import 'package:arena_ops/app/providers/leave_providers.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_segmented.dart';
 import 'package:arena_ops/domain/leave/leave.dart';
 import 'package:flutter/material.dart';
@@ -96,9 +97,8 @@ class _ApplyLeaveSheetState extends ConsumerState<ApplyLeaveSheet> {
         ref.invalidate(myLeaveRequestsProvider);
         ref.invalidate(myLeaveBalanceProvider);
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Leave requested: ${days == days.roundToDouble() ? days.toInt() : days} '
-                'working ${days == 1 ? 'day' : 'days'}. You will see the decision here.')));
+        showToast(context, 'Leave requested: ${days == days.roundToDouble() ? days.toInt() : days} '
+                'working ${days == 1 ? 'day' : 'days'}. You will see the decision here.');
       case Err(failure: final f):
         setState(() {
           _busy = false;

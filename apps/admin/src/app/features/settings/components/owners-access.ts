@@ -1,4 +1,4 @@
-import { Component, computed, inject, output } from '@angular/core';
+import { Component, computed, inject, output, signal } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
@@ -86,7 +86,7 @@ import { UserDialog, UserDialogData, UserDialogResult } from '../../users/dialog
                 label="Works here as staff"
                 sub="Adds them to Team: attendance, leave and pay like any employee."
                 [checked]="works(o)"
-                [disabled]="!profileOf(o)"
+                [disabled]="!profileOf(o) || savingWorks()"
                 (changed)="setWorks(o, $event)"
               />
             }
@@ -116,6 +116,7 @@ export class OwnersAccess {
   private readonly session = inject(Session);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
+  protected readonly savingWorks = signal(false);
 
   readonly closed = output<void>();
 
@@ -149,8 +150,9 @@ export class OwnersAccess {
   /** hr_profile.save with tracks_attendance: the explicit "this owner is also an employee". */
   protected async setWorks(o: ArenaUser, event: MatSlideToggleChange): Promise<void> {
     const s = this.profileOf(o);
-    if (!s) return;
+    if (!s || this.savingWorks()) return;
     const draft = toHrDraft(resolvedProfile(s, this.pay.profileOf().get(s.id)));
+    this.savingWorks.set(true);
     try {
       await this.pay.saveProfile(s.id, { ...draft, tracksAttendance: event.checked });
       this.snack.open(
@@ -161,6 +163,8 @@ export class OwnersAccess {
     } catch (e) {
       event.source.checked = !event.checked;
       this.snack.open(toAppError(e).message, undefined, { duration: 3200 });
+    } finally {
+      this.savingWorks.set(false);
     }
   }
 

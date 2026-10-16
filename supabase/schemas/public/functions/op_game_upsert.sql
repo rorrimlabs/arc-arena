@@ -2,11 +2,13 @@
 --
 -- Permission: settings.
 -- Payload: id, name (trimmed, 1-80 characters, unique in the arena ignoring case), aliases[],
---   category_id?, platforms[], player_mode? (default 'single'), max_local_players? (default 1),
---   active? (default true on create; absent on an edit keeps the stored flag), base_active? (the
---   active flag the editor showed), age_rating? (3/7/12/16/18 or null), media? ('digital' /
---   'disc' or null). age_rating and media are written only when their key is present, so edits
---   from builds that do not send them (the floor app) keep the stored values.
+--   category_id?, platforms[], play_modes[]? (story / single / local / online, at least one;
+--   default {single}), max_local_players? (default 1), active? (default true on create; absent on
+--   an edit keeps the stored flag), base_active? (the active flag the editor showed), age_rating?
+--   (3-18 or null), media? ('digital' / 'disc' or null). age_rating and media are written only
+--   when their key is present, so edits from builds that do not send them (the floor app) keep
+--   the stored values. A build from before play_modes sends player_mode (single / local /
+--   online / both) instead: it is read as that one mode (both = local and online).
 -- An edit whose base_active differs from the stored flag, and that would change it, was made
 -- over an archive or restore done elsewhere meanwhile: it is refused (stale) rather than
 -- silently flipping the game back. An id that game.delete removed is never created again.
@@ -28,6 +30,15 @@ declare
   v_id     uuid := (p->>'id')::uuid;
   v_name   text := btrim(p->>'name');
   v_active boolean;
+  -- Deduplicated, in the column's canonical order; null when the payload names no mode (an edit
+  -- then keeps the stored ones).
+  v_modes  text[] := case
+    when p ? 'play_modes' then array(
+      select m from (select distinct jsonb_array_elements_text(p->'play_modes') as m) x
+       order by array_position(array['story', 'single', 'local', 'online'], m))
+    when p ? 'player_mode' then case p->>'player_mode'
+      when 'both' then array['local', 'online'] else array[p->>'player_mode'] end
+  end;
 begin
   perform _need(p_arena, 'settings');
   if v_id is null then raise exception 'invalid_payload' using hint = 'id'; end if;
@@ -57,18 +68,19 @@ begin
     raise exception 'duplicate' using hint = 'name';
   end if;
 
-  insert into games(id, arena_id, name, aliases, category_id, platforms, player_mode,
+  insert into games(id, arena_id, name, aliases, category_id, platforms, play_modes,
       max_local_players, active, age_rating, media)
     values (v_id, p_arena, v_name,
       array(select jsonb_array_elements_text(coalesce(p->'aliases', '[]'::jsonb))),
       nullif(p->>'category_id','')::uuid,
       array(select jsonb_array_elements_text(coalesce(p->'platforms', '[]'::jsonb))),
-      coalesce(p->>'player_mode', 'single'), coalesce((p->>'max_local_players')::int, 1),
+      coalesce(v_modes, '{single}'), coalesce((p->>'max_local_players')::int, 1),
       coalesce((p->>'active')::boolean, true),
       (p->>'age_rating')::smallint, p->>'media')
   on conflict (id) do update set name = excluded.name, aliases = excluded.aliases,
       category_id = excluded.category_id, platforms = excluded.platforms,
-      player_mode = excluded.player_mode, max_local_players = excluded.max_local_players,
+      play_modes = coalesce(v_modes, games.play_modes),
+      max_local_players = excluded.max_local_players,
       active = case when p ? 'active' then excluded.active else games.active end,
       age_rating = case when p ? 'age_rating' then excluded.age_rating else games.age_rating end,
       media = case when p ? 'media' then excluded.media else games.media end,

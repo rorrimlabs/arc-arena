@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/group_session_actions.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_choice_field.dart';
@@ -113,24 +114,31 @@ class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
   final Set<String> _returning = {};
 
   Future<void> _confirm() async {
+    if (_busy) return;
     setState(() => _busy = true);
     final r = await ref
         .read(groupSessionActionsProvider)
         .end(widget.group,
             markWaived: _waive,
             waiveReason: _waive ? _waiveReasonCtrl.text : null);
-    if (r.isOk && _returning.isNotEmpty) {
-      await returnPadsHome(ref, _returning);
-    }
+    final notReturned = r.isOk && _returning.isNotEmpty
+        ? _returning.length - await returnPadsHome(ref, _returning)
+        : 0;
     if (!mounted) return;
     setState(() => _busy = false);
     r.fold(
       (_) {
+        final toast = AppToast.of(context);
         Navigator.of(context).pop(); // close the sheet
         Navigator.of(context).maybePop(); // leave the detail screen
+        toast.show([
+          _waive ? 'Group waived (complimentary).' : 'Group ended and billed.',
+          if (notReturned > 0)
+            '$notReturned pad${notReturned == 1 ? ' was' : 's were'} not marked '
+                'returned; mark ${notReturned == 1 ? 'it' : 'them'} on the controller board.',
+        ].join(' '));
       },
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (f) => showFailure(context, f),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -133,8 +134,8 @@ class _GameRow extends ConsumerWidget {
       ),
       title: Text(game.name),
       subtitle: Text(
-        '${game.playerMode.label}'
-        '${game.playerMode.isMultiplayer ? ' · up to ${game.maxLocalPlayers}' : ''}'
+        '${PlayerMode.labelOf(game.playModes)}'
+        '${game.maxLocalPlayers > 1 ? ' · up to ${game.maxLocalPlayers}' : ''}'
         '${status.isPlayable ? '' : ' · ${status.label}'}'
         '${notes == null || notes!.isEmpty ? '' : ' · $notes'}',
       ),
@@ -183,14 +184,7 @@ class _GameRow extends ConsumerWidget {
       ref.invalidate(resourcesForGameProvider(game.id));
     }
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            r.failureOrNull?.display ??
-                '${game.name} on ${resource.name}: ${result.s.label}.',
-          ),
-        ),
-      );
+      showResult(context, r, '${game.name} on ${resource.name}: ${result.s.label}.');
     }
   }
 }

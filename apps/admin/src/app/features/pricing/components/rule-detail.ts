@@ -508,11 +508,12 @@ export class RuleDetail {
     const ids = this.store.rules().map((r) => r.id);
     const i = this.position();
     const j = i + step;
-    if (i < 0 || j < 0 || j >= ids.length) return;
+    if (this.busy() || i < 0 || j < 0 || j >= ids.length) return;
     [ids[i], ids[j]] = [ids[j], ids[i]];
     this.busy.set(true);
     try {
       await this.store.reorderRules(ids);
+      this.say('Order saved · new sessions use it');
     } catch (e) {
       this.say(toAppError(e).message);
     } finally {

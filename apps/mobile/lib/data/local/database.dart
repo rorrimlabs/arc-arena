@@ -174,7 +174,10 @@ class Games extends Table {
   TextColumn get aliases => text().map(const StringListConverter())();
   TextColumn get categoryId => text().nullable()();
   TextColumn get platforms => text().map(const StringListConverter())();
-  TextColumn get playerMode => text().withDefault(const Constant('single'))();
+  /// [PlayerMode] codes, one or more (server games.play_modes).
+  TextColumn get playModes => text()
+      .map(const StringListConverter())
+      .withDefault(const Constant('["single"]'))();
   IntColumn get maxLocalPlayers => integer().withDefault(const Constant(1))();
   BoolColumn get active => boolean().withDefault(const Constant(true))();
   DateTimeColumn get lastPlayedAt => dateTime().nullable()();
@@ -648,7 +651,7 @@ class AppDatabase extends _$AppDatabase {
   /// Readable without constructing (and therefore without opening) the
   /// database, so the pre-open backup in `main()` can compare it against what
   /// is on disk and decide whether a migration is about to run.
-  static const expectedSchemaVersion = 17;
+  static const expectedSchemaVersion = 18;
 
   @override
   int get schemaVersion => expectedSchemaVersion;
@@ -822,6 +825,22 @@ class AppDatabase extends _$AppDatabase {
           await customStatement(
             "UPDATE sync_meta SET value = '0' WHERE key = 'pull_cursor'",
           );
+        },
+        // v17 -> v18: a game has one or more play modes (story, single, local,
+        // online) instead of one player mode. Catalog only — no session,
+        // segment, charge or payment row is touched. Each game's mode is
+        // copied across (both = local and online), then the old column goes,
+        // as on the server.
+        17: (m) async {
+          await m.addColumn(games, games.playModes);
+          await customStatement(
+            "UPDATE games SET play_modes = CASE player_mode "
+            "WHEN 'local' THEN '[\"local\"]' "
+            "WHEN 'online' THEN '[\"online\"]' "
+            "WHEN 'both' THEN '[\"local\",\"online\"]' "
+            "ELSE '[\"single\"]' END",
+          );
+          await customStatement('ALTER TABLE games DROP COLUMN player_mode');
         },
       };
 

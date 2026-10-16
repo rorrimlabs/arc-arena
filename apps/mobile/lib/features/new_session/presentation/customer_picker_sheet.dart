@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/customer_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
 import 'package:arena_ops/features/customers/presentation/customer_create_dialog.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +30,7 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
   String _query = '';
   List<Customer> _results = const [];
   bool _searching = false;
+  bool _creatingGuest = false;
 
   Future<void> _search(String q) async {
     setState(() => _query = q);
@@ -67,14 +69,17 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
           SizedBox(
             height: 56,
             child: FilledButton.icon(
-              onPressed: () async {
+              onPressed: _creatingGuest
+                  ? null
+                  : () async {
+                setState(() => _creatingGuest = true);
                 final guest =
                     await ref.read(customerActionsProvider).createGuest();
                 if (!context.mounted) return;
+                setState(() => _creatingGuest = false);
                 guest.fold(
                   (c) => Navigator.of(context).pop(c),
-                  (f) => ScaffoldMessenger.of(context)
-                      .showSnackBar(SnackBar(content: Text(f.display))),
+                  (f) => showFailure(context, f),
                 );
               },
               icon: const Icon(Icons.bolt),

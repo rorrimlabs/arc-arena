@@ -4,6 +4,7 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_segmented.dart';
 import 'package:arena_ops/core/widgets/custom_duration_sheet.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
@@ -451,8 +452,7 @@ class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
   Future<void> _start() async {
     final incomplete = _sharedPadsIncomplete;
     if (incomplete != null) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(incomplete.display)));
+      showFailure(context, incomplete);
       return;
     }
     setState(() => _starting = true);
@@ -464,13 +464,9 @@ class _GroupSessionScreenState extends ConsumerState<GroupSessionScreen> {
         Navigator.of(context).pushReplacement(MaterialPageRoute(
           builder: (_) => GroupDetailScreen(groupId: group.id),
         ));
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Started group · ${_customer?.displayName ?? ''}')),
-        );
+        showToast(context, 'Started group · ${_customer?.displayName ?? ''}');
       },
-      (failure) => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(failure.display)),
-      ),
+      (failure) => showFailure(context, failure),
     );
   }
 }

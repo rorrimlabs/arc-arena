@@ -2,8 +2,10 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/entities/session.dart';
+import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/games/presentation/no_games_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -22,12 +24,21 @@ Future<void> showChangeGameSheet(BuildContext context, ActiveSession active) {
   );
 }
 
-class _ChangeGameSheet extends ConsumerWidget {
+class _ChangeGameSheet extends ConsumerStatefulWidget {
   const _ChangeGameSheet({required this.active});
   final ActiveSession active;
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<_ChangeGameSheet> createState() => _ChangeGameSheetState();
+}
+
+class _ChangeGameSheetState extends ConsumerState<_ChangeGameSheet> {
+  bool _busy = false;
+
+  ActiveSession get active => widget.active;
+
+  @override
+  Widget build(BuildContext context) {
     final current = active.current;
     final theme = Theme.of(context);
     // The library edits the catalog: only for those the server lets do it.
@@ -81,9 +92,10 @@ class _ChangeGameSheet extends ConsumerWidget {
                         ListTile(
                           leading: const Icon(Icons.videogame_asset_outlined),
                           title: Text(g.name),
-                          subtitle: Text(g.playerMode.label),
+                          subtitle: Text(PlayerMode.labelOf(g.playModes)),
                           selected: g.id == current.gameId,
-                          onTap: () => _change(context, ref, g),
+                          enabled: !_busy,
+                          onTap: () => _change(g),
                         ),
                     ],
                   ),
@@ -93,21 +105,22 @@ class _ChangeGameSheet extends ConsumerWidget {
     );
   }
 
-  Future<void> _change(BuildContext context, WidgetRef ref, Game g) async {
+  Future<void> _change(Game g) async {
+    if (_busy || g.id == active.current.gameId) return;
+    setState(() => _busy = true);
     final r = await ref.read(sessionActionsProvider).changeGame(
           session: active.session,
           current: active.current,
           gameId: g.id,
         );
-    if (!context.mounted) return;
+    if (!mounted) return;
+    setState(() => _busy = false);
     r.fold(
       (_) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Now playing ${g.name}')));
+        showToast(context, 'Now playing ${g.name}');
       },
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (f) => showFailure(context, f),
     );
   }
 }

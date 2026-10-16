@@ -152,6 +152,9 @@ const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
   ['salary_adjustment.', ['pay']],
   // Floor-only records the dashboard does not show.
   ['booking.', []],
+  // Personal details and terms: their tabs read them afresh each time they open.
+  ['staff_details.', []],
+  ['terms.', []],
 ];
 
 export function targetsForKind(kind: string): readonly RefreshTarget[] {

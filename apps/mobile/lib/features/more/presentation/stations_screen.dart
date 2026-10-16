@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
@@ -91,13 +92,7 @@ class StationsScreen extends ConsumerWidget {
         await ref.read(catalogActionsProvider).setStationStatus(r, status);
     if (result.isOk) ref.invalidate(resourcesProvider);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            result.failureOrNull?.display ?? '${r.name}: ${status.label}.',
-          ),
-        ),
-      );
+      showResult(context, result, '${r.name}: ${status.label}.');
     }
   }
 
@@ -117,11 +112,7 @@ class StationsScreen extends ConsumerWidget {
     final result = await ref.read(catalogActionsProvider).saveStation(saved);
     if (result.isOk) ref.invalidate(resourcesProvider);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(result.failureOrNull?.display ?? '${saved.name} saved.'),
-        ),
-      );
+      showResult(context, result, '${saved.name} saved.');
     }
   }
 }

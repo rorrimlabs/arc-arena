@@ -294,39 +294,36 @@ enum ReminderStatus {
       );
 }
 
-/// How a game can be played (spec §3).
+/// One way a game can be played (spec §3; server games.play_modes). A game has
+/// one or more, kept in this order.
 enum PlayerMode {
+  story,
   single,
-  localMultiplayer,
-  onlineMultiplayer,
-  both;
+  local,
+  online;
 
-  String get code => switch (this) {
-        PlayerMode.single => 'single',
-        PlayerMode.localMultiplayer => 'local',
-        PlayerMode.onlineMultiplayer => 'online',
-        PlayerMode.both => 'both',
-      };
+  String get code => name;
 
   String get label => switch (this) {
+        PlayerMode.story => 'Story Mode',
         PlayerMode.single => 'Single Player',
-        PlayerMode.localMultiplayer => 'Local Multiplayer',
-        PlayerMode.onlineMultiplayer => 'Online Multiplayer',
-        PlayerMode.both => 'Single & Multiplayer',
+        PlayerMode.local => 'Local Multiplayer',
+        PlayerMode.online => 'Online Multiplayer',
       };
 
-  bool get isMultiplayer =>
-      this == PlayerMode.localMultiplayer ||
-      this == PlayerMode.onlineMultiplayer ||
-      this == PlayerMode.both;
+  /// Stored codes as modes, in enum order. Codes this build does not know are
+  /// skipped; a game always has at least one mode (single when none is left).
+  static List<PlayerMode> fromCodes(Iterable<String> codes) {
+    final known = [
+      for (final m in PlayerMode.values)
+        if (codes.contains(m.code)) m,
+    ];
+    return known.isEmpty ? const [PlayerMode.single] : known;
+  }
 
-  static PlayerMode fromCode(String c) => switch (c) {
-        'single' => PlayerMode.single,
-        'local' => PlayerMode.localMultiplayer,
-        'online' => PlayerMode.onlineMultiplayer,
-        'both' => PlayerMode.both,
-        _ => throw ArgumentError('Unknown player_mode: $c'),
-      };
+  /// "Story Mode · Local Multiplayer".
+  static String labelOf(List<PlayerMode> modes) =>
+      modes.map((m) => m.label).join(' · ');
 }
 
 /// Whether a specific game can run on a specific resource (spec §4). A game is

@@ -224,7 +224,7 @@ describe('Games', () => {
           id: 'g-gt',
           name: 'Gran Turismo 7 Spec II',
           platforms: ['PS5'],
-          playerMode: 'local',
+          playModes: ['local'],
           maxLocalPlayers: 4,
           active: true,
           baseActive: true,
@@ -274,7 +274,7 @@ describe('Games', () => {
         payload: expect.objectContaining({
           name: 'Hades II',
           platforms: ['PS5'],
-          playerMode: 'single',
+          playModes: ['single'],
           maxLocalPlayers: 1,
           active: true,
           ageRating: 3,

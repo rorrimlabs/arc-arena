@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/providers/profile_providers.dart';
 import 'package:arena_ops/app/router/app_shell.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
@@ -6,6 +7,7 @@ import 'package:arena_ops/features/auth/presentation/login_screen.dart';
 import 'package:arena_ops/features/bookings/presentation/bookings_screen.dart';
 import 'package:arena_ops/features/floor/presentation/floor_screen.dart';
 import 'package:arena_ops/features/money/presentation/money_screen.dart';
+import 'package:arena_ops/features/profile/presentation/terms_screen.dart';
 import 'package:arena_ops/features/more/presentation/more_screen.dart';
 import 'package:arena_ops/features/reports/presentation/reports_screen.dart';
 import 'package:arena_ops/features/today/presentation/today_screen.dart';
@@ -21,6 +23,8 @@ final goRouterProvider = Provider<GoRouter>((ref) {
   // Re-run redirect whenever the signed-in user changes (sign in / out).
   final refresh = ValueNotifier<int>(0);
   ref.listen(authControllerProvider, (_, _) => refresh.value++);
+  // …and whenever the staff terms gate opens or closes.
+  ref.listen(termsGateProvider, (_, _) => refresh.value++);
   ref.onDispose(refresh.dispose);
 
   return GoRouter(
@@ -32,7 +36,14 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       final atLogin = loc == LoginScreen.path;
 
       if (user == null) return atLogin ? null : LoginScreen.path;
-      if (atLogin) return defaultPathFor(user);
+
+      // Staff terms not accepted, or not known yet: nothing but the terms
+      // screen (it shows the check, the failure with Retry, or the terms).
+      final atTerms = loc == TermsScreen.path;
+      if (ref.read(termsGateProvider) is! TermsGateOpen) {
+        return atTerms ? null : TermsScreen.path;
+      }
+      if (atLogin || atTerms) return defaultPathFor(user);
 
       // Block tabs the user can't access (e.g. staff → /money).
       for (final tab in AppTab.all) {
@@ -46,6 +57,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
       GoRoute(
         path: LoginScreen.path,
         builder: (context, state) => const LoginScreen(),
+      ),
+      GoRoute(
+        path: TermsScreen.path,
+        builder: (context, state) => const TermsScreen(),
       ),
       StatefulShellRoute.indexedStack(
         builder: (context, state, navigationShell) =>

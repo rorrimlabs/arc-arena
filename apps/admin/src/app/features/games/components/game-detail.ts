@@ -27,7 +27,7 @@ import {
   MEDIA,
   gameIcon,
   platformLabel,
-  playerModeLabel,
+  playModesLabel,
 } from '../data/game-view';
 import { GameStations } from './game-stations';
 
@@ -190,7 +190,7 @@ export class GameDetail {
   protected readonly platform = computed(() =>
     [platformLabel(this.game()), mediaLabel(this.game().media)].filter(Boolean).join(' · '),
   );
-  protected readonly players = computed(() => playerModeLabel(this.game()));
+  protected readonly players = computed(() => playModesLabel(this.game()));
   protected readonly hours = computed(() => `${Math.round((this.stats()?.minutes30 ?? 0) / 60)}h`);
   /** The members who play it most, read when the game is opened. */
   protected readonly fanRead = resource({
@@ -204,6 +204,10 @@ export class GameDetail {
   protected async setActive(event: MatSlideToggleChange): Promise<void> {
     const ok = await this.change(event.checked);
     if (!ok) event.source.checked = !event.checked;
+    else
+      this.snack.open(`${this.game().name} ${event.checked ? 'restored' : 'archived'}`, undefined, {
+        duration: 3200,
+      });
   }
 
   /**

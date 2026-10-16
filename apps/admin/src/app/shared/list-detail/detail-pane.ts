@@ -1,11 +1,18 @@
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, InjectionToken, inject, input, output } from '@angular/core';
+import { Component, Directive, InjectionToken, inject, input, output } from '@angular/core';
 import { MatIconButton } from '@angular/material/button';
 import { MatIcon } from '@angular/material/icon';
 import { Layout } from '../../core/layout/layout';
 
 /** Provided by DetailTabs: a detail pane inside a tab renders embedded. */
 export const EMBEDDED_DETAIL = new InjectionToken<boolean>('EMBEDDED_DETAIL');
+
+/** On a detail component's host: its pane renders embedded (an item opened inside a section). */
+@Directive({
+  selector: '[appEmbeddedDetail]',
+  providers: [{ provide: EMBEDDED_DETAIL, useValue: true }],
+})
+export class EmbeddedDetail {}
 
 /**
  * Detail pane body from the design (`dt.some` block): sticky 64px bar (close when it is an

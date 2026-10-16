@@ -35,9 +35,15 @@ class StationDetailScreen extends ConsumerWidget {
     final match = sessions.where((s) => s.session.id == sessionId).toList();
 
     if (match.isEmpty) {
-      // Session ended (e.g. billed) — leave the detail.
+      // Session ended (e.g. billed) — leave the detail. Remove this route
+      // itself, not the top one: the end sheet above it is still recording
+      // the payment.
       WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (context.mounted) Navigator.of(context).maybePop();
+        if (!context.mounted) return;
+        final route = ModalRoute.of(context);
+        if (route != null && route.isActive) {
+          Navigator.of(context).removeRoute(route);
+        }
       });
       return const Scaffold(body: SizedBox.shrink());
     }

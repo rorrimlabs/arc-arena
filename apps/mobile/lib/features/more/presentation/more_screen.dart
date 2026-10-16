@@ -3,6 +3,7 @@ import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/core/widgets/arena_placeholder_page.dart';
@@ -15,6 +16,7 @@ import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
 import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
+import 'package:arena_ops/features/profile/presentation/my_profile_screen.dart';
 import 'package:arena_ops/features/reports/presentation/session_log_screen.dart';
 import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
 import 'package:flutter/material.dart';
@@ -107,6 +109,12 @@ class MoreScreen extends ConsumerWidget {
                     builder: (_) => const LeaveScreen())),
               ),
               ArenaListRow(
+                icon: Icons.badge_outlined,
+                title: 'My profile',
+                subtitle: 'Contact, address and emergency contact',
+                onTap: () => _push(context, const MyProfileScreen()),
+              ),
+              ArenaListRow(
                 icon: Icons.warning_amber_rounded,
                 title: 'Issues',
                 subtitle: 'Report and resolve downtime',
@@ -192,8 +200,7 @@ class MoreScreen extends ConsumerWidget {
                           changePassword: cloud.changePassword),
                     );
                     if (changed == true && context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(content: Text('Password changed.')));
+                      showToast(context, 'Password changed.');
                     }
                   },
                 ),

@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/providers/core_providers.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
@@ -163,8 +164,7 @@ class _ExportButtonState extends ConsumerState<_ExportButton> {
       );
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Export failed: $e')));
+        showToast(context, 'Export failed. Try again.', kind: ToastKind.error);
       }
     } finally {
       if (mounted) setState(() => _busy = false);

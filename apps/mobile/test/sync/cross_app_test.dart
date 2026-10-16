@@ -384,7 +384,7 @@ void main() {
           id: gameId,
           name: 'IT Short-lived ${env['AO_IT_RUN']}',
           platforms: const ['PS5'],
-          playerMode: PlayerMode.single,
+          playModes: const [PlayerMode.single],
           maxLocalPlayers: 1,
         ));
         await owner.catalog

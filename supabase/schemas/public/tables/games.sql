@@ -15,7 +15,6 @@ create table "public"."games" (
   "aliases"           text[]                   not null default '{}'::text[],
   "category_id"       uuid,
   "platforms"         text[]                   not null default '{}'::text[],
-  "player_mode"       text                     not null default 'single'::text,
   "max_local_players" integer                  not null default 1,
   "active"            boolean                  not null default true,
   "last_played_at"    timestamp with time zone,
@@ -24,8 +23,9 @@ create table "public"."games" (
   "sync_xid"          xid8                     not null default pg_current_xact_id(),
   "age_rating"        smallint,
   "media"             text,
+  "play_modes"        text[]                   not null default '{single}'::text[],
   constraint "games_age_rating_check"
-    check ((age_rating = ANY (ARRAY[3, 7, 12, 16, 18]))),
+    check (((age_rating >= 3) AND (age_rating <= 18))),
   constraint "games_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade,
   constraint "games_arena_id_name_key" unique (arena_id, name),
@@ -37,15 +37,15 @@ create table "public"."games" (
   constraint "games_media_check"
     check ((media = ANY (ARRAY['digital'::text, 'disc'::text]))),
   constraint "games_pkey" primary key (id),
-  constraint "games_player_mode_check"
-    check ((player_mode = ANY (ARRAY['single'::text, 'local'::text, 'online'::text, 'both'::text])))
+  constraint "games_play_modes_check"
+    check (((cardinality(play_modes) >= 1) AND (play_modes <@ ARRAY['story'::text, 'single'::text, 'local'::text, 'online'::text])))
 );
 
 comment on table public.games is 'Game titles in an arena''s library, with search aliases, platforms, player limits and an active flag.';
 
 comment on column public.games.arena_id is 'Owning arena (tenant). RLS limits reads to arenas the caller is an active member of.';
 
-comment on column public.games.age_rating is 'Minimum age the title is rated for (PEGI-style 3, 7, 12, 16 or 18); null when not set. Shown on the admin dashboard; the floor app does not read it yet.';
+comment on column public.games.age_rating is 'Minimum age the title is rated for, a whole number of years from 3 to 18; null when not set. Shown on the admin dashboard; the floor app does not read it yet.';
 
 comment on column public.games.media is 'How the arena owns the title: digital or disc; null when not set. Shown on the admin dashboard; the floor app does not read it yet.';
 
@@ -55,7 +55,7 @@ comment on column public.games.category_id is 'Optional game_categories row; set
 
 comment on column public.games.platforms is 'Platform tags the title runs on (e.g. PS5, PSVR2). Free text; not validated.';
 
-comment on column public.games.player_mode is 'One of single, local (local multiplayer), online (online multiplayer), both (local and online).';
+comment on column public.games.play_modes is 'How the title can be played, one or more of story (story mode / campaign), single (single player, e.g. against the computer), local (local multiplayer), online (online multiplayer); listed in that order.';
 
 comment on column public.games.max_local_players is 'Most players (controllers) one system may use at once on this title, 1-8. Starts, reconfigures and group placements above it are refused with players_exceeded.';
 

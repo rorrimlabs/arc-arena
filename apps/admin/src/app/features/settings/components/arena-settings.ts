@@ -288,7 +288,11 @@ export class ArenaSettings {
         await this.arena.load(true);
         this.revision.update((n) => n + 1);
       }
-      if (next) await this.pricing.saveHours(next);
+      if (next) {
+        await this.pricing.saveHours(next);
+        // Overview's setup checklist reads whether hours were ever saved from the venue store.
+        void this.venue.load(true);
+      }
       this.snack.open('Settings saved · the floor app updates on next refresh', undefined, {
         duration: 3200,
       });

@@ -13,9 +13,9 @@ import { MatOption, MatSelect } from '@angular/material/select';
 import { toAppError } from '../../../core/auth/auth-api';
 import { FloorStore } from '../../../core/floor/floor-store';
 import { PushRefusal } from '../../../core/sync/push-ops';
-import { AgeRating, Game, GameMedia } from '../../../core/floor/floor.models';
+import { AgeRating, Game, GameMedia, PlayMode } from '../../../core/floor/floor.models';
 import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
-import { AGE_RATINGS, MAX_PLAYERS, MEDIA, PLAYER_MODES } from '../data/game-view';
+import { AGE_RATINGS, MAX_PLAYERS, MEDIA, PLAY_MODES } from '../data/game-view';
 
 export interface GameDialogData {
   /** Platforms to choose from (in use, plus the game-based station types). */
@@ -40,7 +40,7 @@ const MAX_TITLE = 80;
 /**
  * Design: dialog `d.k === 'game'`. Adds a game to the catalog staff pick from when starting a
  * session (game.upsert, plus game.set_compat for the stations picked, in the same batch), or edits
- * one: title, platforms, player mode, players per station, age rating and media. An edit sends the
+ * one: title, platforms, play modes (one or more), players per station, age rating and media. An edit sends the
  * active flag it showed, so it is refused (not applied) if the game was archived or restored
  * elsewhere meanwhile. Station statuses of an existing game are set on its detail pane.
  */
@@ -98,8 +98,13 @@ const MAX_TITLE = 80;
           </mat-form-field>
           <div class="grid grid-cols-2 gap-4">
             <mat-form-field>
-              <mat-label>Player mode</mat-label>
-              <mat-select [value]="playerMode()" (selectionChange)="setMode($event.value)">
+              <mat-label>Play modes</mat-label>
+              <mat-select
+                multiple
+                placeholder="Pick at least one"
+                [value]="playModes()"
+                (selectionChange)="setModes($event.value)"
+              >
                 @for (m of modes; track m.key) {
                   <mat-option [value]="m.key">{{ m.label }}</mat-option>
                 }
@@ -107,12 +112,18 @@ const MAX_TITLE = 80;
             </mat-form-field>
             <mat-form-field>
               <mat-label>Players per station</mat-label>
-              <mat-select [value]="maxPlayers()" (selectionChange)="maxPlayers.set($event.value)">
+              <mat-select
+                [value]="maxPlayers()"
+                [disabled]="!local()"
+                (selectionChange)="maxPlayers.set($event.value)"
+              >
                 @for (n of playerCounts; track n) {
                   <mat-option [value]="n">{{ n }}</mat-option>
                 }
               </mat-select>
-              <mat-hint>Most controllers one station may use on it</mat-hint>
+              <mat-hint>{{
+                local() ? 'Most controllers one station may use on it' : 'One: no local multiplayer'
+              }}</mat-hint>
             </mat-form-field>
           </div>
           <div class="grid grid-cols-2 gap-4">
@@ -186,7 +197,7 @@ export class GameDialog {
   protected readonly editing = this.data.game;
   protected readonly ages = AGE_RATINGS;
   protected readonly media = MEDIA;
-  protected readonly modes = PLAYER_MODES;
+  protected readonly modes = PLAY_MODES;
   protected readonly playerCounts = Array.from({ length: MAX_PLAYERS }, (_, i) => i + 1);
   protected readonly maxTitle = MAX_TITLE;
 
@@ -201,8 +212,10 @@ export class GameDialog {
       ? this.editing.platforms
       : [this.data.platform ?? this.data.platforms[0]].filter((p): p is string => !!p),
   );
-  protected readonly playerMode = signal<Game['playerMode']>(this.editing?.playerMode ?? 'single');
+  protected readonly playModes = signal<readonly PlayMode[]>(this.editing?.playModes ?? ['single']);
   protected readonly maxPlayers = signal(this.editing?.maxLocalPlayers ?? 1);
+  /** Only local multiplayer puts more than one controller on a station. */
+  protected readonly local = computed(() => this.playModes().includes('local'));
   /** Station ids; none until the owner picks them. */
   protected readonly playableOn = signal<readonly string[]>([]);
   protected readonly error = signal('');
@@ -213,10 +226,11 @@ export class GameDialog {
     [...new Set([...this.data.platforms, ...(this.editing?.platforms ?? [])])].sort(),
   );
 
-  protected setMode(mode: Game['playerMode']): void {
-    this.playerMode.set(mode);
-    // A single-player title takes one controller; a multiplayer one at least two.
-    if (mode === 'single') this.maxPlayers.set(1);
+  protected setModes(picked: readonly PlayMode[]): void {
+    // Kept in the order they are stored and shown.
+    this.playModes.set(PLAY_MODES.map((m) => m.key).filter((k) => picked.includes(k)));
+    // Without local multiplayer a station takes one controller; with it at least two.
+    if (!this.local()) this.maxPlayers.set(1);
     else if (this.maxPlayers() < 2) this.maxPlayers.set(2);
   }
 
@@ -230,6 +244,10 @@ export class GameDialog {
     }
     if (name.length > MAX_TITLE) {
       this.error.set(`Keep the title to ${MAX_TITLE} characters`);
+      return;
+    }
+    if (!this.playModes().length) {
+      this.error.set('Pick at least one play mode');
       return;
     }
     const id = this.editing?.id ?? crypto.randomUUID();
@@ -248,7 +266,7 @@ export class GameDialog {
       aliases: this.editing?.aliases ?? [],
       categoryId: this.editing?.categoryId ?? null,
       platforms: this.platforms(),
-      playerMode: this.playerMode(),
+      playModes: this.playModes(),
       maxLocalPlayers: this.maxPlayers(),
       active: this.editing?.active ?? true,
       ageRating: this.age(),

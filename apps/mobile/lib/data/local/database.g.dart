@@ -4208,18 +4208,16 @@ class $GamesTable extends Games with TableInfo<$GamesTable, GameRow> {
         type: DriftSqlType.string,
         requiredDuringInsert: true,
       ).withConverter<List<String>>($GamesTable.$converterplatforms);
-  static const VerificationMeta _playerModeMeta = const VerificationMeta(
-    'playerMode',
-  );
   @override
-  late final GeneratedColumn<String> playerMode = GeneratedColumn<String>(
-    'player_mode',
-    aliasedName,
-    false,
-    type: DriftSqlType.string,
-    requiredDuringInsert: false,
-    defaultValue: const Constant('single'),
-  );
+  late final GeneratedColumnWithTypeConverter<List<String>, String> playModes =
+      GeneratedColumn<String>(
+        'play_modes',
+        aliasedName,
+        false,
+        type: DriftSqlType.string,
+        requiredDuringInsert: false,
+        defaultValue: const Constant('["single"]'),
+      ).withConverter<List<String>>($GamesTable.$converterplayModes);
   static const VerificationMeta _maxLocalPlayersMeta = const VerificationMeta(
     'maxLocalPlayers',
   );
@@ -4263,7 +4261,7 @@ class $GamesTable extends Games with TableInfo<$GamesTable, GameRow> {
     aliases,
     categoryId,
     platforms,
-    playerMode,
+    playModes,
     maxLocalPlayers,
     active,
     lastPlayedAt,
@@ -4297,12 +4295,6 @@ class $GamesTable extends Games with TableInfo<$GamesTable, GameRow> {
       context.handle(
         _categoryIdMeta,
         categoryId.isAcceptableOrUnknown(data['category_id']!, _categoryIdMeta),
-      );
-    }
-    if (data.containsKey('player_mode')) {
-      context.handle(
-        _playerModeMeta,
-        playerMode.isAcceptableOrUnknown(data['player_mode']!, _playerModeMeta),
       );
     }
     if (data.containsKey('max_local_players')) {
@@ -4362,10 +4354,12 @@ class $GamesTable extends Games with TableInfo<$GamesTable, GameRow> {
           data['${effectivePrefix}platforms'],
         )!,
       ),
-      playerMode: attachedDatabase.typeMapping.read(
-        DriftSqlType.string,
-        data['${effectivePrefix}player_mode'],
-      )!,
+      playModes: $GamesTable.$converterplayModes.fromSql(
+        attachedDatabase.typeMapping.read(
+          DriftSqlType.string,
+          data['${effectivePrefix}play_modes'],
+        )!,
+      ),
       maxLocalPlayers: attachedDatabase.typeMapping.read(
         DriftSqlType.int,
         data['${effectivePrefix}max_local_players'],
@@ -4390,6 +4384,8 @@ class $GamesTable extends Games with TableInfo<$GamesTable, GameRow> {
       const StringListConverter();
   static TypeConverter<List<String>, String> $converterplatforms =
       const StringListConverter();
+  static TypeConverter<List<String>, String> $converterplayModes =
+      const StringListConverter();
 }
 
 class GameRow extends DataClass implements Insertable<GameRow> {
@@ -4398,7 +4394,9 @@ class GameRow extends DataClass implements Insertable<GameRow> {
   final List<String> aliases;
   final String? categoryId;
   final List<String> platforms;
-  final String playerMode;
+
+  /// [PlayerMode] codes, one or more (server games.play_modes).
+  final List<String> playModes;
   final int maxLocalPlayers;
   final bool active;
   final DateTime? lastPlayedAt;
@@ -4408,7 +4406,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
     required this.aliases,
     this.categoryId,
     required this.platforms,
-    required this.playerMode,
+    required this.playModes,
     required this.maxLocalPlayers,
     required this.active,
     this.lastPlayedAt,
@@ -4431,7 +4429,11 @@ class GameRow extends DataClass implements Insertable<GameRow> {
         $GamesTable.$converterplatforms.toSql(platforms),
       );
     }
-    map['player_mode'] = Variable<String>(playerMode);
+    {
+      map['play_modes'] = Variable<String>(
+        $GamesTable.$converterplayModes.toSql(playModes),
+      );
+    }
     map['max_local_players'] = Variable<int>(maxLocalPlayers);
     map['active'] = Variable<bool>(active);
     if (!nullToAbsent || lastPlayedAt != null) {
@@ -4449,7 +4451,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
           ? const Value.absent()
           : Value(categoryId),
       platforms: Value(platforms),
-      playerMode: Value(playerMode),
+      playModes: Value(playModes),
       maxLocalPlayers: Value(maxLocalPlayers),
       active: Value(active),
       lastPlayedAt: lastPlayedAt == null && nullToAbsent
@@ -4469,7 +4471,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
       aliases: serializer.fromJson<List<String>>(json['aliases']),
       categoryId: serializer.fromJson<String?>(json['categoryId']),
       platforms: serializer.fromJson<List<String>>(json['platforms']),
-      playerMode: serializer.fromJson<String>(json['playerMode']),
+      playModes: serializer.fromJson<List<String>>(json['playModes']),
       maxLocalPlayers: serializer.fromJson<int>(json['maxLocalPlayers']),
       active: serializer.fromJson<bool>(json['active']),
       lastPlayedAt: serializer.fromJson<DateTime?>(json['lastPlayedAt']),
@@ -4484,7 +4486,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
       'aliases': serializer.toJson<List<String>>(aliases),
       'categoryId': serializer.toJson<String?>(categoryId),
       'platforms': serializer.toJson<List<String>>(platforms),
-      'playerMode': serializer.toJson<String>(playerMode),
+      'playModes': serializer.toJson<List<String>>(playModes),
       'maxLocalPlayers': serializer.toJson<int>(maxLocalPlayers),
       'active': serializer.toJson<bool>(active),
       'lastPlayedAt': serializer.toJson<DateTime?>(lastPlayedAt),
@@ -4497,7 +4499,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
     List<String>? aliases,
     Value<String?> categoryId = const Value.absent(),
     List<String>? platforms,
-    String? playerMode,
+    List<String>? playModes,
     int? maxLocalPlayers,
     bool? active,
     Value<DateTime?> lastPlayedAt = const Value.absent(),
@@ -4507,7 +4509,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
     aliases: aliases ?? this.aliases,
     categoryId: categoryId.present ? categoryId.value : this.categoryId,
     platforms: platforms ?? this.platforms,
-    playerMode: playerMode ?? this.playerMode,
+    playModes: playModes ?? this.playModes,
     maxLocalPlayers: maxLocalPlayers ?? this.maxLocalPlayers,
     active: active ?? this.active,
     lastPlayedAt: lastPlayedAt.present ? lastPlayedAt.value : this.lastPlayedAt,
@@ -4521,9 +4523,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
           ? data.categoryId.value
           : this.categoryId,
       platforms: data.platforms.present ? data.platforms.value : this.platforms,
-      playerMode: data.playerMode.present
-          ? data.playerMode.value
-          : this.playerMode,
+      playModes: data.playModes.present ? data.playModes.value : this.playModes,
       maxLocalPlayers: data.maxLocalPlayers.present
           ? data.maxLocalPlayers.value
           : this.maxLocalPlayers,
@@ -4542,7 +4542,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
           ..write('aliases: $aliases, ')
           ..write('categoryId: $categoryId, ')
           ..write('platforms: $platforms, ')
-          ..write('playerMode: $playerMode, ')
+          ..write('playModes: $playModes, ')
           ..write('maxLocalPlayers: $maxLocalPlayers, ')
           ..write('active: $active, ')
           ..write('lastPlayedAt: $lastPlayedAt')
@@ -4557,7 +4557,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
     aliases,
     categoryId,
     platforms,
-    playerMode,
+    playModes,
     maxLocalPlayers,
     active,
     lastPlayedAt,
@@ -4571,7 +4571,7 @@ class GameRow extends DataClass implements Insertable<GameRow> {
           other.aliases == this.aliases &&
           other.categoryId == this.categoryId &&
           other.platforms == this.platforms &&
-          other.playerMode == this.playerMode &&
+          other.playModes == this.playModes &&
           other.maxLocalPlayers == this.maxLocalPlayers &&
           other.active == this.active &&
           other.lastPlayedAt == this.lastPlayedAt);
@@ -4583,7 +4583,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
   final Value<List<String>> aliases;
   final Value<String?> categoryId;
   final Value<List<String>> platforms;
-  final Value<String> playerMode;
+  final Value<List<String>> playModes;
   final Value<int> maxLocalPlayers;
   final Value<bool> active;
   final Value<DateTime?> lastPlayedAt;
@@ -4594,7 +4594,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
     this.aliases = const Value.absent(),
     this.categoryId = const Value.absent(),
     this.platforms = const Value.absent(),
-    this.playerMode = const Value.absent(),
+    this.playModes = const Value.absent(),
     this.maxLocalPlayers = const Value.absent(),
     this.active = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
@@ -4606,7 +4606,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
     required List<String> aliases,
     this.categoryId = const Value.absent(),
     required List<String> platforms,
-    this.playerMode = const Value.absent(),
+    this.playModes = const Value.absent(),
     this.maxLocalPlayers = const Value.absent(),
     this.active = const Value.absent(),
     this.lastPlayedAt = const Value.absent(),
@@ -4621,7 +4621,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
     Expression<String>? aliases,
     Expression<String>? categoryId,
     Expression<String>? platforms,
-    Expression<String>? playerMode,
+    Expression<String>? playModes,
     Expression<int>? maxLocalPlayers,
     Expression<bool>? active,
     Expression<DateTime>? lastPlayedAt,
@@ -4633,7 +4633,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
       if (aliases != null) 'aliases': aliases,
       if (categoryId != null) 'category_id': categoryId,
       if (platforms != null) 'platforms': platforms,
-      if (playerMode != null) 'player_mode': playerMode,
+      if (playModes != null) 'play_modes': playModes,
       if (maxLocalPlayers != null) 'max_local_players': maxLocalPlayers,
       if (active != null) 'active': active,
       if (lastPlayedAt != null) 'last_played_at': lastPlayedAt,
@@ -4647,7 +4647,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
     Value<List<String>>? aliases,
     Value<String?>? categoryId,
     Value<List<String>>? platforms,
-    Value<String>? playerMode,
+    Value<List<String>>? playModes,
     Value<int>? maxLocalPlayers,
     Value<bool>? active,
     Value<DateTime?>? lastPlayedAt,
@@ -4659,7 +4659,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
       aliases: aliases ?? this.aliases,
       categoryId: categoryId ?? this.categoryId,
       platforms: platforms ?? this.platforms,
-      playerMode: playerMode ?? this.playerMode,
+      playModes: playModes ?? this.playModes,
       maxLocalPlayers: maxLocalPlayers ?? this.maxLocalPlayers,
       active: active ?? this.active,
       lastPlayedAt: lastPlayedAt ?? this.lastPlayedAt,
@@ -4689,8 +4689,10 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
         $GamesTable.$converterplatforms.toSql(platforms.value),
       );
     }
-    if (playerMode.present) {
-      map['player_mode'] = Variable<String>(playerMode.value);
+    if (playModes.present) {
+      map['play_modes'] = Variable<String>(
+        $GamesTable.$converterplayModes.toSql(playModes.value),
+      );
     }
     if (maxLocalPlayers.present) {
       map['max_local_players'] = Variable<int>(maxLocalPlayers.value);
@@ -4715,7 +4717,7 @@ class GamesCompanion extends UpdateCompanion<GameRow> {
           ..write('aliases: $aliases, ')
           ..write('categoryId: $categoryId, ')
           ..write('platforms: $platforms, ')
-          ..write('playerMode: $playerMode, ')
+          ..write('playModes: $playModes, ')
           ..write('maxLocalPlayers: $maxLocalPlayers, ')
           ..write('active: $active, ')
           ..write('lastPlayedAt: $lastPlayedAt, ')
@@ -19776,7 +19778,7 @@ typedef $$GamesTableCreateCompanionBuilder = GamesCompanion Function({
   required List<String> aliases,
   Value<String?> categoryId,
   required List<String> platforms,
-  Value<String> playerMode,
+  Value<List<String>> playModes,
   Value<int> maxLocalPlayers,
   Value<bool> active,
   Value<DateTime?> lastPlayedAt,
@@ -19788,7 +19790,7 @@ typedef $$GamesTableUpdateCompanionBuilder = GamesCompanion Function({
   Value<List<String>> aliases,
   Value<String?> categoryId,
   Value<List<String>> platforms,
-  Value<String> playerMode,
+  Value<List<String>> playModes,
   Value<int> maxLocalPlayers,
   Value<bool> active,
   Value<DateTime?> lastPlayedAt,
@@ -19830,9 +19832,10 @@ class $$GamesTableFilterComposer extends Composer<_$AppDatabase, $GamesTable> {
     builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 
-  ColumnFilters<String> get playerMode => $composableBuilder(
-    column: $table.playerMode,
-    builder: (column) => ColumnFilters(column),
+  ColumnWithTypeConverterFilters<List<String>, List<String>, String>
+  get playModes => $composableBuilder(
+    column: $table.playModes,
+    builder: (column) => ColumnWithTypeConverterFilters(column),
   );
 
   ColumnFilters<int> get maxLocalPlayers => $composableBuilder(
@@ -19885,8 +19888,8 @@ class $$GamesTableOrderingComposer
     builder: (column) => ColumnOrderings(column),
   );
 
-  ColumnOrderings<String> get playerMode => $composableBuilder(
-    column: $table.playerMode,
+  ColumnOrderings<String> get playModes => $composableBuilder(
+    column: $table.playModes,
     builder: (column) => ColumnOrderings(column),
   );
 
@@ -19932,10 +19935,8 @@ class $$GamesTableAnnotationComposer
   GeneratedColumnWithTypeConverter<List<String>, String> get platforms =>
       $composableBuilder(column: $table.platforms, builder: (column) => column);
 
-  GeneratedColumn<String> get playerMode => $composableBuilder(
-    column: $table.playerMode,
-    builder: (column) => column,
-  );
+  GeneratedColumnWithTypeConverter<List<String>, String> get playModes =>
+      $composableBuilder(column: $table.playModes, builder: (column) => column);
 
   GeneratedColumn<int> get maxLocalPlayers => $composableBuilder(
     column: $table.maxLocalPlayers,
@@ -19984,7 +19985,7 @@ class $$GamesTableTableManager
                 Value<List<String>> aliases = const Value.absent(),
                 Value<String?> categoryId = const Value.absent(),
                 Value<List<String>> platforms = const Value.absent(),
-                Value<String> playerMode = const Value.absent(),
+                Value<List<String>> playModes = const Value.absent(),
                 Value<int> maxLocalPlayers = const Value.absent(),
                 Value<bool> active = const Value.absent(),
                 Value<DateTime?> lastPlayedAt = const Value.absent(),
@@ -19995,7 +19996,7 @@ class $$GamesTableTableManager
                 aliases: aliases,
                 categoryId: categoryId,
                 platforms: platforms,
-                playerMode: playerMode,
+                playModes: playModes,
                 maxLocalPlayers: maxLocalPlayers,
                 active: active,
                 lastPlayedAt: lastPlayedAt,
@@ -20008,7 +20009,7 @@ class $$GamesTableTableManager
                 required List<String> aliases,
                 Value<String?> categoryId = const Value.absent(),
                 required List<String> platforms,
-                Value<String> playerMode = const Value.absent(),
+                Value<List<String>> playModes = const Value.absent(),
                 Value<int> maxLocalPlayers = const Value.absent(),
                 Value<bool> active = const Value.absent(),
                 Value<DateTime?> lastPlayedAt = const Value.absent(),
@@ -20019,7 +20020,7 @@ class $$GamesTableTableManager
                 aliases: aliases,
                 categoryId: categoryId,
                 platforms: platforms,
-                playerMode: playerMode,
+                playModes: playModes,
                 maxLocalPlayers: maxLocalPlayers,
                 active: active,
                 lastPlayedAt: lastPlayedAt,

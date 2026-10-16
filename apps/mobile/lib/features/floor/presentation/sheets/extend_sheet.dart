@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/session_actions.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/custom_duration_sheet.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/services/session_planner.dart';
@@ -138,10 +139,9 @@ class _ExtendSheetState extends ConsumerState<_ExtendSheet> {
     r.fold(
       (_) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text('Extended by $_minutes min')));
+        showToast(context, 'Extended by $_minutes min');
       },
-      (f) => ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(f.display))),
+      (f) => showFailure(context, f),
     );
   }
 }

@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/features/games/presentation/widgets/button_glyph.dart';
 import 'package:flutter/material.dart';
@@ -181,9 +182,7 @@ class _ControlsEditScreenState extends ConsumerState<ControlsEditScreen> {
     if (r.isErr) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(r.failureOrNull!.display)),
-      );
+      showFailure(context, r.failureOrNull!);
       return;
     }
     ref.invalidate(gameControlsProvider(widget.game.id));
@@ -192,9 +191,7 @@ class _ControlsEditScreenState extends ConsumerState<ControlsEditScreen> {
       _saving = false;
       _dirty = false;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Controls saved for ${widget.game.name}.')),
-    );
+    showToast(context, 'Controls saved for ${widget.game.name}.');
   }
 }
 

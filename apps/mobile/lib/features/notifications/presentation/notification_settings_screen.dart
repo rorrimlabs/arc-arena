@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/domain/notifications/notification_settings.dart';
@@ -39,8 +40,7 @@ class _NotificationSettingsScreenState
     if (!mounted) return;
     if (r.isErr) {
       setState(() => _local = before);
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(r.failureOrNull!.display)));
+      showFailure(context, r.failureOrNull!);
       return;
     }
     // Turning alerts on may have asked the phone for permission.
@@ -61,8 +61,7 @@ class _NotificationSettingsScreenState
         .read(notificationSettingsActionsProvider)
         .openPhoneSettings();
     if (!opened && mounted) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(_whereToAllow)));
+      showToast(context, _whereToAllow, kind: ToastKind.info);
     }
   }
 
@@ -74,16 +73,10 @@ class _NotificationSettingsScreenState
   Future<void> _sendTest(bool blocked) async {
     await ref.read(notificationSettingsActionsProvider).sendTestAlert();
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          blocked
+    showToast(context, blocked
               ? "The phone blocks notifications, so the test alert won't show. "
                     'Allow them first.'
-              : 'Test alert in 5 seconds. Lock the phone to hear it.',
-        ),
-      ),
-    );
+              : 'Test alert in 5 seconds. Lock the phone to hear it.');
   }
 
   String get _whereToAllow => _iPhone

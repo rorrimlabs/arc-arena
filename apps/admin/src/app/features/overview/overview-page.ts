@@ -1,9 +1,9 @@
 import { Component, computed, effect, inject, input } from '@angular/core';
-import { MatButton } from '@angular/material/button';
+import { MatAnchor, MatButton } from '@angular/material/button';
 import { MatButtonToggle, MatButtonToggleGroup } from '@angular/material/button-toggle';
 import { MatCard } from '@angular/material/card';
 import { MatProgressBar } from '@angular/material/progress-bar';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
 import { FloorStore } from '../../core/floor/floor-store';
 import { initials } from '../../core/floor/floor.models';
@@ -12,6 +12,7 @@ import { injectNow } from '../../core/time/ticker';
 import { VenueStore } from '../../core/venue/venue';
 import { formatRupees } from '../../shared/money/rupees.pipe';
 import { PricingStore } from '../pricing/data/pricing-store';
+import { findRate, rateRows } from '../pricing/data/pricing.models';
 import { LivePane } from './components/live-pane';
 import { OverviewStore } from './data/overview-store';
 import {
@@ -26,6 +27,15 @@ import {
   withAverage,
 } from './data/overview.models';
 
+interface SetupItem {
+  readonly key: string;
+  readonly title: string;
+  readonly detail: string;
+  readonly link: string;
+  /** Blocks starting sessions; otherwise only recommended. */
+  readonly required: boolean;
+}
+
 /**
  * Overview: the period's takings against the one before, a takings chart, payment split and
  * discounts given, takings by station type, top games and staff, with the Live aside. Every
@@ -37,6 +47,8 @@ import {
   imports: [
     PageHeader,
     LivePane,
+    RouterLink,
+    MatAnchor,
     MatButton,
     MatButtonToggleGroup,
     MatButtonToggle,
@@ -62,18 +74,49 @@ import {
         <mat-progress-bar mode="indeterminate" aria-label="Loading figures" />
       }
       <div class="flex flex-col gap-4 p-5">
-        @if (setupNeeded()) {
+        @if (setup(); as items) {
           <mat-card appearance="outlined">
-            <div class="flex flex-wrap items-center gap-3 p-5">
-              <span class="icon text-2xl text-primary" aria-hidden="true">rocket_launch</span>
-              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
-                <h2 class="text-base leading-[1.2] font-semibold">Finish setting up</h2>
-                <p class="text-[13px] text-muted">
-                  Tell us what you run, when you are open and what you charge.
-                </p>
+            <section class="flex flex-col gap-4 p-5" aria-labelledby="setup-heading">
+              <div class="flex flex-wrap items-center gap-3">
+                <span class="icon text-2xl text-warning" aria-hidden="true">rocket_launch</span>
+                <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                  <h2 id="setup-heading" class="text-base leading-[1.2] font-semibold">
+                    Complete your setup
+                  </h2>
+                  <p class="text-[13px] text-muted">
+                    {{ setupRequired() }}
+                    {{ setupRequired() === 1 ? 'setting needs' : 'settings need' }} attention before
+                    staff can start sessions.
+                  </p>
+                </div>
+                <button mat-stroked-button type="button" (click)="openSetup()">Guided setup</button>
               </div>
-              <button mat-flat-button type="button" (click)="openSetup()">Continue setup</button>
-            </div>
+              <ul class="flex flex-col divide-y divide-line">
+                @for (item of items; track item.key) {
+                  <li class="flex flex-wrap items-center gap-3 py-3 first:pt-0 last:pb-0">
+                    <span
+                      class="icon text-xl"
+                      [class.text-warning]="item.required"
+                      [class.text-subtle]="!item.required"
+                      aria-hidden="true"
+                      >{{ item.required ? 'error' : 'info' }}</span
+                    >
+                    <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                      <span class="text-sm font-medium">
+                        {{ item.title }}
+                        @if (!item.required) {
+                          <span class="text-xs font-normal text-muted">· Recommended</span>
+                        }
+                      </span>
+                      <span class="text-[13px] text-muted">{{ item.detail }}</span>
+                    </div>
+                    <a mat-button [routerLink]="item.link">
+                      Set up <span class="icon text-base" aria-hidden="true">arrow_forward</span>
+                    </a>
+                  </li>
+                }
+              </ul>
+            </section>
           </mat-card>
         }
         <p class="text-sm leading-[1.4] text-muted">{{ subtitle() }}</p>
@@ -288,16 +331,62 @@ export class OverviewPage {
   protected readonly store = inject(OverviewStore);
   private readonly floor = inject(FloorStore);
   protected readonly venue = inject(VenueStore);
-  /** A venue with no active station type or nothing on its floor yet: setup is unfinished. */
-  protected readonly setupNeeded = computed(() => {
-    const types = this.venue.types();
-    if (types === null || !this.floor.stationsReady()) return false;
-    return (
-      !types.some((t) => t.active) || !this.floor.stations().some((s) => s.status !== 'disabled')
-    );
-  });
   protected readonly pricing = inject(PricingStore);
   private readonly arena = inject(ArenaContext);
+  /**
+   * What still stops staff starting sessions (the setup wizard's own checks), plus opening hours
+   * as a recommendation (the floor app falls back to default hours). Null — nothing shown — while
+   * any of it is unread or failed to read, when nothing required is missing, or for a member who
+   * may not change settings.
+   */
+  protected readonly setup = computed<readonly SetupItem[] | null>(() => {
+    const pricing = this.pricing.data();
+    if (!this.arena.canEdit() || !pricing || this.venue.types() === null) return null;
+    if (!this.floor.stationsReady()) return null;
+    const many = this.venue.words().many.toLowerCase();
+    const active = pricing.types.filter((t) => t.active);
+    const unpriced = active.filter((t) =>
+      rateRows(t).some((row) => !findRate(pricing.rates, t.code, row)),
+    );
+    const items: SetupItem[] = [];
+    if (!active.length)
+      items.push({
+        key: 'types',
+        title: 'Choose what you rent out',
+        detail: 'Turn on at least one type so staff can start sessions.',
+        link: '/settings/types',
+        required: true,
+      });
+    if (unpriced.length)
+      items.push({
+        key: 'prices',
+        title: 'Set your prices',
+        detail: `${unpriced.map((t) => t.name).join(', ')} ${unpriced.length === 1 ? 'has' : 'have'} no price yet; sessions on ${unpriced.length === 1 ? 'it' : 'them'} can't be billed.`,
+        link: '/pricing',
+        required: true,
+      });
+    if (!this.floor.stations().some((s) => s.status !== 'disabled'))
+      items.push({
+        key: 'floor',
+        title: `Add your ${many}`,
+        detail: `Nothing is on the floor yet, so there is nothing to start a session on.`,
+        link: '/stations',
+        required: true,
+      });
+    if (!items.length) return null;
+    if (!this.venue.hoursSaved())
+      items.push({
+        key: 'hours',
+        title: 'Set opening hours',
+        detail: 'The floor app uses default hours until you set yours.',
+        link: '/settings/arena',
+        required: false,
+      });
+    return items;
+  });
+  protected readonly setupRequired = computed(
+    () => this.setup()?.filter((i) => i.required).length ?? 0,
+  );
   private readonly router = inject(Router);
 
   /** `?period=` — today | 7d | 30d | 12m (default today). */

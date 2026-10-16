@@ -3,12 +3,13 @@ import {
   CompatStatus,
   Game,
   GameMedia,
+  PlayMode,
   Station,
 } from '../../../core/floor/floor.models';
 import { PillTone } from '../../../shared/status-pill/status-pill';
 
-/** The age ratings and media the catalog accepts (games.age_rating / games.media). */
-export const AGE_RATINGS: readonly AgeRating[] = [3, 7, 12, 16, 18];
+/** The age ratings (any whole age, 3 to 18) and media the catalog accepts (games.age_rating / games.media). */
+export const AGE_RATINGS: readonly AgeRating[] = Array.from({ length: 16 }, (_, i) => i + 3);
 export const MEDIA: readonly { readonly key: GameMedia; readonly label: string }[] = [
   { key: 'digital', label: 'Digital' },
   { key: 'disc', label: 'Disc' },
@@ -63,21 +64,34 @@ export function ageTone(age: AgeRating): PillTone {
   return age >= 18 ? 'age18' : age >= 16 ? 'age16' : 'info';
 }
 
-/** games.player_mode values, as the dialog offers them. */
-export const PLAYER_MODES: readonly { readonly key: Game['playerMode']; readonly label: string }[] =
-  [
-    { key: 'single', label: 'Single player' },
-    { key: 'local', label: 'Local multiplayer' },
-    { key: 'online', label: 'Online' },
-    { key: 'both', label: 'Local and online' },
-  ];
+/** games.play_modes values, in the order they are stored and shown. */
+export const PLAY_MODES: readonly {
+  readonly key: PlayMode;
+  readonly label: string;
+  /** For the library table. */
+  readonly short: string;
+}[] = [
+  { key: 'story', label: 'Story mode', short: 'Story' },
+  { key: 'single', label: 'Single player', short: 'Single' },
+  { key: 'local', label: 'Local multiplayer', short: 'Local' },
+  { key: 'online', label: 'Online', short: 'Online' },
+];
 
 /** games.max_local_players is 1-8 (players_exceeded above it on the floor). */
 export const MAX_PLAYERS = 8;
 
-export function playerModeLabel(g: Game): string {
-  const mode = PLAYER_MODES.find((m) => m.key === g.playerMode)?.label ?? g.playerMode;
-  return g.maxLocalPlayers > 1 ? `${mode} · up to ${g.maxLocalPlayers}` : mode;
+/** "Story mode · Local multiplayer · up to 4". */
+export function playModesLabel(g: Game): string {
+  const modes = PLAY_MODES.filter((m) => g.playModes.includes(m.key)).map((m) => m.label);
+  if (g.maxLocalPlayers > 1) modes.push(`up to ${g.maxLocalPlayers}`);
+  return modes.join(' · ');
+}
+
+/** "Story · Local · Online" (the library table). */
+export function playModesShort(g: Game): string {
+  return PLAY_MODES.filter((m) => g.playModes.includes(m.key))
+    .map((m) => m.short)
+    .join(' · ');
 }
 
 /** The library order: available games first, archived ones after, each by name. */

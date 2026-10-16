@@ -5,6 +5,7 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/custom_duration_sheet.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
@@ -373,13 +374,9 @@ class _NewSessionScreenState extends ConsumerState<NewSessionScreen> {
     r.fold(
       (session) {
         Navigator.of(context).pop(true);
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Started ${_customer?.name ?? 'session'}')),
-        );
+        showToast(context, 'Started ${_customer?.name ?? 'session'}');
       },
-      (failure) => ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(failure.display)),
-      ),
+      (failure) => showFailure(context, failure),
     );
   }
 }

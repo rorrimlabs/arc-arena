@@ -4,6 +4,7 @@ import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
@@ -240,20 +241,12 @@ class _TakePaymentSheetState extends ConsumerState<_TakePaymentSheet> {
     if (!mounted) return;
     if (result.isErr) {
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(result.failureOrNull!.display)),
-      );
+      showFailure(context, result.failureOrNull!);
       return;
     }
     Navigator.of(context).pop();
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(
-          '${Paise(amount).display} recorded by ${_methodLabel(_offered(_method))}.'
-          '${change > 0 ? ' Return ${Paise(change).display} change.' : ''}',
-        ),
-      ),
-    );
+    showToast(context, '${Paise(amount).display} recorded by ${_methodLabel(_offered(_method))}.'
+          '${change > 0 ? ' Return ${Paise(change).display} change.' : ''}');
   }
 
   String _methodLabel(PaymentMethod m) => switch (m) {

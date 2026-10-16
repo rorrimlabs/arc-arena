@@ -9,8 +9,10 @@ import 'package:arena_ops/app/providers/leave_providers.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
+import 'package:arena_ops/core/widgets/confirm_dialog.dart';
 import 'package:arena_ops/domain/leave/leave.dart';
 import 'package:arena_ops/features/leave/presentation/apply_leave_sheet.dart';
 import 'package:flutter/material.dart';
@@ -211,6 +213,18 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
   Failure? _failure;
 
   Future<void> _cancel() async {
+    final pending = widget.request.status == LeaveStatus.pending;
+    final ok = await confirmAction(
+      context,
+      title: pending ? 'Cancel this request?' : 'Ask to cancel this leave?',
+      message: pending
+          ? 'The request is withdrawn. Apply again if you still need the days off.'
+          : 'A cancellation request is sent for approval. The leave stays until it is approved.',
+      cancel: 'Keep it',
+      confirm: pending ? 'Cancel request' : 'Ask to cancel',
+      destructive: true,
+    );
+    if (!ok || !mounted || _busy) return;
     setState(() {
       _busy = true;
       _failure = null;
@@ -222,10 +236,9 @@ class _RequestSheetState extends ConsumerState<_RequestSheet> {
         ref.invalidate(myLeaveRequestsProvider);
         ref.invalidate(myLeaveBalanceProvider);
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text(status == LeaveStatus.cancelled
+        showToast(context, status == LeaveStatus.cancelled
                 ? 'Request cancelled.'
-                : 'Cancellation sent. The leave stays until it is approved.')));
+                : 'Cancellation sent. The leave stays until it is approved.');
       case Err(failure: final f):
         setState(() {
           _busy = false;

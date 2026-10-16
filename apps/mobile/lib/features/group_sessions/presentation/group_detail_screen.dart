@@ -6,7 +6,9 @@ import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
+import 'package:arena_ops/core/widgets/confirm_dialog.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/services/session_timer.dart';
@@ -213,10 +215,21 @@ class _PlayerMenu extends ConsumerWidget {
                   group: group, current: current);
             }
           case 'end':
-            await ref.read(groupSessionActionsProvider).endPlayer(
+            final ok = await confirmAction(
+              context,
+              title: 'End player $playerNumber?',
+              message: 'Their system is freed and their time stops. '
+                  'The group stays open.',
+              confirm: 'End player',
+              destructive: true,
+            );
+            if (!ok || !context.mounted) return;
+            final toast = AppToast.of(context);
+            final r = await ref.read(groupSessionActionsProvider).endPlayer(
                   groupId: group.group.id,
                   playerNumber: playerNumber,
                 );
+            toast.result(r, 'Player $playerNumber ended');
         }
       },
       itemBuilder: (context) => current == null

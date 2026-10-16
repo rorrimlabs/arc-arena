@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/domain/pricing/billing_policy.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -201,9 +202,7 @@ class _BillingRulesScreenState extends ConsumerState<BillingRulesScreen> {
     if (r.isErr) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(r.failureOrNull!.display)),
-      );
+      showFailure(context, r.failureOrNull!);
       return;
     }
     ref.invalidate(pricingSnapshotProvider);
@@ -212,9 +211,7 @@ class _BillingRulesScreenState extends ConsumerState<BillingRulesScreen> {
       _saving = false;
       _dirty = false;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Billing rules saved for new sessions.')),
-    );
+    showToast(context, 'Billing rules saved for new sessions.');
   }
 }
 

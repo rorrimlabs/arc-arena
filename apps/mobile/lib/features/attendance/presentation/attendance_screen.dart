@@ -14,8 +14,10 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
+import 'package:arena_ops/core/widgets/confirm_dialog.dart';
 import 'package:arena_ops/domain/attendance/attendance_entry.dart';
 import 'package:arena_ops/domain/attendance/attendance_rules.dart';
 import 'package:arena_ops/domain/attendance/location_reading.dart';
@@ -54,6 +56,17 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
   }
 
   Future<void> _punch(PunchKind kind) async {
+    if (_busy != _Busy.none) return;
+    if (kind == PunchKind.clockOut) {
+      final ok = await confirmAction(
+        context,
+        title: 'Clock out now?',
+        message: 'Your day ends at the time the server records. '
+            'Clock in again if you are still working.',
+        confirm: 'Clock out',
+      );
+      if (!ok || !mounted) return;
+    }
     final actions = ref.read(attendanceActionsProvider);
     setState(() {
       _busy = _Busy.locating;
@@ -80,8 +93,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
         });
         ref.invalidate(myAttendanceProvider);
         ref.invalidate(myAttendanceDaysProvider);
-        ScaffoldMessenger.of(context)
-            .showSnackBar(SnackBar(content: Text(_recorded(outcome))));
+        showToast(context, _recorded(outcome));
       case Err(failure: final f):
         setState(() {
           _busy = _Busy.none;

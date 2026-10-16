@@ -18,6 +18,7 @@ import { AttendanceRulesStore } from '../data/attendance-rules';
 import { LeaveRulesStore } from '../data/leave-rules';
 import { AttendanceSettings } from './attendance-settings';
 import { LeaveSettings } from './leave-settings';
+import { TermsSettings } from './terms-settings';
 import { WorkHoursSettings } from './work-hours-settings';
 
 const STAFF = '/settings/staff';
@@ -26,7 +27,8 @@ const STAFF = '/settings/staff';
  * Settings › Staff, in routable tabs (`/settings/staff/<tab>`): General (the few things most
  * venues set: working hours, whether clock-ins are checked against the venue's location, paid
  * leave a year), Schedule (shifts, roster, staff holidays), then every other rule set with the
- * values it already has: Clock-in, Attendance, Leave and, for Payroll holders, Payroll. Location
+ * values it already has: Clock-in, Attendance, Leave, Terms (the staff terms everyone but owners
+ * accepts on the floor app) and, for Payroll holders, Payroll. Location
  * checks are off for a new venue; turning them on needs the venue's location (Clock-in tab) and
  * then flags clock-ins away from it for review.
  */
@@ -43,6 +45,7 @@ const STAFF = '/settings/staff';
     AttendanceSettings,
     WorkHoursSettings,
     LeaveSettings,
+    TermsSettings,
     PayRulesDetail,
   ],
   template: `
@@ -105,6 +108,9 @@ const STAFF = '/settings/staff';
           @case ('leave') {
             <app-leave-settings />
           }
+          @case ('terms') {
+            <app-terms-settings />
+          }
           @case ('payroll') {
             <app-pay-rules-detail />
           }
@@ -138,6 +144,7 @@ export class StaffSettings {
     { key: 'clock-in', label: 'Clock-in', link: [STAFF, 'clock-in'] },
     { key: 'attendance', label: 'Attendance', link: [STAFF, 'attendance'] },
     { key: 'leave', label: 'Leave', link: [STAFF, 'leave'] },
+    { key: 'terms', label: 'Terms', link: [STAFF, 'terms'] },
     ...(this.canPay() ? [{ key: 'payroll', label: 'Payroll', link: [STAFF, 'payroll'] }] : []),
   ]);
   protected readonly current = computed(

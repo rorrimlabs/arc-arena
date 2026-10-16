@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/group_session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
@@ -229,6 +230,7 @@ class _GroupAssignSheetState extends ConsumerState<_GroupAssignSheet> {
   }
 
   Future<void> _confirm() async {
+    if (_busy) return;
     setState(() => _busy = true);
     final actions = ref.read(groupSessionActionsProvider);
     final Result result = widget.isSwitch
@@ -255,10 +257,15 @@ class _GroupAssignSheetState extends ConsumerState<_GroupAssignSheet> {
     setState(() => _busy = false);
     result.fold(
       (_) {
+        showToast(
+          context,
+          widget.isSwitch
+              ? 'Player ${widget.playerNumber} switched to ${_resource!.name}'
+              : 'Player ${widget.playerNumber} added to ${_resource!.name}',
+        );
         Navigator.of(context).pop();
       },
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (f) => showFailure(context, f),
     );
   }
 }
@@ -284,9 +291,8 @@ Future<void> showGroupChangeGameSheet(
       );
   if (!context.mounted) return;
   r.fold(
-    (_) {},
-    (f) => ScaffoldMessenger.of(context)
-        .showSnackBar(SnackBar(content: Text(f.display))),
+    (_) => showToast(context, 'Now playing ${game.name}'),
+    (f) => showFailure(context, f),
   );
 }
 
@@ -428,6 +434,7 @@ class _GroupChangeControllersSheetState
   }
 
   Future<void> _apply(ControllerChoice choice) async {
+    if (_busy) return;
     setState(() => _busy = true);
     final r = await ref.read(groupSessionActionsProvider).changeControllers(
           groupId: widget.group.group.id,
@@ -437,9 +444,11 @@ class _GroupChangeControllersSheetState
     if (!mounted) return;
     setState(() => _busy = false);
     r.fold(
-      (_) => Navigator.of(context).pop(),
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (_) {
+        showToast(context, 'Controllers updated');
+        Navigator.of(context).pop();
+      },
+      (f) => showFailure(context, f),
     );
   }
 }

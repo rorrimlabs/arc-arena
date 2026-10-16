@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/game.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -29,7 +30,7 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
   late final TextEditingController _nameCtrl;
   String? _categoryId;
   final Set<String> _platforms = {};
-  PlayerMode _playerMode = PlayerMode.single;
+  final Set<PlayerMode> _modes = {};
   int _maxPlayers = 1;
   bool _active = true;
 
@@ -48,7 +49,7 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
     _nameCtrl = TextEditingController(text: g?.name ?? widget.initialName ?? '');
     _categoryId = g?.categoryId;
     _platforms.addAll(g?.platforms ?? const ['PS5']);
-    _playerMode = g?.playerMode ?? PlayerMode.single;
+    _modes.addAll(g?.playModes ?? const [PlayerMode.single]);
     _maxPlayers = g?.maxLocalPlayers ?? 1;
     _active = g?.active ?? true;
     _load();
@@ -122,23 +123,34 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
                   ],
                 ),
                 const SizedBox(height: AppSpacing.md),
-                DropdownButtonFormField<PlayerMode>(
-                  initialValue: _playerMode,
-                  decoration: const InputDecoration(
-                    labelText: 'Player mode',
-                    border: OutlineInputBorder(),
-                  ),
-                  items: [
+                Text('Play modes', style: theme.textTheme.labelLarge),
+                Wrap(
+                  spacing: AppSpacing.sm,
+                  children: [
                     for (final m in PlayerMode.values)
-                      DropdownMenuItem(value: m, child: Text(m.label)),
+                      FilterChip(
+                        label: Text(m.label),
+                        selected: _modes.contains(m),
+                        // A game keeps at least one mode.
+                        onSelected: (s) => setState(() {
+                          if (s) {
+                            _modes.add(m);
+                          } else if (_modes.length > 1) {
+                            _modes.remove(m);
+                          }
+                          // Only local multiplayer puts more than one
+                          // controller on a system.
+                          if (!_modes.contains(PlayerMode.local)) {
+                            _maxPlayers = 1;
+                          } else if (_maxPlayers < 2) {
+                            _maxPlayers = 2;
+                          }
+                        }),
+                      ),
                   ],
-                  onChanged: (v) => setState(() {
-                    _playerMode = v ?? _playerMode;
-                    if (!_playerMode.isMultiplayer) _maxPlayers = 1;
-                  }),
                 ),
                 const SizedBox(height: AppSpacing.md),
-                if (_playerMode.isMultiplayer)
+                if (_modes.contains(PlayerMode.local))
                   DropdownButtonFormField<int>(
                     initialValue: _maxPlayers.clamp(1, 8),
                     decoration: const InputDecoration(
@@ -207,8 +219,7 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
   Future<void> _save() async {
     final name = _nameCtrl.text.trim();
     if (name.isEmpty) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Name is required.')));
+      showToast(context, 'Name is required.', kind: ToastKind.error);
       return;
     }
     setState(() => _saving = true);
@@ -222,7 +233,10 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
             lastPlayedAt: widget.game?.lastPlayedAt,
             categoryId: _categoryId,
             platforms: _platforms.toList(),
-            playerMode: _playerMode,
+            playModes: [
+              for (final m in PlayerMode.values)
+                if (_modes.contains(m)) m,
+            ],
             maxLocalPlayers: _maxPlayers,
             active: _active,
           ),
@@ -231,9 +245,7 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
     if (saved.isErr) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(saved.failureOrNull!.display)),
-      );
+      showFailure(context, saved.failureOrNull!);
       return;
     }
     // Refresh dependent views.
@@ -245,8 +257,7 @@ class _GameEditScreenState extends ConsumerState<GameEditScreen> {
     ref.invalidate(resourcesForGameProvider(_id));
     if (mounted) {
       Navigator.of(context).pop();
-      ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text('Saved $name')));
+      showToast(context, 'Saved $name');
     }
   }
 }

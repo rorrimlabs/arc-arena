@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
+import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/games/presentation/no_games_state.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -115,8 +116,8 @@ class _GamePickerState extends ConsumerState<_GamePicker> {
                         leading: const Icon(Icons.videogame_asset_outlined),
                         title: Text(g.name),
                         subtitle: Text(
-                          '${g.playerMode.label}'
-                          '${g.playerMode.isMultiplayer ? ' · up to ${g.maxLocalPlayers}' : ''}',
+                          '${PlayerMode.labelOf(g.playModes)}'
+                          '${g.maxLocalPlayers > 1 ? ' · up to ${g.maxLocalPlayers}' : ''}',
                         ),
                         onTap: () => Navigator.of(context).pop(g),
                       );
@@ -242,8 +243,8 @@ class _ActivityGamePickerState extends ConsumerState<_ActivityGamePicker> {
                       leading: const Icon(Icons.videogame_asset_outlined),
                       title: Text(g.name),
                       subtitle: Text(
-                        '${g.playerMode.label}'
-                        '${g.playerMode.isMultiplayer ? ' · up to ${g.maxLocalPlayers}' : ''}',
+                        '${PlayerMode.labelOf(g.playModes)}'
+                        '${g.maxLocalPlayers > 1 ? ' · up to ${g.maxLocalPlayers}' : ''}',
                       ),
                       onTap: () => Navigator.of(context).pop(g),
                     );

@@ -1,4 +1,5 @@
 import 'package:arena_ops/app/controllers/customer_actions.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -70,6 +71,7 @@ Future<Customer?> showCreateCustomerDialog(
                       setLocal(() => yearError = yearProblem);
                       return;
                     }
+                    setLocal(() => saving = true);
                     final phone = phoneCtrl.text.trim();
                     if (phone.isNotEmpty) {
                       final existing = await actions.findByPhone(phone);
@@ -95,11 +97,12 @@ Future<Customer?> showCreateCustomerDialog(
                         );
                         if (use == true && ctx.mounted) {
                           Navigator.pop(ctx, existing);
+                        } else if (ctx.mounted) {
+                          setLocal(() => saving = false);
                         }
                         return;
                       }
                     }
-                    setLocal(() => saving = true);
                     final created = await actions.create(
                       name: name,
                       phone: phone.isEmpty ? null : phone,
@@ -110,8 +113,7 @@ Future<Customer?> showCreateCustomerDialog(
                       (c) => Navigator.pop(ctx, c),
                       (f) {
                         setLocal(() => saving = false);
-                        ScaffoldMessenger.of(ctx)
-                            .showSnackBar(SnackBar(content: Text(f.display)));
+                        showFailure(ctx, f);
                       },
                     );
                   },

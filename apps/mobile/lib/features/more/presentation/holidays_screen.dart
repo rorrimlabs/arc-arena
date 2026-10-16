@@ -4,6 +4,7 @@ import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -144,9 +145,7 @@ class _HolidaysScreenState extends ConsumerState<HolidaysScreen> {
   Future<void> _after(Result<void> r) async {
     if (r.isOk) ref.invalidate(pricingSnapshotProvider);
     if (r.isErr && mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(r.failureOrNull!.display)),
-      );
+      showFailure(context, r.failureOrNull!);
     }
     await _load();
   }

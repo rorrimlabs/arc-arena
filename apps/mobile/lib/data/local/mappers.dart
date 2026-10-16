@@ -68,7 +68,7 @@ Game gameFromRow(GameRow r, {String? categoryName}) => Game(
       categoryId: r.categoryId,
       categoryName: categoryName,
       platforms: r.platforms,
-      playerMode: PlayerMode.fromCode(r.playerMode),
+      playModes: PlayerMode.fromCodes(r.playModes),
       maxLocalPlayers: r.maxLocalPlayers,
       active: r.active,
       lastPlayedAt: r.lastPlayedAt,

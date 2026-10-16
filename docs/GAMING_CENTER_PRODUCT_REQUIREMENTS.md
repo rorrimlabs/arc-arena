@@ -151,7 +151,7 @@ Staff members currently face 19 distinct operational bottlenecks during floor op
 | **12** | Customers change controller count mid-session. | Under-billing when 2 extra friends join for the second half. | **Controller Change:** Segment split recalculating price from that instant. |
 | **13** | Does not know game installation locations. | Assigns customer to station where game is not downloaded. | Station [View Games] modal lists installed & playable games. |
 | **14** | Does not know if game is currently working. | Discs scratched, corrupted patches, or controller sync issues. | Per-station game compatibility states (`playable`, `maintenance`, etc.). |
-| **15** | Does not know if game is single or multiplayer. | Staff promises 4-player play for a 2-player or solo game. | Game library stores explicit `playerMode` and `maxLocalPlayers`. |
+| **15** | Does not know if game is single or multiplayer. | Staff promises 4-player play for a 2-player or solo game. | Game library stores explicit play modes (`playModes`: story, single, local, online — one or more) and `maxLocalPlayers`. |
 | **16** | Does not know max local players supported. | Groups of 4 attempt to play a 2-player fighter. | Display max local player count during station selection. |
 | **17** | Cannot reliably book for future dates/times. | Notes on paper scraps get lost, causing double bookings. | Structured reservation system with conflict detection. |
 | **18** | Cannot verify system compatibility during booking. | Bookings accepted for stations that cannot run the game. | **Game-First Booking Engine:** Filters only verified compatible stations. |
@@ -482,7 +482,7 @@ CREATE TABLE games (
     aliases TEXT NOT NULL DEFAULT '[]', -- JSON array of strings
     category_id TEXT REFERENCES game_categories(id),
     platforms TEXT NOT NULL DEFAULT '[]', -- JSON array: ['PS5', 'PSVR2']
-    player_mode TEXT NOT NULL DEFAULT 'single', -- 'single', 'local', 'online', 'both'
+    play_modes TEXT[] NOT NULL DEFAULT '{single}', -- one or more of 'story', 'single', 'local', 'online'
     max_local_players INTEGER NOT NULL DEFAULT 1,
     active BOOLEAN NOT NULL DEFAULT TRUE,
     last_played_at TIMESTAMPTZ

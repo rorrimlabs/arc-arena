@@ -19,6 +19,7 @@ import {
   GameUsage,
   MemberPage,
   Play,
+  PlayMode,
   Station,
   StationFigures,
   StationInput,
@@ -128,6 +129,12 @@ const PAGE = 1000;
 
 const str = (v: unknown) => (v == null ? null : String(v));
 const strings = (v: unknown) => ((v as unknown[] | null) ?? []).map(String);
+const PLAY_MODES: readonly PlayMode[] = ['story', 'single', 'local', 'online'];
+/** games.play_modes in PlayMode order; unknown codes skipped, single when none is left. */
+const playModes = (v: unknown): PlayMode[] => {
+  const known = PLAY_MODES.filter((m) => strings(v).includes(m));
+  return known.length ? known : ['single'];
+};
 const one = (v: unknown) => (Array.isArray(v) ? (v[0] as Row | undefined) : (v as Row | null));
 
 export function stationOps(s: StationInput): SyncOp[] {
@@ -158,7 +165,7 @@ export function gameOps(g: GameInput, baseActive?: boolean): SyncOp[] {
         aliases: g.aliases,
         category_id: g.categoryId,
         platforms: g.platforms,
-        player_mode: g.playerMode,
+        play_modes: g.playModes,
         max_local_players: g.maxLocalPlayers,
         active: g.active,
         ...(baseActive === undefined ? {} : { base_active: baseActive }),
@@ -223,7 +230,7 @@ class SupabaseFloorApi extends FloorApi {
   async games(arenaId: string): Promise<Game[]> {
     const rows = await this.all(
       'games',
-      'id, name, aliases, category_id, platforms, player_mode, max_local_players, active, age_rating, media',
+      'id, name, aliases, category_id, platforms, play_modes, max_local_players, active, age_rating, media',
       arenaId,
       (q) => q.order('name'),
     );
@@ -233,7 +240,7 @@ class SupabaseFloorApi extends FloorApi {
       aliases: strings(r['aliases']),
       categoryId: str(r['category_id']),
       platforms: strings(r['platforms']),
-      playerMode: (r['player_mode'] as Game['playerMode']) ?? 'single',
+      playModes: playModes(r['play_modes']),
       maxLocalPlayers: Number(r['max_local_players'] ?? 1),
       active: r['active'] !== false,
       ageRating: r['age_rating'] == null ? null : (Number(r['age_rating']) as AgeRating),

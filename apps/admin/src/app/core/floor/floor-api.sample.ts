@@ -47,7 +47,7 @@ function game(
     aliases: [],
     categoryId: null,
     platforms,
-    playerMode: 'local',
+    playModes: ['story', 'local'],
     maxLocalPlayers: 4,
     active,
     ageRating,

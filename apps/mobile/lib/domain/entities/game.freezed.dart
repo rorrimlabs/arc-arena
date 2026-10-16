@@ -15,7 +15,8 @@ T _$identity<T>(T value) => value;
 /// @nodoc
 mixin _$Game {
 
- String get id; String get name; List<String> get aliases; String? get categoryId; String? get categoryName; List<String> get platforms; PlayerMode get playerMode; int get maxLocalPlayers; bool get active; DateTime? get lastPlayedAt;
+ String get id; String get name; List<String> get aliases; String? get categoryId; String? get categoryName; List<String> get platforms;/// How it can be played, at least one, in [PlayerMode] order.
+ List<PlayerMode> get playModes; int get maxLocalPlayers; bool get active; DateTime? get lastPlayedAt;
 /// Create a copy of Game
 /// with the given fields replaced by the non-null parameter values.
 @JsonKey(includeFromJson: false, includeToJson: false)
@@ -27,20 +28,20 @@ $GameCopyWith<Game> get copyWith => _$GameCopyWithImpl<Game>(this as Game, _$ide
 @override
 bool operator ==(Object other) {
   final _this = this as Game;
-  return identical(this, other) || (other.runtimeType == runtimeType&&other is Game&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&const DeepCollectionEquality().equals(other.aliases, _this.aliases)&&(identical(other.categoryId, _this.categoryId) || other.categoryId == _this.categoryId)&&(identical(other.categoryName, _this.categoryName) || other.categoryName == _this.categoryName)&&const DeepCollectionEquality().equals(other.platforms, _this.platforms)&&(identical(other.playerMode, _this.playerMode) || other.playerMode == _this.playerMode)&&(identical(other.maxLocalPlayers, _this.maxLocalPlayers) || other.maxLocalPlayers == _this.maxLocalPlayers)&&(identical(other.active, _this.active) || other.active == _this.active)&&(identical(other.lastPlayedAt, _this.lastPlayedAt) || other.lastPlayedAt == _this.lastPlayedAt));
+  return identical(this, other) || (other.runtimeType == runtimeType&&other is Game&&(identical(other.id, _this.id) || other.id == _this.id)&&(identical(other.name, _this.name) || other.name == _this.name)&&const DeepCollectionEquality().equals(other.aliases, _this.aliases)&&(identical(other.categoryId, _this.categoryId) || other.categoryId == _this.categoryId)&&(identical(other.categoryName, _this.categoryName) || other.categoryName == _this.categoryName)&&const DeepCollectionEquality().equals(other.platforms, _this.platforms)&&const DeepCollectionEquality().equals(other.playModes, _this.playModes)&&(identical(other.maxLocalPlayers, _this.maxLocalPlayers) || other.maxLocalPlayers == _this.maxLocalPlayers)&&(identical(other.active, _this.active) || other.active == _this.active)&&(identical(other.lastPlayedAt, _this.lastPlayedAt) || other.lastPlayedAt == _this.lastPlayedAt));
 }
 
 
 @override
 int get hashCode {
   final _this = this as Game;
-  return Object.hash(runtimeType,_this.id,_this.name,const DeepCollectionEquality().hash(_this.aliases),_this.categoryId,_this.categoryName,const DeepCollectionEquality().hash(_this.platforms),_this.playerMode,_this.maxLocalPlayers,_this.active,_this.lastPlayedAt);
+  return Object.hash(runtimeType,_this.id,_this.name,const DeepCollectionEquality().hash(_this.aliases),_this.categoryId,_this.categoryName,const DeepCollectionEquality().hash(_this.platforms),const DeepCollectionEquality().hash(_this.playModes),_this.maxLocalPlayers,_this.active,_this.lastPlayedAt);
 }
 
 @override
 String toString() {
   final _this = this as Game;
-  return 'Game(id: ${_this.id}, name: ${_this.name}, aliases: ${_this.aliases}, categoryId: ${_this.categoryId}, categoryName: ${_this.categoryName}, platforms: ${_this.platforms}, playerMode: ${_this.playerMode}, maxLocalPlayers: ${_this.maxLocalPlayers}, active: ${_this.active}, lastPlayedAt: ${_this.lastPlayedAt})';
+  return 'Game(id: ${_this.id}, name: ${_this.name}, aliases: ${_this.aliases}, categoryId: ${_this.categoryId}, categoryName: ${_this.categoryName}, platforms: ${_this.platforms}, playModes: ${_this.playModes}, maxLocalPlayers: ${_this.maxLocalPlayers}, active: ${_this.active}, lastPlayedAt: ${_this.lastPlayedAt})';
 }
 
 
@@ -51,7 +52,7 @@ abstract mixin class $GameCopyWith<$Res>  {
   factory $GameCopyWith(Game value, $Res Function(Game) _then) = _$GameCopyWithImpl;
 @useResult
 $Res call({
- String id, String name, List<String> aliases, String? categoryId, String? categoryName, List<String> platforms, PlayerMode playerMode, int maxLocalPlayers, bool active, DateTime? lastPlayedAt
+ String id, String name, List<String> aliases, String? categoryId, String? categoryName, List<String> platforms, List<PlayerMode> playModes, int maxLocalPlayers, bool active, DateTime? lastPlayedAt
 });
 
 
@@ -68,7 +69,7 @@ class _$GameCopyWithImpl<$Res>
 
 /// Create a copy of Game
 /// with the given fields replaced by the non-null parameter values.
-@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? aliases = null,Object? categoryId = freezed,Object? categoryName = freezed,Object? platforms = null,Object? playerMode = null,Object? maxLocalPlayers = null,Object? active = null,Object? lastPlayedAt = freezed,}) {
+@pragma('vm:prefer-inline') @override $Res call({Object? id = null,Object? name = null,Object? aliases = null,Object? categoryId = freezed,Object? categoryName = freezed,Object? platforms = null,Object? playModes = null,Object? maxLocalPlayers = null,Object? active = null,Object? lastPlayedAt = freezed,}) {
   return _then(Game(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -76,8 +77,8 @@ as String,aliases: null == aliases ? _self.aliases : aliases // ignore: cast_nul
 as List<String>,categoryId: freezed == categoryId ? _self.categoryId : categoryId // ignore: cast_nullable_to_non_nullable
 as String?,categoryName: freezed == categoryName ? _self.categoryName : categoryName // ignore: cast_nullable_to_non_nullable
 as String?,platforms: null == platforms ? _self.platforms : platforms // ignore: cast_nullable_to_non_nullable
-as List<String>,playerMode: null == playerMode ? _self.playerMode : playerMode // ignore: cast_nullable_to_non_nullable
-as PlayerMode,maxLocalPlayers: null == maxLocalPlayers ? _self.maxLocalPlayers : maxLocalPlayers // ignore: cast_nullable_to_non_nullable
+as List<String>,playModes: null == playModes ? _self.playModes : playModes // ignore: cast_nullable_to_non_nullable
+as List<PlayerMode>,maxLocalPlayers: null == maxLocalPlayers ? _self.maxLocalPlayers : maxLocalPlayers // ignore: cast_nullable_to_non_nullable
 as int,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
 as bool,lastPlayedAt: freezed == lastPlayedAt ? _self.lastPlayedAt : lastPlayedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,
@@ -165,10 +166,10 @@ return $default(_that);case _:
 /// }
 /// ```
 
-@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  List<String> aliases,  String? categoryId,  String? categoryName,  List<String> platforms,  PlayerMode playerMode,  int maxLocalPlayers,  bool active,  DateTime? lastPlayedAt)?  $default,{required TResult orElse(),}) {final _that = this;
+@optionalTypeArgs TResult maybeWhen<TResult extends Object?>(TResult Function( String id,  String name,  List<String> aliases,  String? categoryId,  String? categoryName,  List<String> platforms,  List<PlayerMode> playModes,  int maxLocalPlayers,  bool active,  DateTime? lastPlayedAt)?  $default,{required TResult orElse(),}) {final _that = this;
 switch (_that) {
 case _Game() when $default != null:
-return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categoryName,_that.platforms,_that.playerMode,_that.maxLocalPlayers,_that.active,_that.lastPlayedAt);case _:
+return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categoryName,_that.platforms,_that.playModes,_that.maxLocalPlayers,_that.active,_that.lastPlayedAt);case _:
   return orElse();
 
 }
@@ -186,10 +187,10 @@ return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categor
 /// }
 /// ```
 
-@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  List<String> aliases,  String? categoryId,  String? categoryName,  List<String> platforms,  PlayerMode playerMode,  int maxLocalPlayers,  bool active,  DateTime? lastPlayedAt)  $default,) {final _that = this;
+@optionalTypeArgs TResult when<TResult extends Object?>(TResult Function( String id,  String name,  List<String> aliases,  String? categoryId,  String? categoryName,  List<String> platforms,  List<PlayerMode> playModes,  int maxLocalPlayers,  bool active,  DateTime? lastPlayedAt)  $default,) {final _that = this;
 switch (_that) {
 case _Game():
-return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categoryName,_that.platforms,_that.playerMode,_that.maxLocalPlayers,_that.active,_that.lastPlayedAt);case _:
+return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categoryName,_that.platforms,_that.playModes,_that.maxLocalPlayers,_that.active,_that.lastPlayedAt);case _:
   throw StateError('Unexpected subclass');
 
 }
@@ -206,10 +207,10 @@ return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categor
 /// }
 /// ```
 
-@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  List<String> aliases,  String? categoryId,  String? categoryName,  List<String> platforms,  PlayerMode playerMode,  int maxLocalPlayers,  bool active,  DateTime? lastPlayedAt)?  $default,) {final _that = this;
+@optionalTypeArgs TResult? whenOrNull<TResult extends Object?>(TResult? Function( String id,  String name,  List<String> aliases,  String? categoryId,  String? categoryName,  List<String> platforms,  List<PlayerMode> playModes,  int maxLocalPlayers,  bool active,  DateTime? lastPlayedAt)?  $default,) {final _that = this;
 switch (_that) {
 case _Game() when $default != null:
-return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categoryName,_that.platforms,_that.playerMode,_that.maxLocalPlayers,_that.active,_that.lastPlayedAt);case _:
+return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categoryName,_that.platforms,_that.playModes,_that.maxLocalPlayers,_that.active,_that.lastPlayedAt);case _:
   return null;
 
 }
@@ -221,7 +222,7 @@ return $default(_that.id,_that.name,_that.aliases,_that.categoryId,_that.categor
 
 
 class _Game implements Game {
-  const _Game({required this.id, required this.name,  List<String> aliases = const <String>[], this.categoryId, this.categoryName,  List<String> platforms = const <String>[], this.playerMode = PlayerMode.single, this.maxLocalPlayers = 1, this.active = true, this.lastPlayedAt}): _aliases = aliases,_platforms = platforms;
+  const _Game({required this.id, required this.name,  List<String> aliases = const <String>[], this.categoryId, this.categoryName,  List<String> platforms = const <String>[],  List<PlayerMode> playModes = const <PlayerMode>[PlayerMode.single], this.maxLocalPlayers = 1, this.active = true, this.lastPlayedAt}): _aliases = aliases,_platforms = platforms,_playModes = playModes;
   
 
 @override final  String id;
@@ -242,7 +243,15 @@ class _Game implements Game {
   return EqualUnmodifiableListView(_platforms);
 }
 
-@override@JsonKey() final  PlayerMode playerMode;
+/// How it can be played, at least one, in [PlayerMode] order.
+ final  List<PlayerMode> _playModes;
+/// How it can be played, at least one, in [PlayerMode] order.
+@override@JsonKey() List<PlayerMode> get playModes {
+  if (_playModes is EqualUnmodifiableListView) return _playModes;
+  // ignore: implicit_dynamic_type
+  return EqualUnmodifiableListView(_playModes);
+}
+
 @override@JsonKey() final  int maxLocalPlayers;
 @override@JsonKey() final  bool active;
 @override final  DateTime? lastPlayedAt;
@@ -257,18 +266,18 @@ _$GameCopyWith<_Game> get copyWith => __$GameCopyWithImpl<_Game>(this, _$identit
 
 @override
 bool operator ==(Object other) {
-    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Game&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&const DeepCollectionEquality().equals(other.aliases, _aliases)&&(identical(other.categoryId, categoryId) || other.categoryId == categoryId)&&(identical(other.categoryName, categoryName) || other.categoryName == categoryName)&&const DeepCollectionEquality().equals(other.platforms, _platforms)&&(identical(other.playerMode, playerMode) || other.playerMode == playerMode)&&(identical(other.maxLocalPlayers, maxLocalPlayers) || other.maxLocalPlayers == maxLocalPlayers)&&(identical(other.active, active) || other.active == active)&&(identical(other.lastPlayedAt, lastPlayedAt) || other.lastPlayedAt == lastPlayedAt));
+    return identical(this, other) || (other.runtimeType == runtimeType&&other is _Game&&(identical(other.id, id) || other.id == id)&&(identical(other.name, name) || other.name == name)&&const DeepCollectionEquality().equals(other.aliases, _aliases)&&(identical(other.categoryId, categoryId) || other.categoryId == categoryId)&&(identical(other.categoryName, categoryName) || other.categoryName == categoryName)&&const DeepCollectionEquality().equals(other.platforms, _platforms)&&const DeepCollectionEquality().equals(other.playModes, _playModes)&&(identical(other.maxLocalPlayers, maxLocalPlayers) || other.maxLocalPlayers == maxLocalPlayers)&&(identical(other.active, active) || other.active == active)&&(identical(other.lastPlayedAt, lastPlayedAt) || other.lastPlayedAt == lastPlayedAt));
 }
 
 
 @override
 int get hashCode {
-    return Object.hash(runtimeType,id,name,const DeepCollectionEquality().hash(_aliases),categoryId,categoryName,const DeepCollectionEquality().hash(_platforms),playerMode,maxLocalPlayers,active,lastPlayedAt);
+    return Object.hash(runtimeType,id,name,const DeepCollectionEquality().hash(_aliases),categoryId,categoryName,const DeepCollectionEquality().hash(_platforms),const DeepCollectionEquality().hash(_playModes),maxLocalPlayers,active,lastPlayedAt);
 }
 
 @override
 String toString() {
-    return 'Game(id: $id, name: $name, aliases: $aliases, categoryId: $categoryId, categoryName: $categoryName, platforms: $platforms, playerMode: $playerMode, maxLocalPlayers: $maxLocalPlayers, active: $active, lastPlayedAt: $lastPlayedAt)';
+    return 'Game(id: $id, name: $name, aliases: $aliases, categoryId: $categoryId, categoryName: $categoryName, platforms: $platforms, playModes: $playModes, maxLocalPlayers: $maxLocalPlayers, active: $active, lastPlayedAt: $lastPlayedAt)';
 }
 
 
@@ -279,7 +288,7 @@ abstract mixin class _$GameCopyWith<$Res> implements $GameCopyWith<$Res> {
   factory _$GameCopyWith(_Game value, $Res Function(_Game) _then) = __$GameCopyWithImpl;
 @override @useResult
 $Res call({
- String id, String name, List<String> aliases, String? categoryId, String? categoryName, List<String> platforms, PlayerMode playerMode, int maxLocalPlayers, bool active, DateTime? lastPlayedAt
+ String id, String name, List<String> aliases, String? categoryId, String? categoryName, List<String> platforms, List<PlayerMode> playModes, int maxLocalPlayers, bool active, DateTime? lastPlayedAt
 });
 
 
@@ -296,7 +305,7 @@ class __$GameCopyWithImpl<$Res>
 
 /// Create a copy of Game
 /// with the given fields replaced by the non-null parameter values.
-@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? aliases = null,Object? categoryId = freezed,Object? categoryName = freezed,Object? platforms = null,Object? playerMode = null,Object? maxLocalPlayers = null,Object? active = null,Object? lastPlayedAt = freezed,}) {
+@override @pragma('vm:prefer-inline') $Res call({Object? id = null,Object? name = null,Object? aliases = null,Object? categoryId = freezed,Object? categoryName = freezed,Object? platforms = null,Object? playModes = null,Object? maxLocalPlayers = null,Object? active = null,Object? lastPlayedAt = freezed,}) {
   return _then(_Game(
 id: null == id ? _self.id : id // ignore: cast_nullable_to_non_nullable
 as String,name: null == name ? _self.name : name // ignore: cast_nullable_to_non_nullable
@@ -304,8 +313,8 @@ as String,aliases: null == aliases ? _self._aliases : aliases // ignore: cast_nu
 as List<String>,categoryId: freezed == categoryId ? _self.categoryId : categoryId // ignore: cast_nullable_to_non_nullable
 as String?,categoryName: freezed == categoryName ? _self.categoryName : categoryName // ignore: cast_nullable_to_non_nullable
 as String?,platforms: null == platforms ? _self._platforms : platforms // ignore: cast_nullable_to_non_nullable
-as List<String>,playerMode: null == playerMode ? _self.playerMode : playerMode // ignore: cast_nullable_to_non_nullable
-as PlayerMode,maxLocalPlayers: null == maxLocalPlayers ? _self.maxLocalPlayers : maxLocalPlayers // ignore: cast_nullable_to_non_nullable
+as List<String>,playModes: null == playModes ? _self._playModes : playModes // ignore: cast_nullable_to_non_nullable
+as List<PlayerMode>,maxLocalPlayers: null == maxLocalPlayers ? _self.maxLocalPlayers : maxLocalPlayers // ignore: cast_nullable_to_non_nullable
 as int,active: null == active ? _self.active : active // ignore: cast_nullable_to_non_nullable
 as bool,lastPlayedAt: freezed == lastPlayedAt ? _self.lastPlayedAt : lastPlayedAt // ignore: cast_nullable_to_non_nullable
 as DateTime?,

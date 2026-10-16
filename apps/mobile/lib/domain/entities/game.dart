@@ -15,7 +15,8 @@ abstract class Game with _$Game {
     String? categoryId,
     String? categoryName,
     @Default(<String>[]) List<String> platforms,
-    @Default(PlayerMode.single) PlayerMode playerMode,
+    /// How it can be played, at least one, in [PlayerMode] order.
+    @Default(<PlayerMode>[PlayerMode.single]) List<PlayerMode> playModes,
     @Default(1) int maxLocalPlayers,
     @Default(true) bool active,
     DateTime? lastPlayedAt,

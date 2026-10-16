@@ -17,6 +17,7 @@ import 'package:arena_ops/app/providers/attendance_providers.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/leave_providers.dart';
+import 'package:arena_ops/app/providers/profile_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/app/sync/staff_access.dart';
 import 'package:arena_ops/app/sync/stored_session.dart';
@@ -29,6 +30,7 @@ import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
 import 'package:arena_ops/data/remote/supabase_attendance_repository.dart';
 import 'package:arena_ops/data/remote/supabase_leave_repository.dart';
+import 'package:arena_ops/data/remote/supabase_profile_repository.dart';
 import 'package:arena_ops/data/sync/realtime_sync.dart';
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
@@ -475,6 +477,16 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
             deviceId: engine.deviceId,
             onChanged: (kind) =>
                 unawaited(realtime.broadcastSync(kinds: [kind])),
+          ),
+        ),
+        // Own details and the staff terms: online only, like leave.
+        profileRepositoryProvider.overrideWithValue(
+          SupabaseProfileRepository(
+            client: _client,
+            transport: SupabaseSyncTransport(_client),
+            arenaId: arena.arenaId,
+            userId: user.id,
+            deviceId: engine.deviceId,
           ),
         ),
         authControllerProvider.overrideWith(() => CloudAuthController(me)),

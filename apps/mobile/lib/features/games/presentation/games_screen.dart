@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/domain/entities/game.dart';
+import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/games/presentation/game_edit_screen.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -75,7 +76,7 @@ class _GamesScreenState extends ConsumerState<GamesScreen> {
                   ),
                   subtitle: Text([
                     g.categoryName ?? '—',
-                    g.playerMode.label,
+                    PlayerMode.labelOf(g.playModes),
                     if (!g.active) 'Disabled',
                   ].join(' · ')),
                   trailing: const Icon(Icons.chevron_right),

@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
@@ -168,8 +169,8 @@ class _StationControllersSheet extends ConsumerWidget {
   }
 
   /// Shows what happened: [done] on success, otherwise the refusal.
-  void _report(ScaffoldMessengerState m, Result<Object?> r, String done) =>
-      m.showSnackBar(SnackBar(content: Text(r.failureOrNull?.display ?? done)));
+  void _report(AppToast m, Result<Object?> r, String done) =>
+      m.result(r, done);
 
   Future<void> _setStatus(
     BuildContext context,
@@ -178,7 +179,7 @@ class _StationControllersSheet extends ConsumerWidget {
     ControllerStatus status,
     String? note,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final r = await ref
         .read(catalogActionsProvider)
         .setControllerStatus(c.id, status, notes: note);
@@ -190,7 +191,7 @@ class _StationControllersSheet extends ConsumerWidget {
     WidgetRef ref,
     Resource station,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final label = await _textPrompt(
       context,
       title: 'Add controller to ${station.name}',
@@ -209,7 +210,7 @@ class _StationControllersSheet extends ConsumerWidget {
     WidgetRef ref,
     Controller c,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final label = await _textPrompt(
       context,
       title: 'Rename ${c.label}',
@@ -227,7 +228,7 @@ class _StationControllersSheet extends ConsumerWidget {
     Controller c,
     Resource station,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final dest = await _pickStation(
       context,
       ref,
@@ -247,7 +248,7 @@ class _StationControllersSheet extends ConsumerWidget {
     Controller c,
     Resource station,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final choice = await _pickMove(context, ref, c);
     if (choice == null) return;
     final r = await ref
@@ -265,7 +266,7 @@ class _StationControllersSheet extends ConsumerWidget {
     WidgetRef ref,
     Controller c,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final r = await ref.read(catalogActionsProvider).returnHome(c);
     _report(m, r, 'Recalled ${c.label}.');
   }
@@ -276,7 +277,7 @@ class _StationControllersSheet extends ConsumerWidget {
     Resource station,
     String? code,
   ) async {
-    final m = ScaffoldMessenger.of(context);
+    final m = AppToast.of(context);
     final r = await ref
         .read(catalogActionsProvider)
         .setStationMode(station.id, code);

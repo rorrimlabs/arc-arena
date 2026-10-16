@@ -12,7 +12,9 @@ export function childParams(): Signal<Params> {
   const route = inject(ActivatedRoute);
   const read = (): Params => {
     const params: Params = {};
-    for (let r = route.firstChild; r; r = r.firstChild) Object.assign(params, r.snapshot.params);
+    // The snapshot tree, not route.firstChild: on a first visit the child routes are not
+    // activated yet while the page is constructed (their snapshot is still unset).
+    for (let r = route.snapshot?.firstChild; r; r = r.firstChild) Object.assign(params, r.params);
     return params;
   };
   return toSignal(

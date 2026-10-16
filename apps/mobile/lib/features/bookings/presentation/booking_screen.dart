@@ -4,6 +4,7 @@ import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/custom_duration_sheet.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/booking.dart';
@@ -368,14 +369,9 @@ class _BookingScreenState extends ConsumerState<BookingScreen> {
     r.fold(
       (_) {
         Navigator.of(context).pop();
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(_isEditing ? 'Booking updated' : 'Booking confirmed'),
-          ),
-        );
+        showToast(context, _isEditing ? 'Booking updated' : 'Booking confirmed');
       },
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (f) => showFailure(context, f),
     );
   }
 }

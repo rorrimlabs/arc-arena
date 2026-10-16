@@ -1,6 +1,7 @@
 import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/services/pad_selection.dart';
@@ -444,6 +445,9 @@ class BorrowedPadsNotice extends ConsumerWidget {
   final Set<String>? returning;
   final void Function(String controllerId, bool returned)? onToggle;
 
+  /// Pads whose "Returned" tap is still being recorded.
+  static final Set<String> _inFlight = {};
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final arena = context.arena;
@@ -494,19 +498,17 @@ class BorrowedPadsNotice extends ConsumerWidget {
                 TextButton(
                   key: ValueKey('return-${c.id}'),
                   onPressed: () async {
-                    final m = ScaffoldMessenger.of(context);
-                    final r = await ref
-                        .read(catalogActionsProvider)
-                        .returnHome(c);
-                    m.showSnackBar(
-                      SnackBar(
-                        content: Text(
-                          r.isErr
-                              ? r.failureOrNull!.display
-                              : '${c.label} returned.',
-                        ),
-                      ),
-                    );
+                    // One return per pad at a time: a double tap records once.
+                    if (!_inFlight.add(c.id)) return;
+                    final m = AppToast.of(context);
+                    try {
+                      final r = await ref
+                          .read(catalogActionsProvider)
+                          .returnHome(c);
+                      m.result(r, '${c.label} returned.');
+                    } finally {
+                      _inFlight.remove(c.id);
+                    }
                   },
                   child: const Text('Returned'),
                 ),

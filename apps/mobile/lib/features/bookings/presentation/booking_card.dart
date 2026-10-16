@@ -4,6 +4,8 @@ import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
+import 'package:arena_ops/core/widgets/confirm_dialog.dart';
 import 'package:arena_ops/domain/entities/booking.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/bookings/presentation/booking_agenda.dart';
@@ -199,13 +201,7 @@ class BookingCard extends ConsumerWidget {
                   builder: (_) => BookingScreen(existing: booking),
                 ),
               ),
-              'reminder' =>
-                ref
-                    .read(bookingActionsProvider)
-                    .setReminder(
-                      booking,
-                      on: booking.reminderStatus != ReminderStatus.scheduled,
-                    ),
+              'reminder' => _toggleReminder(context, ref),
               'cancel' => _cancel(context, ref),
               'no_show' => _noShow(context, ref),
               _ => null,
@@ -236,67 +232,48 @@ class BookingCard extends ConsumerWidget {
     );
   }
 
+  Future<void> _toggleReminder(BuildContext context, WidgetRef ref) async {
+    final on = booking.reminderStatus != ReminderStatus.scheduled;
+    final toast = AppToast.of(context);
+    try {
+      await ref.read(bookingActionsProvider).setReminder(booking, on: on);
+      toast.show(on ? 'Reminder on' : 'Reminder off');
+    } catch (_) {
+      toast.show('The reminder could not be changed. Try again.',
+          kind: ToastKind.error);
+    }
+  }
+
   Future<void> _cancel(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Cancel this booking?'),
-        content: const Text(
-          'The slot is freed and the reminder is cleared. The booking stays '
-          'in history as cancelled.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Keep it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Cancel booking'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Cancel this booking?',
+      message: 'The slot is freed and the reminder is cleared. The booking '
+          'stays in history as cancelled.',
+      cancel: 'Keep it',
+      confirm: 'Cancel booking',
+      destructive: true,
     );
-    if (confirmed != true) return;
+    if (!confirmed || !context.mounted) return;
     final r = await ref.read(bookingActionsProvider).cancel(booking.id);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(r.failureOrNull?.display ?? 'Booking cancelled'),
-        ),
-      );
+      showResult(context, r, 'Booking cancelled');
     }
   }
 
   Future<void> _noShow(BuildContext context, WidgetRef ref) async {
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Mark as no-show?'),
-        content: const Text(
-          'The customer did not come. The slot is freed and the reminder is '
-          'cleared. The booking stays in history as a no-show.',
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.of(ctx).pop(false),
-            child: const Text('Keep it'),
-          ),
-          FilledButton(
-            onPressed: () => Navigator.of(ctx).pop(true),
-            child: const Text('Mark no-show'),
-          ),
-        ],
-      ),
+    final confirmed = await confirmAction(
+      context,
+      title: 'Mark as no-show?',
+      message: 'The customer did not come. The slot is freed and the reminder '
+          'is cleared. The booking stays in history as a no-show.',
+      cancel: 'Keep it',
+      confirm: 'Mark no-show',
     );
-    if (confirmed != true) return;
+    if (!confirmed || !context.mounted) return;
     final r = await ref.read(bookingActionsProvider).markNoShow(booking);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(r.failureOrNull?.display ?? 'Marked as no-show'),
-        ),
-      );
+      showResult(context, r, 'Marked as no-show');
     }
   }
 
@@ -305,8 +282,6 @@ class BookingCard extends ConsumerWidget {
   Future<void> _checkIn(BuildContext context, WidgetRef ref) async {
     final started = await showCheckInSheet(context, booking);
     if (started != true || !context.mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(content: Text('Checked in — session started')),
-    );
+    showToast(context, 'Checked in — session started');
   }
 }

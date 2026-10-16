@@ -5,6 +5,7 @@ import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/ist.dart';
+import 'package:arena_ops/core/widgets/confirm_dialog.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/data/sync/sync_recorder.dart';
@@ -88,7 +89,18 @@ class SyncScreen extends ConsumerWidget {
                     op: o,
                     db: db,
                     trailing: TextButton(
-                      onPressed: () => binding.engine.acknowledge(o.opId),
+                      onPressed: () async {
+                        final ok = await confirmAction(
+                          context,
+                          title: 'Dismiss this refused change?',
+                          message: 'It leaves this list for good. Redo it on '
+                              'the floor first if it is still right; money '
+                              'listed here must be recorded again.',
+                          confirm: 'Dismiss',
+                          destructive: true,
+                        );
+                        if (ok) binding.engine.acknowledge(o.opId);
+                      },
                       child: const Text('Seen'),
                     ),
                   ),

@@ -2,6 +2,7 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/business_calendar.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -94,9 +95,7 @@ class _HoursScreenState extends ConsumerState<HoursScreen> {
     if (r.isErr) {
       if (!mounted) return;
       setState(() => _saving = false);
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(r.failureOrNull!.display)),
-      );
+      showFailure(context, r.failureOrNull!);
       return;
     }
     // The snapshot carries the hours, so anything pricing or planning a new
@@ -107,14 +106,8 @@ class _HoursScreenState extends ConsumerState<HoursScreen> {
       _saving = false;
       _dirty = false;
     });
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Opening hours saved. Sessions already running keep the hours they '
-          'started under.',
-        ),
-      ),
-    );
+    showToast(context, 'Opening hours saved. Sessions already running keep the hours they '
+          'started under.');
   }
 }
 
@@ -205,9 +198,7 @@ class _TimeRow extends StatelessWidget {
       // storing something the calendar would reject.
       if (start >= end) {
         if (context.mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('The end time must be after the start.')),
-          );
+          showToast(context, 'The end time must be after the start.', kind: ToastKind.error);
         }
         return;
       }

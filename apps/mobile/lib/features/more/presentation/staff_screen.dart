@@ -3,6 +3,7 @@ import 'package:arena_ops/app/controllers/catalog_actions.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/monitoring/replay_privacy.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
@@ -173,14 +174,8 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
     if (wouldLockOut &&
         (!saved.active || !saved.perms.contains(Permission.settings))) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Keep Settings access for at least one active person, or no one '
-              'can configure this device.',
-            ),
-          ),
-        );
+        showToast(context, 'Keep Settings access for at least one active person, or no one '
+              'can configure this device.', kind: ToastKind.error);
       }
       return;
     }
@@ -193,9 +188,7 @@ class _StaffScreenState extends ConsumerState<StaffScreen> {
       await _load();
     }
     if (mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(r.failureOrNull?.display ?? '${saved.name} saved.'),
-      ));
+      showResult(context, r, '${saved.name} saved.');
     }
   }
 }

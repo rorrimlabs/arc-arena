@@ -80,6 +80,26 @@ created earlier keep the built-in default, `flag`.)
 - **No row** means: joined on the profile's creation date (IST), not left, `tracks_attendance =
   (role <> 'owner')`, arena defaults for the rest.
 
+### `staff_personal_details`
+- Readable by the member themselves and by owner level (role owner, `money` or `reports`);
+  other staff never see it.
+- Columns (all optional): `phone`, `email` (personal, not the login), `birth_date`,
+  `blood_group` (A+ A- B+ B- AB+ AB- O+ O-), `address_line1`, `address_line2`, `city`, `state`,
+  `pin_code` (six digits), `emergency_name`, `emergency_relation`, `emergency_phone`;
+  `staff_id` (PK), `arena_id`, `updated_by` (auth user), `created_at`, `updated_at`.
+- **No row** means nothing given yet. Nothing is asked at invite.
+
+### `staff_terms` (readable by all members)
+- Append-only versions of the venue's terms: `id`, `arena_id`, `version` (1, 2, 3… per arena;
+  the highest is in force), `title`, `body` (plain text, paragraphs separated by blank lines),
+  `published_by`, `published_at`.
+
+### `staff_terms_acceptances`
+- Readable by the member themselves and by owner level. Append-only: `id`, `arena_id`,
+  `staff_id`, `terms_id`, `accepted_at` (server time), `device_at` (evidence only); one per
+  member and version.
+- The floor app blocks a member who is not owner level until they accept the version in force.
+
 ### `shifts` (readable by all members)
 - `id`, `arena_id`
 - `name` (unique per arena, case-insensitive)
@@ -220,6 +240,23 @@ All refusal codes are listed. `forbidden` = missing permission; `not_found` (hin
   paid_leave_days?, standard_day_min?}`. Needs `payroll`.
   - A key left out keeps its value; an explicit `null` clears it.
   - Refusals: `not_found`, `invalid_payload`.
+
+### Personal details and terms
+- **`staff_details.save`**: `{staff_id?, phone?, email?, birth_date?, blood_group?,
+  address_line1?, address_line2?, city?, state?, pin_code?, emergency_name?,
+  emergency_relation?, emergency_phone?}`. The member for themselves (`staff_id` omitted or
+  their own), or owner level for anyone.
+  - Text is trimmed; a key left out keeps its value; `null` or `''` clears it.
+  - Refusals: `not_found` (staff), `forbidden`, `invalid_payload` (phone / emergency_phone,
+    email, birth_date 1900 to today, blood_group, pin_code, lengths).
+- **`terms.publish`**: `{id, title, body}`. Owner level. Adds the next version; returns
+  `{version}`.
+  - Refusals: `forbidden`, `invalid_payload` (id, title 1-120, body 1-50,000), `duplicate`.
+- **`terms.accept`**: `{id, terms_id, device_at?}`. The member for themselves; only the latest
+  version. Accepting one already accepted returns the first acceptance. Returns
+  `{accepted_at}`.
+  - Refusals: `not_found` (staff / terms), `stale` (a newer version was published),
+    `invalid_payload`.
 
 ### Attendance corrections (needs `attendance_review`)
 - **`attendance.correct`**, one of three actions:

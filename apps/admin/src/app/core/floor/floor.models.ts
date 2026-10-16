@@ -33,16 +33,21 @@ export interface Game {
   readonly categoryId: string | null;
   /** Free-text platform codes (PS5, PSVR2, PC…). */
   readonly platforms: readonly string[];
-  readonly playerMode: 'single' | 'local' | 'online' | 'both';
+  /** How it can be played, at least one, in PlayMode order (server: games.play_modes). */
+  readonly playModes: readonly PlayMode[];
   readonly maxLocalPlayers: number;
   /** Shown to staff when starting a session. */
   readonly active: boolean;
-  /** Minimum age it is rated for (3, 7, 12, 16 or 18); null when not set. */
+  /** Minimum age it is rated for (3 to 18); null when not set. */
   readonly ageRating: AgeRating | null;
   readonly media: GameMedia | null;
 }
 
-export type AgeRating = 3 | 7 | 12 | 16 | 18;
+/** Story mode, single player (e.g. against the computer), local or online multiplayer. */
+export type PlayMode = 'story' | 'single' | 'local' | 'online';
+
+/** Whole years, 3 to 18 (games_age_rating_check). */
+export type AgeRating = number;
 
 /**
  * How a game runs on one station (server: game_resources). Staff can start a game on a station
@@ -135,7 +140,7 @@ export interface GameInput {
   readonly aliases: readonly string[];
   readonly categoryId: string | null;
   readonly platforms: readonly string[];
-  readonly playerMode: Game['playerMode'];
+  readonly playModes: Game['playModes'];
   readonly maxLocalPlayers: number;
   readonly active: boolean;
   readonly ageRating: AgeRating | null;

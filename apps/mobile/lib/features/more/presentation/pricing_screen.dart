@@ -4,6 +4,7 @@ import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/time/business_calendar.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/time/duration_format.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
@@ -165,14 +166,7 @@ class _ActivityRates extends ConsumerWidget {
         );
     if (r.isOk) ref.invalidate(pricingSnapshotProvider);
     if (context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            r.failureOrNull?.display ??
-                '${activity.name} rate saved — applies to new sessions.',
-          ),
-        ),
-      );
+      showResult(context, r, '${activity.name} rate saved — applies to new sessions.');
     }
   }
 }

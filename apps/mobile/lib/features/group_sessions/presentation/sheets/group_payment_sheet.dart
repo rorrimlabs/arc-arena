@@ -1,7 +1,9 @@
 import 'package:arena_ops/app/controllers/group_session_actions.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
+import 'package:arena_ops/core/money/paise.dart';
 import 'package:arena_ops/core/money/rupee_input.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
+import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/repositories/group_commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
@@ -98,13 +100,12 @@ class _GroupPaymentSheetState extends ConsumerState<_GroupPaymentSheet> {
     // Exact paise, never via a double ("1.005" is refused, not rounded).
     final paise = parseRupeesToPaise(_controller.text);
     if (paise == null || paise <= 0) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-        content: Text(paise == null && _controller.text.trim().isNotEmpty
+      showToast(context, paise == null && _controller.text.trim().isNotEmpty
             ? rupeeInputError
-            : 'Enter an amount.'),
-      ));
+            : 'Enter an amount.', kind: ToastKind.error);
       return;
     }
+    if (_busy) return;
     setState(() => _busy = true);
     final r = await ref.read(groupSessionActionsProvider).recordPayment(
           RecordGroupPaymentCommand(
@@ -116,9 +117,11 @@ class _GroupPaymentSheetState extends ConsumerState<_GroupPaymentSheet> {
     if (!mounted) return;
     setState(() => _busy = false);
     r.fold(
-      (_) => Navigator.of(context).pop(),
-      (f) => ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(f.display))),
+      (_) {
+        showToast(context, '${Paise(paise).display} recorded');
+        Navigator.of(context).pop();
+      },
+      (f) => showFailure(context, f),
     );
   }
 }

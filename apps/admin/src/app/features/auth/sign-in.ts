@@ -58,6 +58,8 @@ type Step = 'sign-in' | 'forgot' | 'sent';
           </p>
           @if (error()) {
             <p role="alert" class="text-sm leading-[1.3] font-medium text-danger">{{ error() }}</p>
+          } @else if (resent()) {
+            <p role="status" class="text-sm leading-[1.3] font-medium">Sent a new link.</p>
           }
           <button
             mat-stroked-button
@@ -131,6 +133,7 @@ export class SignIn {
   );
   /** The address the last reset link went to (as typed, trimmed). */
   protected readonly sentTo = signal('');
+  protected readonly resent = signal(false);
 
   protected readonly model = signal({ email: '', password: '' });
   protected readonly f = form(this.model, (p) => {
@@ -186,7 +189,9 @@ export class SignIn {
   }
 
   protected async resend(): Promise<void> {
-    await this.requestReset(this.sentTo());
+    if (this.busy()) return;
+    this.resent.set(false);
+    this.resent.set(await this.requestReset(this.sentTo()));
   }
 
   private async requestReset(address: string): Promise<boolean> {

@@ -392,7 +392,7 @@ class SyncApplier {
               aliases: _strings(r['aliases']),
               categoryId: r['category_id'] as String?,
               platforms: _strings(r['platforms']),
-              playerMode: r['player_mode'] as String,
+              playModes: _strings(r['play_modes']),
               maxLocalPlayers: r['max_local_players'] as int,
               active: r['active'] as bool,
               lastPlayedAt: _at(r['last_played_at']),

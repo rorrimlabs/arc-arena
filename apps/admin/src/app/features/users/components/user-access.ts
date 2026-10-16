@@ -169,6 +169,7 @@ export class UserAccess {
       // The server may have saved something else (an adjusted change): show what it holds.
       const saved = this.store.byId().get(u.userId);
       if (saved) event.source.checked = saved.perms.includes(code);
+      this.say(`${u.name}'s access updated`);
     } catch (e) {
       // Refused: put the switch back where the server left it.
       event.source.checked = !event.checked;

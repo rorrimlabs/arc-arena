@@ -68,26 +68,26 @@ begin
   insert into game_categories(arena_id,name,sort_order) values (v_arena,'VR',8) returning id into c_vr;
   insert into game_categories(arena_id,name,sort_order) values (v_arena,'Other',9);
 
-  -- player_mode / max_local_players match lib/data/local/seed_data.dart, so the
+  -- play_modes / max_local_players match lib/data/local/seed_data.dart, so the
   -- server's player-limit checks agree with the device (audit §1).
-  insert into games(arena_id,name,aliases,category_id,platforms,player_mode,max_local_players) values
-    (v_arena,'EA SPORTS FC 25', array['EA FC','FIFA'], c_football, array['PS5'],'both',4) returning id into v_eafc;
-  insert into games(arena_id,name,aliases,category_id,platforms,player_mode,max_local_players) values
-    (v_arena,'eFootball', array['PES'], c_football, array['PS5'],'both',2),
-    (v_arena,'Tekken 8', '{}', c_fighting, array['PS5'],'local',2),
-    (v_arena,'Mortal Kombat 1', array['MK1'], c_fighting, array['PS5'],'local',2),
-    (v_arena,'Street Fighter 6', array['SF6'], c_fighting, array['PS5'],'local',2),
-    (v_arena,'WWE 2K24', '{}', c_wrestling, array['PS5'],'local',4),
-    (v_arena,'Gran Turismo 7', array['GT7'], c_racing, array['PS5','PSVR2'],'both',2),
-    (v_arena,'F1 24', '{}', c_racing, array['PS5'],'both',2),
-    (v_arena,'God of War Ragnarok', array['GOW'], c_action, array['PS5'],'single',1),
-    (v_arena,'Marvel''s Spider-Man 2', array['Spiderman 2'], c_action, array['PS5'],'single',1),
-    (v_arena,'GTA V', array['Grand Theft Auto V'], c_action, array['PS5'],'single',1),
-    (v_arena,'Call of Duty: MW III', array['COD'], c_shooter, array['PS5'],'both',2),
-    (v_arena,'Fortnite', '{}', c_shooter, array['PS5'],'online',1),
-    (v_arena,'NBA 2K24', '{}', c_sports, array['PS5'],'local',4),
-    (v_arena,'Beat Saber', '{}', c_vr, array['PSVR2'],'single',1),
-    (v_arena,'Swordsman VR', '{}', c_vr, array['PSVR2'],'single',1);
+  insert into games(arena_id,name,aliases,category_id,platforms,play_modes,max_local_players) values
+    (v_arena,'EA SPORTS FC 25', array['EA FC','FIFA'], c_football, array['PS5'],'{single,local,online}',4) returning id into v_eafc;
+  insert into games(arena_id,name,aliases,category_id,platforms,play_modes,max_local_players) values
+    (v_arena,'eFootball', array['PES'], c_football, array['PS5'],'{single,local,online}',2),
+    (v_arena,'Tekken 8', '{}', c_fighting, array['PS5'],'{story,local,online}',2),
+    (v_arena,'Mortal Kombat 1', array['MK1'], c_fighting, array['PS5'],'{story,local,online}',2),
+    (v_arena,'Street Fighter 6', array['SF6'], c_fighting, array['PS5'],'{story,local,online}',2),
+    (v_arena,'WWE 2K24', '{}', c_wrestling, array['PS5'],'{story,local,online}',4),
+    (v_arena,'Gran Turismo 7', array['GT7'], c_racing, array['PS5','PSVR2'],'{single,local,online}',2),
+    (v_arena,'F1 24', '{}', c_racing, array['PS5'],'{story,local,online}',2),
+    (v_arena,'God of War Ragnarok', array['GOW'], c_action, array['PS5'],'{story}',1),
+    (v_arena,'Marvel''s Spider-Man 2', array['Spiderman 2'], c_action, array['PS5'],'{story}',1),
+    (v_arena,'GTA V', array['Grand Theft Auto V'], c_action, array['PS5'],'{story,online}',1),
+    (v_arena,'Call of Duty: MW III', array['COD'], c_shooter, array['PS5'],'{story,local,online}',2),
+    (v_arena,'Fortnite', '{}', c_shooter, array['PS5'],'{online}',1),
+    (v_arena,'NBA 2K24', '{}', c_sports, array['PS5'],'{story,local,online}',4),
+    (v_arena,'Beat Saber', '{}', c_vr, array['PSVR2'],'{single}',1),
+    (v_arena,'Swordsman VR', '{}', c_vr, array['PSVR2'],'{story}',1);
 
   insert into game_controls(arena_id,game_id,section,action,buttons,explanation,sort_order) values
     (v_arena,v_eafc,'Attacking','Shoot',        array['CIRCLE'],   'Hold longer for more power', 1),

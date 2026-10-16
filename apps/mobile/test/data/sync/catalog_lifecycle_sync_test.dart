@@ -105,7 +105,7 @@ void main() {
             'aliases': <String>[],
             'category_id': null,
             'platforms': ['PS5'],
-            'player_mode': 'single',
+            'play_modes': ['single'],
             'max_local_players': 1,
             'active': true,
             'last_played_at': null,
@@ -136,7 +136,7 @@ void main() {
             'aliases': before.aliases,
             'category_id': before.categoryId,
             'platforms': before.platforms,
-            'player_mode': before.playerMode.code,
+            'play_modes': [for (final m in before.playModes) m.code],
             'max_local_players': before.maxLocalPlayers,
             'active': false,
             'last_played_at': null,
@@ -168,7 +168,7 @@ void main() {
         id: 'g_new',
         name: 'Hades II',
         platforms: ['PS5'],
-        playerMode: PlayerMode.single,
+        playModes: [PlayerMode.single],
         maxLocalPlayers: 1,
       ));
       expect(payload((await outbox()).last).containsKey('base_active'), isFalse);

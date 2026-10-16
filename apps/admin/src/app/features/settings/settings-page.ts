@@ -7,6 +7,7 @@ import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
 import { childParams } from '../../shared/routing/child-params';
+import { GamesLibrary } from '../games/components/games-library';
 import { PricingStore } from '../pricing/data/pricing-store';
 import { AccessoryTypes } from './components/accessory-types';
 import { ArenaSettings } from './components/arena-settings';
@@ -35,8 +36,6 @@ const SECTIONS: readonly {
   sub: string;
   /** Listed only for venues using this capability (core/venue). */
   requires?: Capability;
-  /** Opens its own screen instead of the detail pane. */
-  link?: string;
   /** Only for holders of this permission (the owner holds every one). */
   perm?: string;
 }[] = [
@@ -60,7 +59,6 @@ const SECTIONS: readonly {
     title: 'Games',
     sub: 'Library, platforms, where each is playable',
     requires: 'games',
-    link: '/settings/games',
   },
   { key: 'billing', icon: 'payments', title: 'Billing', sub: 'Payment methods, discount limits' },
   { key: 'rules', icon: 'rule', title: 'Billing rules', sub: 'Rounding, grace, minimum charge' },
@@ -83,8 +81,8 @@ const SECTIONS: readonly {
 const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules'];
 
 /**
- * Settings: the arena, its station and accessory types, billing, billing rules, sessions, owners
- * and staff. The selected group is in the URL path (`/settings/billing`; Staff's tabs below it,
+ * Settings: the arena, its station and accessory types, games, billing, billing rules, sessions,
+ * owners and staff. The selected group is in the URL path (`/settings/billing`; Staff's tabs below it,
  * `/settings/staff/leave`), matched as componentless child routes so the list stays mounted; on
  * a wide screen Arena is shown when none is chosen.
  */
@@ -102,6 +100,7 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
     AccessoryTypes,
     StaffSettings,
     OwnersAccess,
+    GamesLibrary,
   ],
   template: `
     <app-list-detail
@@ -121,7 +120,7 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
                   [subtitle]="s.sub"
                   [icon]="s.icon"
                   [selected]="s.key === selected()"
-                  [link]="s.link ?? ['/settings', s.key]"
+                  [link]="['/settings', s.key]"
                 />
               </li>
             }
@@ -138,6 +137,9 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
           }
           @case ('accessories') {
             <app-accessory-types (closed)="close()" />
+          }
+          @case ('games') {
+            <app-games-library [gameId]="params()['tab']" (closed)="close()" />
           }
           @case ('billing') {
             <app-billing-settings (closed)="close()" />
@@ -166,7 +168,7 @@ export class SettingsPage {
   private readonly router = inject(Router);
   private readonly venue = inject(VenueStore);
 
-  /** `/settings/:section[/:tab[/:item]]` — section: arena | types | accessories | billing | rules | sessions | owners | staff. */
+  /** `/settings/:section[/:tab[/:item]]` — section: arena | types | accessories | games | billing | rules | sessions | owners | staff (`/settings/games/<game>`). */
   protected readonly params = childParams();
 
   protected readonly sections = computed(() => {
@@ -180,7 +182,7 @@ export class SettingsPage {
   protected readonly listed = this.sections;
   protected readonly selected = computed<Section | undefined>(() => {
     const id = this.params()['section'];
-    const known = this.sections().find((s) => s.key === id && !s.link)?.key;
+    const known = this.sections().find((s) => s.key === id)?.key;
     if (known) return known;
     return this.layout.wideDetail() ? 'arena' : undefined;
   });

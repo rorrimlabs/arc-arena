@@ -4,6 +4,7 @@ import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { RouterLink } from '@angular/router';
+import { isOwnerLevel } from '../../../core/arena/arena-api';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { Session } from '../../../core/auth/session';
 import { Clock } from '../../../core/time/clock';
@@ -45,13 +46,23 @@ import { UserAccess } from '../../users/components/user-access';
 import { initials } from '../../users/components/user-format';
 import { ArenaUser } from '../../users/data/user.models';
 import { UserDialog, UserDialogData, UserDialogResult } from '../../users/dialogs/user-dialog';
+import { exemptFromTerms } from '../../settings/data/staff-terms';
 import { EmployeeAttendance } from './employee-attendance';
+import { MemberProfile } from './member-profile';
 
-export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedule' | 'access';
+export type MemberTab =
+  | 'overview'
+  | 'profile'
+  | 'attendance'
+  | 'leave'
+  | 'salary'
+  | 'schedule'
+  | 'access';
 
 /**
  * One employee on Team, the one place for everything about them: Overview (contact, role,
- * status, joining date, shift, salary, and the employment details), Attendance (their month),
+ * status, joining date, shift, salary, and the employment details), Profile (personal details
+ * and the staff terms they accepted; owner level), Attendance (their month),
  * Leave (balance, history, record, adjust), Salary (pay rate and its history), Schedule (their
  * shifts with effective dates; a day without a shift is a day off) and Access (app
  * permissions). Each tab shows only to logins with its permission: attendance needs Review
@@ -69,6 +80,7 @@ export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedu
     StaffPayDetail,
     UserAccess,
     EmployeeAttendance,
+    MemberProfile,
     MatButton,
     DetailTabs,
     MatIcon,
@@ -119,6 +131,9 @@ export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedu
           @if (canPay()) {
             <app-staff-pay-detail [staff]="s" part="profile" />
           }
+        }
+        @case ('profile') {
+          <app-member-profile [staff]="s" [exempt]="termsExempt()" />
         }
         @case ('attendance') {
           <app-employee-attendance [staffId]="s.id" [name]="s.name" />
@@ -266,6 +281,15 @@ export class MemberDetail {
   protected readonly canEdit = this.arena.canEdit;
   protected readonly canPay = computed(() => this.arena.hasPerm('payroll'));
   private readonly canLeave = computed(() => this.arena.hasPerm('leave_approve'));
+  /** Personal details and terms acceptances are readable by owner level only. */
+  private readonly ownerLevel = computed(() => {
+    const m = this.arena.currentMembership();
+    return !!m && isOwnerLevel(m);
+  });
+  /** Owner level (role owner, or money / reports) never accepts the staff terms. */
+  protected readonly termsExempt = computed(() =>
+    exemptFromTerms({ role: this.staff().role, perms: this.user()?.perms ?? [] }),
+  );
   private readonly canSeeAttendance = computed(
     () => this.arena.hasPerm('attendance_review') || this.canPay(),
   );
@@ -273,6 +297,7 @@ export class MemberDetail {
   protected readonly tabs = computed(() =>
     [
       { key: 'overview' as const, label: 'Overview', show: true },
+      { key: 'profile' as const, label: 'Profile', show: this.ownerLevel() },
       { key: 'attendance' as const, label: 'Attendance', show: this.canSeeAttendance() },
       { key: 'leave' as const, label: 'Leave', show: this.canLeave() },
       { key: 'salary' as const, label: 'Salary', show: this.canPay() },
