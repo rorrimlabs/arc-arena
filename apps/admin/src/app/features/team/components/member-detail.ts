@@ -1,16 +1,16 @@
 import { Component, computed, inject, input, output } from '@angular/core';
 import { MatButton } from '@angular/material/button';
-import { MatButtonToggle, MatButtonToggleGroup } from '@angular/material/button-toggle';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { Router, RouterLink } from '@angular/router';
+import { RouterLink } from '@angular/router';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { Session } from '../../../core/auth/session';
 import { Clock } from '../../../core/time/clock';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailRow } from '../../../shared/list-detail/detail-row';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
+import { DetailTab, DetailTabs } from '../../../shared/list-detail/detail-tabs';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import {
   formatCount,
@@ -56,8 +56,8 @@ export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedu
  * shifts with effective dates; a day without a shift is a day off) and Access (app
  * permissions). Each tab shows only to logins with its permission: attendance needs Review
  * attendance or Payroll, leave Approve leave, salary Payroll; shifts change with Settings.
- * Owners' access is not managed here (Settings › Owners & access). The tab is in the URL
- * (`?tab=leave`).
+ * Owners' access is not managed here (Settings › Owners & access). The tabs are routable: the
+ * tab is in the URL path (`/staff/team/<staff>/leave`; Overview is `/staff/team/<staff>`).
  */
 @Component({
   selector: 'app-member-detail',
@@ -70,8 +70,7 @@ export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedu
     UserAccess,
     EmployeeAttendance,
     MatButton,
-    MatButtonToggleGroup,
-    MatButtonToggle,
+    DetailTabs,
     MatIcon,
     RouterLink,
   ],
@@ -85,19 +84,7 @@ export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedu
       (closed)="closed.emit()"
     >
       <app-status-pill chip [tone]="status().tone">{{ status().label }}</app-status-pill>
-      <div stats class="-mx-1 overflow-x-auto px-1">
-        <mat-button-toggle-group
-          class="arena-seg"
-          aria-label="Employee sections"
-          hideSingleSelectionIndicator
-          [value]="current()"
-          (change)="pickTab($event.value)"
-        >
-          @for (t of tabs(); track t.key) {
-            <mat-button-toggle [value]="t.key">{{ t.label }}</mat-button-toggle>
-          }
-        </mat-button-toggle-group>
-      </div>
+      <app-detail-tabs label="Employee sections" [tabs]="tabLinks()" [active]="current()">
 
       @switch (current()) {
         @case ('overview') {
@@ -245,6 +232,7 @@ export type MemberTab = 'overview' | 'attendance' | 'leave' | 'salary' | 'schedu
           }
         }
       }
+      </app-detail-tabs>
     </app-detail-pane>
   `,
 })
@@ -256,13 +244,12 @@ export class MemberDetail {
   private readonly leave = inject(LeaveStore);
   private readonly dialog = inject(MatDialog);
   private readonly snack = inject(MatSnackBar);
-  private readonly router = inject(Router);
   private readonly today = formatIsoDate(inject(Clock).now());
 
   readonly staff = input.required<PayStaff>();
   /** Their login on Users (e-mail, invited or not, permissions), when readable. */
   readonly user = input<ArenaUser | undefined>(undefined);
-  /** `?tab=`: the section open (Overview when missing or not allowed). */
+  /** `/staff/team/<staff>/<tab>`: the section open (Overview when missing or not allowed). */
   readonly tab = input<string | undefined>(undefined);
   readonly closed = output<void>();
 
@@ -293,6 +280,15 @@ export class MemberDetail {
       // Owners' access is all permissions, managed in Settings › Owners & access.
       { key: 'access' as const, label: 'Access', show: !!this.user() && this.staff().role === 'staff' },
     ].filter((t) => t.show),
+  );
+  protected readonly tabLinks = computed<DetailTab[]>(() =>
+    this.tabs().map((t) => ({
+      ...t,
+      link:
+        t.key === 'overview'
+          ? ['/staff/team', this.staff().id]
+          : ['/staff/team', this.staff().id, t.key],
+    })),
   );
   protected readonly current = computed<MemberTab>(
     () => this.tabs().find((t) => t.key === this.tab())?.key ?? 'overview',
@@ -363,13 +359,6 @@ export class MemberDetail {
 
   protected leaveSub(r: LeaveRequest): string {
     return [formatDays(r.days), splitLabel(r)].filter(Boolean).join(' · ');
-  }
-
-  protected pickTab(tab: MemberTab): void {
-    void this.router.navigate([], {
-      queryParams: { tab: tab === 'overview' ? null : tab },
-      queryParamsHandling: 'merge',
-    });
   }
 
   private say(message: string): void {

@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input } from '@angular/core';
+import { Component, computed, effect, inject } from '@angular/core';
 import { Router } from '@angular/router';
 import { ArenaContext } from '../../core/arena/arena-context';
 import { Layout } from '../../core/layout/layout';
@@ -6,19 +6,16 @@ import { Capability, VenueStore } from '../../core/venue/venue';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
+import { childParams } from '../../shared/routing/child-params';
 import { PricingStore } from '../pricing/data/pricing-store';
 import { AccessoryTypes } from './components/accessory-types';
 import { ArenaSettings } from './components/arena-settings';
-import { AttendanceSettings } from './components/attendance-settings';
 import { BillingRules } from './components/billing-rules';
 import { BillingSettings } from './components/billing-settings';
 import { SessionSettings } from './components/session-settings';
 import { StationTypes } from './components/station-types';
-import { WorkHoursSettings } from './components/work-hours-settings';
-import { LeaveSettings } from './components/leave-settings';
 import { StaffSettings } from './components/staff-settings';
 import { OwnersAccess } from './components/owners-access';
-import { PayRulesDetail } from '../pay-setup/components/pay-rules-detail';
 
 type Section =
   | 'arena'
@@ -29,11 +26,7 @@ type Section =
   | 'rules'
   | 'sessions'
   | 'owners'
-  | 'staff'
-  | 'attendance'
-  | 'payrules'
-  | 'workhours'
-  | 'leave';
+  | 'staff';
 
 const SECTIONS: readonly {
   key: Section;
@@ -44,8 +37,6 @@ const SECTIONS: readonly {
   requires?: Capability;
   /** Opens its own screen instead of the detail pane. */
   link?: string;
-  /** Not listed: opened from Staff › Advanced settings. */
-  advanced?: true;
   /** Only for holders of this permission (the owner holds every one). */
   perm?: string;
 }[] = [
@@ -80,35 +71,11 @@ const SECTIONS: readonly {
     title: 'Owners & access',
     sub: 'Who owns the venue, inviting an owner',
   },
-  { key: 'staff', icon: 'badge', title: 'Staff', sub: 'Working hours, clock-in, leave' },
   {
-    key: 'attendance',
-    icon: 'location_on',
-    title: 'Clock-in and location rules',
-    sub: 'Venue location, clock-in rules',
-    advanced: true,
-  },
-  {
-    key: 'workhours',
-    icon: 'schedule',
-    title: 'Attendance calculation rules',
-    sub: 'Late grace, half days, extra hours',
-    advanced: true,
-  },
-  {
-    key: 'leave',
-    icon: 'event_available',
-    title: 'Leave rules',
-    sub: 'Paid leave a year, half days, backdating',
-    advanced: true,
-  },
-  {
-    key: 'payrules',
-    icon: 'rule',
-    title: 'Payroll calculation rules',
-    sub: 'Pay period, deductions, extra-hours rate',
-    advanced: true,
-    perm: 'payroll',
+    key: 'staff',
+    icon: 'badge',
+    title: 'Staff',
+    sub: 'Schedule, clock-in, attendance, leave, payroll rules',
   },
 ];
 
@@ -116,9 +83,10 @@ const SECTIONS: readonly {
 const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules'];
 
 /**
- * Settings: the arena, its station and accessory types, billing, billing rules and sessions.
- * The selected group is in the URL (`?id=billing`); on a wide screen Arena is shown when none is
- * chosen.
+ * Settings: the arena, its station and accessory types, billing, billing rules, sessions, owners
+ * and staff. The selected group is in the URL path (`/settings/billing`; Staff's tabs below it,
+ * `/settings/staff/leave`), matched as componentless child routes so the list stays mounted; on
+ * a wide screen Arena is shown when none is chosen.
  */
 @Component({
   selector: 'app-settings-page',
@@ -132,12 +100,8 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
     SessionSettings,
     StationTypes,
     AccessoryTypes,
-    AttendanceSettings,
-    WorkHoursSettings,
-    LeaveSettings,
     StaffSettings,
     OwnersAccess,
-    PayRulesDetail,
   ],
   template: `
     <app-list-detail
@@ -156,9 +120,8 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
                   [title]="s.title"
                   [subtitle]="s.sub"
                   [icon]="s.icon"
-                  [selected]="s.key === selected() || (s.key === 'staff' && isAdvanced())"
-                  [link]="s.link ?? []"
-                  [queryParams]="s.link ? null : { id: s.key }"
+                  [selected]="s.key === selected()"
+                  [link]="s.link ?? ['/settings', s.key]"
                 />
               </li>
             }
@@ -188,20 +151,8 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
           @case ('owners') {
             <app-owners-access (closed)="close()" />
           }
-          @case ('payrules') {
-            <app-pay-rules-detail (closed)="close()" />
-          }
           @case ('staff') {
-            <app-staff-settings (closed)="close()" />
-          }
-          @case ('attendance') {
-            <app-attendance-settings (closed)="close()" />
-          }
-          @case ('workhours') {
-            <app-work-hours-settings (closed)="close()" />
-          }
-          @case ('leave') {
-            <app-leave-settings (closed)="close()" />
+            <app-staff-settings [tab]="params()['tab']" [item]="params()['item']" (closed)="close()" />
           }
         }
       </ng-container>
@@ -215,8 +166,8 @@ export class SettingsPage {
   private readonly router = inject(Router);
   private readonly venue = inject(VenueStore);
 
-  /** `?id=` — arena | types | accessories | billing | rules | sessions | staff | attendance | workhours | leave. */
-  readonly id = input<string>();
+  /** `/settings/:section[/:tab[/:item]]` — section: arena | types | accessories | billing | rules | sessions | owners | staff. */
+  protected readonly params = childParams();
 
   protected readonly sections = computed(() => {
     const caps = this.venue.capabilities();
@@ -226,12 +177,9 @@ export class SettingsPage {
         (!s.perm || this.arena.hasPerm(s.perm)),
     );
   });
-  protected readonly listed = computed(() => this.sections().filter((s) => !s.advanced));
-  protected readonly isAdvanced = computed(
-    () => !!this.sections().find((s) => s.key === this.selected())?.advanced,
-  );
+  protected readonly listed = this.sections;
   protected readonly selected = computed<Section | undefined>(() => {
-    const id = this.id();
+    const id = this.params()['section'];
     const known = this.sections().find((s) => s.key === id && !s.link)?.key;
     if (known) return known;
     return this.layout.wideDetail() ? 'arena' : undefined;
@@ -248,11 +196,7 @@ export class SettingsPage {
     });
   }
 
-  /** An advanced staff panel closes back to Staff; the others close the detail. */
   protected close(): void {
-    void this.router.navigate([], {
-      queryParams: { id: this.isAdvanced() ? 'staff' : null },
-      queryParamsHandling: 'merge',
-    });
+    void this.router.navigate(['/settings']);
   }
 }

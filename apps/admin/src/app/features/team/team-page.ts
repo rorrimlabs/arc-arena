@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input } from '@angular/core';
+import { Component, computed, effect, inject } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatDialog } from '@angular/material/dialog';
 import { MatIcon } from '@angular/material/icon';
@@ -11,6 +11,7 @@ import { Clock } from '../../core/time/clock';
 import { ListDetail } from '../../shared/list-detail/list-detail';
 import { ListPaneHeader } from '../../shared/list-detail/list-pane-header';
 import { ListRow } from '../../shared/list-detail/list-row';
+import { childParams } from '../../shared/routing/child-params';
 import { StatusPill } from '../../shared/status-pill/status-pill';
 import { formatIsoDate } from '../../shared/time/ist';
 import { LeaveStore } from '../leave/data/leave-store';
@@ -29,8 +30,8 @@ import { isEmployee } from './data/team.models';
  * Staff › Team: the venue's employees (staff, and an owner only when they are set to work here)
  * with their role, status and shift, and Add staff (an e-mailed staff invitation; never owner
  * access, which is Settings › Owners & access). Pending staff invitations follow the list. An
- * employee opens with everything about them in one place. The selection is in the URL
- * (`?id=<staff>&tab=leave`).
+ * employee opens with everything about them in one place, in routable tabs. The selection is in
+ * the URL path (`/staff/team/<staff>/leave`).
  */
 @Component({
   selector: 'app-team-page',
@@ -86,8 +87,7 @@ import { isEmployee } from './data/team.models';
                     [subtitle]="rowSub(s)"
                     [initials]="initialsOf(s.name)"
                     [selected]="s.id === selected()?.id"
-                    [queryParams]="{ id: s.id, tab: null }"
-                    queryParamsHandling="merge"
+                    [link]="['/staff/team', s.id]"
                   >
                     @if (!s.active) {
                       <app-status-pill tone="danger">Access off</app-status-pill>
@@ -114,7 +114,7 @@ import { isEmployee } from './data/team.models';
           <app-member-detail
             [staff]="s"
             [user]="users.byId().get(s.userId)"
-            [tab]="tab()"
+            [tab]="params()['tab']"
             (closed)="close()"
           />
         }
@@ -133,10 +133,8 @@ export class TeamPage {
   private readonly snack = inject(MatSnackBar);
   private readonly today = formatIsoDate(inject(Clock).now());
 
-  /** `?id=` — a staff profile id. */
-  readonly id = input<string>();
-  /** `?tab=` — the employee section open. */
-  readonly tab = input<string>();
+  /** `/staff/team/:id[/:tab]` — a staff profile id and the employee section open. */
+  protected readonly params = childParams();
 
   protected readonly initialsOf = initials;
   private readonly canPay = computed(() => this.arena.hasPerm('payroll'));
@@ -148,7 +146,7 @@ export class TeamPage {
       .sort((a, b) => Number(b.active) - Number(a.active) || a.name.localeCompare(b.name)),
   );
   protected readonly selected = computed(() => {
-    const id = this.id();
+    const id = this.params()['id'];
     return id ? this.people().find((s) => s.id === id) : undefined;
   });
   /** Staff invitations still open, for owner-level logins (arena_invites). */
@@ -234,9 +232,6 @@ export class TeamPage {
   }
 
   protected close(): void {
-    void this.router.navigate([], {
-      queryParams: { id: null, tab: null },
-      queryParamsHandling: 'merge',
-    });
+    void this.router.navigate(['/staff/team']);
   }
 }

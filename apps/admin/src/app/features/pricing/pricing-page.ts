@@ -134,7 +134,7 @@ const NEW_COUPON = 'new-coupon';
                 <li class="px-3 py-4 text-sm leading-[1.45] text-muted">
                   @if (store.data()) {
                     No station types yet.
-                    <a routerLink="/settings" [queryParams]="{ id: 'types' }">Add them in Settings</a>,
+                    <a routerLink="/settings/types">Add them in Settings</a>,
                     then set their prices here.
                   } @else if (!store.loading()) {
                     Not loaded.

@@ -81,8 +81,8 @@ const APP_ROUTES: Routes = [
       // The Staff screens were folded into Team, Attendance and Payroll; keep old links working.
       { path: 'staff/calendar', pathMatch: 'full', redirectTo: 'staff/attendance?view=calendar' },
       { path: 'staff/leave', pathMatch: 'full', redirectTo: 'staff/attendance/leave' },
-      { path: 'staff/shifts', pathMatch: 'full', redirectTo: 'settings/schedule' },
-      { path: 'staff/team/schedule', pathMatch: 'full', redirectTo: 'settings/schedule' },
+      { path: 'staff/shifts', pathMatch: 'full', redirectTo: 'settings/staff/schedule' },
+      { path: 'staff/team/schedule', pathMatch: 'full', redirectTo: 'settings/staff/schedule' },
       // Users was split: employees and their access on Team, owners in Settings.
       { path: 'users', pathMatch: 'full', redirectTo: 'staff/team' },
       { path: 'staff/pay-setup', pathMatch: 'full', redirectTo: 'staff/team' },

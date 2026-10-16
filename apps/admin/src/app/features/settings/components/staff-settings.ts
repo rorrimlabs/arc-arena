@@ -1,4 +1,4 @@
-import { Component, computed, inject, output, signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal } from '@angular/core';
 import { MatSlideToggleChange } from '@angular/material/slide-toggle';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { RouterLink } from '@angular/router';
@@ -7,24 +7,44 @@ import { toAppError } from '../../../core/auth/auth-api';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailRow } from '../../../shared/list-detail/detail-row';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
-import { ListRow } from '../../../shared/list-detail/list-row';
+import { DetailTab, DetailTabs } from '../../../shared/list-detail/detail-tabs';
 import { ToggleRow } from '../../../shared/list-detail/toggle-row';
 import { formatCount } from '../../../shared/staff/staff-format';
+import { PayRulesDetail } from '../../pay-setup/components/pay-rules-detail';
+import { ScheduleTab } from '../../shifts/components/schedule-tab';
 import { ShiftsStore } from '../../shifts/data/shifts-store';
 import { daysLabel, shiftTimes } from '../../shifts/data/shifts.models';
 import { AttendanceRulesStore } from '../data/attendance-rules';
 import { LeaveRulesStore } from '../data/leave-rules';
+import { AttendanceSettings } from './attendance-settings';
+import { LeaveSettings } from './leave-settings';
+import { WorkHoursSettings } from './work-hours-settings';
+
+const STAFF = '/settings/staff';
 
 /**
- * Settings › Staff: the few things most venues set (working hours, how staff clock in, whether
- * clock-ins are checked against the venue's location, paid leave a year), and every other rule
- * under Advanced settings, each in its own panel with the values it already has. Location checks
- * are off for a new venue; turning them on needs the venue's location (Clock-in and location
- * rules) and then flags clock-ins away from it for review.
+ * Settings › Staff, in routable tabs (`/settings/staff/<tab>`): General (the few things most
+ * venues set: working hours, whether clock-ins are checked against the venue's location, paid
+ * leave a year), Schedule (shifts, roster, staff holidays), then every other rule set with the
+ * values it already has: Clock-in, Attendance, Leave and, for Payroll holders, Payroll. Location
+ * checks are off for a new venue; turning them on needs the venue's location (Clock-in tab) and
+ * then flags clock-ins away from it for review.
  */
 @Component({
   selector: 'app-staff-settings',
-  imports: [DetailPane, DetailSection, DetailRow, ListRow, ToggleRow, RouterLink],
+  imports: [
+    DetailPane,
+    DetailSection,
+    DetailRow,
+    DetailTabs,
+    ToggleRow,
+    RouterLink,
+    ScheduleTab,
+    AttendanceSettings,
+    WorkHoursSettings,
+    LeaveSettings,
+    PayRulesDetail,
+  ],
   template: `
     <app-detail-pane
       crumb="Settings / Staff"
@@ -33,91 +53,63 @@ import { LeaveRulesStore } from '../data/leave-rules';
       subtitle="How your team clocks in, and the rules attendance and pay follow"
       (closed)="closed.emit()"
     >
-      <app-detail-section heading="Working hours">
-        @for (s of shifts(); track s.id) {
-          <app-detail-row [label]="s.name" [value]="times(s) + ' · ' + days(s.days)" />
-        } @empty {
-          <p class="text-sm leading-[1.4] text-muted">
-            No working hours yet. Without a shift every day is a day off, so nobody is shown absent.
-          </p>
-        }
-        <a class="text-sm font-medium text-primary-text" routerLink="/settings/schedule"
-          >Shifts and staff holidays</a
-        >
-      </app-detail-section>
+      <app-detail-tabs label="Staff settings" [tabs]="tabs()" [active]="current()">
+        @switch (current()) {
+          @case ('general') {
+          <app-detail-section heading="Working hours">
+            @for (s of shifts(); track s.id) {
+              <app-detail-row [label]="s.name" [value]="times(s) + ' · ' + days(s.days)" />
+            } @empty {
+              <p class="text-sm leading-[1.4] text-muted">
+                No working hours yet. Without a shift every day is a day off, so nobody is shown absent.
+              </p>
+            }
+            <a class="text-sm font-medium text-primary-text" routerLink="/settings/staff/schedule"
+              >Shifts and staff holidays</a
+            >
+          </app-detail-section>
 
-      <app-detail-section
-        heading="Attendance"
-        subtitle="Staff clock in and out on the floor app. The time always comes from the server, never the phone."
-      >
-        <app-toggle-row
-          label="Check the venue's location"
-          [sub]="locationSub()"
-          [checked]="locationOn()"
-          [disabled]="!canEdit() || busy() || !rules.rules()"
-          (changed)="toggleLocation($event)"
-        />
-        @if (error()) {
-          <p role="alert" class="text-[13px] leading-[1.4] text-danger">{{ error() }}</p>
-        }
-      </app-detail-section>
-
-      <app-detail-section heading="Leave">
-        <app-detail-row label="Paid leave a year" [value]="leaveDays()" />
-        <p class="text-[13px] leading-[1.4] text-muted">
-          Per employee, from their joining date. Record leave on Attendance or on the employee in
-          Team.
-        </p>
-      </app-detail-section>
-
-      <details class="group">
-        <summary
-          class="flex cursor-pointer list-none items-center gap-2 py-2 text-sm font-semibold [&::-webkit-details-marker]:hidden"
-        >
-          <span
-            class="icon text-[20px] text-muted transition-transform group-open:rotate-90"
-            aria-hidden="true"
-            >chevron_right</span
+          <app-detail-section
+            heading="Attendance"
+            subtitle="Staff clock in and out on the floor app. The time always comes from the server, never the phone."
           >
-          Advanced settings
-        </summary>
-        <ul class="flex flex-col gap-0.5 pt-2" aria-label="Advanced staff settings">
-          <li>
-            <app-list-row
-              title="Clock-in and location rules"
-              subtitle="Venue location and radius, GPS accuracy, fake locations, auto close"
-              icon="location_on"
-              [queryParams]="{ id: 'attendance' }"
+            <app-toggle-row
+              label="Check the venue's location"
+              [sub]="locationSub()"
+              [checked]="locationOn()"
+              [disabled]="!canEdit() || busy() || !rules.rules()"
+              (changed)="toggleLocation($event)"
             />
-          </li>
-          <li>
-            <app-list-row
-              title="Attendance calculation rules"
-              subtitle="Late grace, early leave, half days, breaks, rounding, extra hours"
-              icon="schedule"
-              [queryParams]="{ id: 'workhours' }"
-            />
-          </li>
-          <li>
-            <app-list-row
-              title="Leave rules"
-              subtitle="Paid leave a year, half days, backdating"
-              icon="event_available"
-              [queryParams]="{ id: 'leave' }"
-            />
-          </li>
-          @if (canPay()) {
-            <li>
-              <app-list-row
-                title="Payroll calculation rules"
-                subtitle="Pay period, deductions, late rule, extra-hours rate"
-                icon="rule"
-                [queryParams]="{ id: 'payrules' }"
-              />
-            </li>
+            @if (error()) {
+              <p role="alert" class="text-[13px] leading-[1.4] text-danger">{{ error() }}</p>
+            }
+          </app-detail-section>
+
+          <app-detail-section heading="Leave">
+            <app-detail-row label="Paid leave a year" [value]="leaveDays()" />
+            <p class="text-[13px] leading-[1.4] text-muted">
+              Per employee, from their joining date. Record leave on Attendance or on the employee in
+              Team.
+            </p>
+          </app-detail-section>
           }
-        </ul>
-      </details>
+          @case ('schedule') {
+            <app-schedule-tab [shiftId]="item()" />
+          }
+          @case ('clock-in') {
+            <app-attendance-settings />
+          }
+          @case ('attendance') {
+            <app-work-hours-settings />
+          }
+          @case ('leave') {
+            <app-leave-settings />
+          }
+          @case ('payroll') {
+            <app-pay-rules-detail />
+          }
+        }
+      </app-detail-tabs>
     </app-detail-pane>
   `,
 })
@@ -128,6 +120,10 @@ export class StaffSettings {
   private readonly arena = inject(ArenaContext);
   private readonly snack = inject(MatSnackBar);
 
+  /** `/settings/staff/<tab>` (General when missing or not allowed). */
+  readonly tab = input<string | undefined>(undefined);
+  /** `/settings/staff/<tab>/<item>`: the shift open on Schedule. */
+  readonly item = input<string | undefined>(undefined);
   readonly closed = output<void>();
 
   protected readonly times = shiftTimes;
@@ -135,6 +131,18 @@ export class StaffSettings {
   protected readonly canEdit = this.arena.canEdit;
   protected readonly canPay = computed(() => this.arena.hasPerm('payroll'));
   protected readonly busy = signal(false);
+
+  protected readonly tabs = computed<DetailTab[]>(() => [
+    { key: 'general', label: 'General', link: STAFF },
+    { key: 'schedule', label: 'Schedule', link: [STAFF, 'schedule'] },
+    { key: 'clock-in', label: 'Clock-in', link: [STAFF, 'clock-in'] },
+    { key: 'attendance', label: 'Attendance', link: [STAFF, 'attendance'] },
+    { key: 'leave', label: 'Leave', link: [STAFF, 'leave'] },
+    ...(this.canPay() ? [{ key: 'payroll', label: 'Payroll', link: [STAFF, 'payroll'] }] : []),
+  ]);
+  protected readonly current = computed(
+    () => this.tabs().find((t) => t.key === this.tab())?.key ?? 'general',
+  );
   protected readonly error = signal('');
 
   protected readonly shifts = computed(() => this.shiftsStore.shifts().filter((s) => s.active));
@@ -173,7 +181,7 @@ export class StaffSettings {
     if (event.checked && !r.geofence) {
       event.source.checked = false;
       this.error.set(
-        'Set the venue location first: Advanced settings › Clock-in and location rules.',
+        'Set the venue location first, on the Clock-in tab.',
       );
       return;
     }
