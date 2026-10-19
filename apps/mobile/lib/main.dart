@@ -32,7 +32,13 @@ Future<void> main() async {
     // offline-sync beforeSend filter: core/monitoring/sentry_setup.dart.
     (options) => configureSentry(options, config),
     appRunner: () async {
-      final problem = config.problemFor(releaseBuild: kReleaseMode);
+      final problem = config.problemFor(
+        mode: kReleaseMode
+            ? BuildMode.release
+            : kProfileMode
+            ? BuildMode.profile
+            : BuildMode.debug,
+      );
       if (problem != null) {
         if (config.isSentryEnabled) {
           unawaited(

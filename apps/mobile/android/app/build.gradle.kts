@@ -48,6 +48,27 @@ android {
         versionName = flutter.versionName
     }
 
+    // One flavor per environment (lib/core/config/app_config.dart). Separate
+    // application ids keep each environment's device database and sign-in apart
+    // and let all three be installed side by side; prod keeps the original id.
+    flavorDimensions += "env"
+    productFlavors {
+        create("dev") {
+            dimension = "env"
+            applicationIdSuffix = ".dev"
+            manifestPlaceholders["appName"] = "Arena Ops DEV"
+        }
+        create("staging") {
+            dimension = "env"
+            applicationIdSuffix = ".staging"
+            manifestPlaceholders["appName"] = "Arena Ops QA"
+        }
+        create("prod") {
+            dimension = "env"
+            manifestPlaceholders["appName"] = "Arena Ops"
+        }
+    }
+
     signingConfigs {
         if (hasReleaseKey) {
             create("release") {
@@ -71,7 +92,8 @@ android {
 }
 
 // The --dart-define(-from-file) values the Flutter tool passes to Gradle
-// (comma-separated, each base64 "KEY=value"). Only AO_BACKEND is read here.
+// (comma-separated, each base64 "KEY=value"). Only AO_BACKEND and
+// AO_ENVIRONMENT are read here.
 val dartDefines: Map<String, String> =
     (project.findProperty("dart-defines") as String?)
         ?.split(",")
@@ -80,27 +102,58 @@ val dartDefines: Map<String, String> =
         ?.toMap()
         ?: emptyMap()
 
-// A release APK/AAB must be cloud-only and carry the release key: fail fast,
-// before anything is built, and say what to do. (Debug/profile are untouched.)
+// The environment each flavor's builds must carry (AO_ENVIRONMENT), and its
+// define file. Mirrors AppConfig.environmentForFlavor.
+val environmentForFlavor = mapOf(
+    "dev" to "development",
+    "staging" to "staging",
+    "prod" to "production",
+)
+val defineFileForFlavor = mapOf(
+    "dev" to "dart_define.local.json",
+    "staging" to "dart_define.staging.json",
+    "prod" to "dart_define.prod.json",
+)
+
+// Profile and release APK/AAB builds must match their flavor's environment;
+// dev never builds a release; staging/prod are cloud-only; a release carries
+// the release key. Fail fast, before anything is built, and say what to do.
+// (Debug builds are untouched; the app itself checks every build at start.)
 gradle.taskGraph.whenReady {
-    val releaseTask = allTasks.any { t ->
-        t.name.contains("Release") &&
-            (t.name.startsWith("assemble") || t.name.startsWith("bundle") ||
-                t.name.startsWith("package"))
-    }
-    if (!releaseTask) return@whenReady
-    val problems = mutableListOf<String>()
-    if (dartDefines["AO_BACKEND"] != "supabase") {
-        problems += "Release builds are cloud-only: build with " +
-            "--dart-define-from-file=dart_define.prod.json (AO_BACKEND=supabase, " +
-            "the hosted https URL and its publishable key). Local mode — demo data " +
-            "and default PINs — is for development builds only."
-    }
-    if (!hasReleaseKey) {
-        problems += "Release signing is not configured. Create android/key.properties " +
-            "(storeFile, storePassword, keyAlias, keyPassword) for the release " +
-            "keystore — see docs/RELEASE.md §4. Refusing to build a release " +
-            "signed with the debug key."
+    val builds = allTasks.mapNotNull { t ->
+        Regex("^(assemble|bundle|package)(Dev|Staging|Prod)(Release|Profile)$")
+            .find(t.name)
+            ?.let { it.groupValues[2].lowercase() to it.groupValues[3] }
+    }.toSet()
+    if (builds.isEmpty()) return@whenReady
+    val problems = linkedSetOf<String>()
+    val environment = dartDefines["AO_ENVIRONMENT"] ?: "development"
+    for ((flavor, mode) in builds) {
+        val expected = environmentForFlavor.getValue(flavor)
+        val defineFile = defineFileForFlavor.getValue(flavor)
+        if (flavor == "dev" && mode == "Release") {
+            problems += "The dev flavor never builds a release: local mode (demo " +
+                "data, default PINs) and the local stack are for development only. " +
+                "Build releases with --flavor staging or --flavor prod and their " +
+                "define file."
+            continue
+        }
+        if (environment != expected) {
+            problems += "The $flavor flavor must be built for AO_ENVIRONMENT=$expected " +
+                "(the dart-defines say \"$environment\"): build with " +
+                "--dart-define-from-file=$defineFile."
+        }
+        if (flavor != "dev" && dartDefines["AO_BACKEND"] != "supabase") {
+            problems += "The $flavor flavor is cloud-only: build with " +
+                "--dart-define-from-file=$defineFile (AO_BACKEND=supabase, the " +
+                "project's https URL and its publishable key)."
+        }
+        if (mode == "Release" && !hasReleaseKey) {
+            problems += "Release signing is not configured. Create android/key.properties " +
+                "(storeFile, storePassword, keyAlias, keyPassword) for the release " +
+                "keystore — see docs/RELEASE.md §4. Refusing to build a release " +
+                "signed with the debug key."
+        }
     }
     if (problems.isNotEmpty()) throw GradleException(problems.joinToString("\n"))
 }

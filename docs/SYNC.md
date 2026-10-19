@@ -345,8 +345,9 @@ unsent work stays in that person's database file and goes after they sign in.
 
   | Server | Dashboard (`apps/admin/`) | Floor app (`apps/mobile/`) |
   |---|---|---|
-  | Local stack (all development) | `npm run dev` (`environment.ts`) | `dart_define.local.json` / `dart_define.local-android.json` (VS Code "arena_ops (local Supabase: …)") |
-  | Hosted project (manual go-live) | a production build (`environment.production.ts`) | `dart_define.prod.json`; every release build |
+  | Local stack (all development) | `npm run dev` (`environment.ts`) | `--flavor dev` + `dart_define.local.json` / `dart_define.local-android.json` (VS Code "arena_ops (local Supabase: …)") |
+  | Staging project `arena-ops-staging` (not created yet) | a staging build (not built yet) | `--flavor staging` + `dart_define.staging.json` |
+  | Production project, the company's (not created yet) | a production build (`environment.production.ts`) | `--flavor prod` + `dart_define.prod.json` |
 
   Neither app names its server on screen. On the local stack, invitation e-mails
   land in the mail catcher (Mailpit, http://127.0.0.1:54434). Inviting on the hosted project also needs the invitation migrations
@@ -412,7 +413,7 @@ different publishable key, update all three. A physical tablet can't reach the
 Mac's `127.0.0.1`; test on a simulator/emulator, then go live manually.
 
 ```bash
-cd apps/mobile && flutter run --dart-define-from-file=dart_define.local.json
+cd apps/mobile && flutter run --flavor dev --dart-define-from-file=dart_define.local.json
 ```
 
 `tool/verify_all.sh` runs, in this order: `flutter analyze`, `flutter test`,

@@ -47,6 +47,14 @@ app.*.map.json
 # Widget Preview related
 .widget_preview/
 
+# Platform folders Flutter generates when a command runs from the repo root.
+# The app's real platform folders are under apps/mobile/.
+/android/
+/ios/
+/linux/
+/macos/
+/windows/
+
 # ---------------------------------------------------------------------------
 # arena_ops — backend/sync additions (added at Phase 0, see docs + plan).
 # Keep Supabase credentials and any on-device database copies OUT of git.
@@ -63,14 +71,22 @@ dart_define.dev.json
 dart_define.hosted-dev.json
 dart_define*.json
 *.dart-define.json
+*.secrets.json
 # Allow committed, non-secret templates (e.g. .env.example, dart_define.example.json).
 !.env.example
+!.env.*.example
 !*.example.env
 !dart_define.example.json
 !*.example.json
 # The local Supabase stack (fixed localhost URL + its publishable key, same as apps/admin environment.ts).
 !dart_define.local.json
 !dart_define.local-android.json
+
+# Admin dashboard: environment.ts (local stack) and environment.production.ts (empty
+# template the default build and CI compile) are tracked. Per-machine and staging copies
+# are made from environment.staging.example.ts and never committed.
+/apps/admin/src/environments/environment.local.ts
+/apps/admin/src/environments/environment.staging.ts
 
 # Private signing keys, keystores, and certificate files
 *.keystore
@@ -82,10 +98,24 @@ dart_define*.json
 *.cer
 *.crt
 *.der
+*.p8
+*.mobileprovision
 key.properties
 local.properties
 **/android/key.properties
 **/android/local.properties
+
+# Built app packages (release/staging builds are made locally, never committed).
+*.apk
+*.aab
+*.ipa
+
+# Hosting CLI state and local secrets (Cloudflare Wrangler, Netlify, Vercel).
+.wrangler/
+.dev.vars
+.dev.vars.*
+.netlify/
+.vercel/
 
 # Service account credentials & cloud service configs
 *service-account*.json

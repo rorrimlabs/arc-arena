@@ -3,5 +3,5 @@
   "AO_SUPABASE_URL": "https://YOUR-PROJECT.supabase.co",
   "AO_SUPABASE_ANON_KEY": "the project's anon / publishable key (public) — NEVER the service-role key",
   "AO_SENTRY_DSN": "https://xxx@xxx.ingest.us.sentry.io/xxx",
-  "AO_ENVIRONMENT": "production"
+  "AO_ENVIRONMENT": "staging or production — must match --flavor staging / prod"
 }

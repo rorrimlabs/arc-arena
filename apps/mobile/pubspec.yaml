@@ -92,6 +92,11 @@ dev_dependencies:
 # The following section is specific to Flutter packages.
 flutter:
 
+  # Flavors (dev / staging / prod) select the app id and environment; see
+  # lib/core/config/app_config.dart. A run or build without --flavor is dev,
+  # so plain `flutter run` stays the local stack / offline demo.
+  default-flavor: dev
+
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in
   # the material Icons class.

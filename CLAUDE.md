@@ -18,9 +18,10 @@
 
 ## Environments
 
-- **Dev = local Supabase only** (`supabase start`; `supabase`/`docker` run outside the sandbox, Docker Desktop must run). Admin `npm run dev` (:4200); floor app `--dart-define-from-file=dart_define.local.json` (`…local-android.json` on an emulator).
-- Hosted project: manual go-live only (`docs/DEPLOY_SUPABASE.md`). **Never push, deploy, or point a dev run at it** unless explicitly asked.
-- Release builds are **cloud-only**: Gradle refuses without `AO_BACKEND=supabase` or `android/key.properties`; `AppConfig.problemFor` refuses local mode, non-https/dev URLs, secret/`service_role` keys. Only the publishable key ships.
+- **Dev = local Supabase only** (`supabase start`; `supabase`/`docker` run outside the sandbox, Docker Desktop must run). Admin `npm run dev` (:4200); floor app `--flavor dev --dart-define-from-file=dart_define.local.json` (`…local-android.json` on an emulator).
+- Floor app flavors: `dev` (default; local stack / offline demo) · `staging` (`arena-ops-staging`, `dart_define.staging.json`) · `prod` (company project, `dart_define.prod.json`). `AO_ENVIRONMENT` must match; hosted hosts are pinned in `AppConfig.hostedSupabaseHosts` (empty until each project exists).
+- Hosted projects: manual go-live only (`docs/DEPLOY_SUPABASE.md`). **Never push, deploy, or point a dev run at them** unless explicitly asked.
+- Release builds are **cloud-only** (`--flavor staging` / `prod`): Gradle and the iOS "Check Environment" phase refuse a dev release, a flavor/`AO_ENVIRONMENT` mismatch or missing `AO_BACKEND=supabase` (Gradle also a missing `android/key.properties`); `AppConfig.problemFor` checks every build mode (local mode, unpinned/non-https/dev URLs, secret/`service_role` keys, prod in debug). Only the publishable key ships.
 
 ## Scope (SLC)
 

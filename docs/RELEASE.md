@@ -88,51 +88,67 @@ step chain fails the build, because a gap silently falls through to the rebuild.
 flutter test && flutter analyze
 ```
 
-### Cloud-only (both platforms)
+### Flavors and environments (both platforms)
 
-A release build runs **only** in cloud mode. At start `AppConfig.problemFor`
-(`lib/core/config/app_config.dart`) refuses local mode, an unknown
-`AO_BACKEND`, a missing URL or key, a non-https or development host
-(`localhost`, `127.0.0.1`, `0.0.0.0`, `10.0.2.2`, `::1`, `*.local`,
-`*.localhost`, `*.test`), and any secret (`sb_secret_…`) or `service_role`
-key — the app shows a configuration error instead of starting. Debug builds
-without defines still run local mode (demo catalog and demo PINs 1111/2222);
-the demo seed itself refuses to run in a release build.
+Every build has a flavor, and each flavor is bound to one environment
+(`lib/core/config/app_config.dart`): `dev` → development (local stack or the
+offline demo; the default), `staging` → staging (`dart_define.staging.json`,
+the personal QA project `arena-ops-staging`), `prod` → production
+(`dart_define.prod.json`, the company's project). `AO_ENVIRONMENT` in the define
+file must match the flavor. Releases are built with `--flavor staging` or
+`--flavor prod` only.
 
-`dart_define.prod.json` (git-ignored, like every `dart_define*.json`) holds
-`AO_BACKEND=supabase`, the hosted https URL and its publishable key — never a
-secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md) §0) — plus
-`AO_ENVIRONMENT=production` and `AO_SENTRY_DSN` (crash reports; see
-`dart_define.example.json`). A release build not marked
-`AO_ENVIRONMENT=production` refuses to start: outside production Sentry records
-every session (Session Replay) and traces everything. Leaving `AO_SENTRY_DSN`
-empty is allowed but ships without crash reporting.
+At start `AppConfig.problemFor` checks every build (debug, profile and
+release) and shows a configuration error instead of starting when:
+
+* `AO_ENVIRONMENT` does not match the flavor, or `AO_BACKEND` is unknown;
+* a dev build is a release, or reaches anything but a development host
+  (`localhost`, `127.0.0.1`, `0.0.0.0`, `10.0.2.2`, `::1`, `*.local`,
+  `*.localhost`, `*.test`, or plain http);
+* a prod build is a debug build;
+* a staging / prod build is not cloud mode, misses its URL or key, uses a
+  development or non-https host, or a host not listed for its environment in
+  `AppConfig.hostedSupabaseHosts`. Both lists are empty until the projects
+  exist, so those flavors refuse to start until then — that list is what stops
+  a production build from ever pointing at staging;
+* the key is a secret (`sb_secret_…`) or `service_role` key, or a legacy anon
+  key of a different project than the URL.
+
+Debug builds without defines still run local mode (demo catalog and demo PINs
+1111/2222); the demo seed itself refuses to run in a release build.
+
+`dart_define.prod.json` and `dart_define.staging.json` (git-ignored, like every
+`dart_define*.json`) hold `AO_BACKEND=supabase`, the project's https URL and
+its publishable key — never a secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md)
+§0) — plus `AO_ENVIRONMENT` (`production` / `staging`) and `AO_SENTRY_DSN`
+(crash reports; see `dart_define.example.json`). Outside production Sentry
+records every session (Session Replay) and traces everything; production
+records 10 %. Leaving `AO_SENTRY_DSN` empty is allowed but ships without crash
+reporting.
 
 ### Android
 
 ```bash
-flutter build apk --release --split-per-abi --dart-define-from-file=dart_define.prod.json
-flutter build appbundle --release --dart-define-from-file=dart_define.prod.json
+flutter build apk --release --split-per-abi --flavor prod --dart-define-from-file=dart_define.prod.json
+flutter build appbundle --release --flavor prod --dart-define-from-file=dart_define.prod.json
 ```
 
-Gradle (`android/app/build.gradle.kts`) refuses release tasks before building
-when the dart-defines do not contain `AO_BACKEND=supabase`, or when
-`android/key.properties` is missing (§4) — it never signs a release with the
-debug key. Verified: a release build without defines failed in 2 s listing
-both problems; with the cloud defines, only the signing problem.
+(`--flavor staging --dart-define-from-file=dart_define.staging.json` for a QA
+build.) Gradle (`android/app/build.gradle.kts`) refuses profile and release
+tasks before building when the dart-defines' `AO_ENVIRONMENT` does not match
+the flavor, when a staging / prod build lacks `AO_BACKEND=supabase`, for any
+dev release, and when `android/key.properties` is missing for a release (§4) —
+it never signs a release with the debug key.
 
-Artifacts in `build/app/outputs/flutter-apk/` (sizes from the 2026-10-11 build):
-
-| File | Size | For |
-|---|---|---|
-| `app-arm64-v8a-release.apk` | 24.4 MB | any modern Android tablet — **use this one** |
-| `app-armeabi-v7a-release.apk` | 22.0 MB | older 32-bit devices |
-| `app-release.apk` | 69.7 MB | fat APK, all ABIs |
+Artifacts in `build/app/outputs/flutter-apk/` are named per flavor, e.g.
+`app-prod-arm64-v8a-release.apk` (any modern Android tablet — **use this
+one**), `app-prod-armeabi-v7a-release.apk` (older 32-bit devices). Sizes from
+the 2026-10-11 build, before flavors: 24.4 MB / 22.0 MB, fat APK 69.7 MB.
 
 Install on the counter tablet:
 
 ```bash
-adb install -r build/app/outputs/flutter-apk/app-arm64-v8a-release.apk
+adb install -r build/app/outputs/flutter-apk/app-prod-arm64-v8a-release.apk
 ```
 
 **Android NDK.** The build needs NDK `28.2.13676358` because `path_provider_android`
@@ -144,13 +160,18 @@ to fetch it (`NoSuchFileException`), so it was installed by hand to
 ### iOS
 
 ```bash
-flutter build ios --release --dart-define-from-file=dart_define.prod.json
+flutter build ios --release --flavor prod --dart-define-from-file=dart_define.prod.json
 ```
 
-`build/ios/iphoneos/Runner.app` — 24.0 MB (2026-10-11). Bundle id `in.rorrim.arenaOps`.
-Builds clean with `--no-codesign`; signing needs the Apple developer
-account (below). Nothing at build time checks the defines on iOS: only the
-runtime configuration check above guards the backend.
+`build/ios/iphoneos/Runner.app` — 24.0 MB (2026-10-11). Bundle id
+`in.rorrim.arenaOps` (prod; `.staging` / `.dev` for the other flavors). Each
+flavor has an Xcode scheme of the same name and `Debug-` / `Profile-` /
+`Release-<flavor>` configurations. Builds clean with `--no-codesign`; signing
+needs the Apple developer account (below). The Runner target's "Check
+Environment" build phase (`ios/scripts/check_build_environment.sh`) refuses a
+profile or release build whose flavor and dart-defines disagree, the same rules
+as Gradle. The `Runner` scheme uses the dev configurations (like `dev`), so it
+never builds with the production bundle id, and archiving from it is refused.
 
 ---
 
@@ -186,8 +207,9 @@ on a device means uninstalling it.) Before the counter goes live:
    from `key.properties` by itself.
 
 **iOS** needs the Apple developer account set as the signing team in Xcode
-(`ios/Runner.xcworkspace` → Runner → Signing & Capabilities), then
-`flutter build ipa --dart-define-from-file=dart_define.prod.json`.
+(`ios/Runner.xcworkspace` → Runner → Signing & Capabilities, for the
+`Release-prod` and `Release-staging` configurations), then
+`flutter build ipa --flavor prod --dart-define-from-file=dart_define.prod.json`.
 
 ---
 

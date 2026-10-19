@@ -175,26 +175,39 @@ Decided 2026-10-19: **production is a fresh project** on the current history
 
 ## 6. Point a build at it (your machine)
 
-Create `dart_define.hosted-dev.json` (git-ignored by `dart_define*.json`):
+Each hosted project has its own flavor and define file (git-ignored by
+`dart_define*.json`): the staging project `arena-ops-staging` uses
+`--flavor staging` with `dart_define.staging.json`, the company's production
+project `--flavor prod` with `dart_define.prod.json`. Copy
+`dart_define.example.json` and fill it in:
 
 ```json
 {
   "AO_BACKEND": "supabase",
   "AO_SUPABASE_URL": "https://<ref>.supabase.co",
-  "AO_SUPABASE_ANON_KEY": "<publishable or anon key from step 2.8>"
+  "AO_SUPABASE_ANON_KEY": "<publishable or anon key from step 2.8>",
+  "AO_SENTRY_DSN": "<that environment's Sentry DSN, or empty>",
+  "AO_ENVIRONMENT": "staging"
 }
 ```
 
-Then build or run with `--dart-define-from-file=dart_define.hosted-dev.json`:
+(`"production"` for prod.) Then add the project's host (`<ref>.supabase.co`) to
+that environment's set in `AppConfig.hostedSupabaseHosts`
+(`apps/mobile/lib/core/config/app_config.dart`) as a reviewed code change —
+until it is there the flavor refuses to start. Never list a host for both
+environments.
 
 ```bash
-flutter run --dart-define-from-file=dart_define.hosted-dev.json
+flutter run --flavor staging --dart-define-from-file=dart_define.staging.json
 ```
 
-Release builds are cloud-only and use the same kind of file
-(`dart_define.prod.json`); an Android release also needs `android/key.properties`
-— Gradle refuses the release otherwise, it never signs with the debug key
-([RELEASE.md](RELEASE.md)).
+The prod flavor never runs as a debug build (profile or release only). Release
+builds also need `android/key.properties` — Gradle refuses the release
+otherwise, it never signs with the debug key ([RELEASE.md](RELEASE.md)).
+
+The older `dart_define.hosted-dev.json` (the old hosted dev project, §4a) no
+longer starts: the dev flavor reaches only the local stack. It is retired once
+staging is verified.
 
 **Admin dashboard:** fill `apps/admin/src/environments/environment.production.ts`
 (intentionally empty in the repo) with the project URL and the publishable key

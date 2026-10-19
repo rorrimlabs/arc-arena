@@ -72,6 +72,8 @@ class _CustomerPickerState extends ConsumerState<_CustomerPicker> {
               onPressed: _creatingGuest
                   ? null
                   : () async {
+                // A second tap before the rebuild disables the button.
+                if (_creatingGuest) return;
                 setState(() => _creatingGuest = true);
                 final guest =
                     await ref.read(customerActionsProvider).createGuest();

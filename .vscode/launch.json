@@ -8,7 +8,7 @@
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
       "stopOnEntry": false,
-      "toolArgs": ["--dart-define-from-file=dart_define.local.json"]
+      "toolArgs": ["--flavor", "dev", "--dart-define-from-file=dart_define.local.json"]
     },
     {
       "name": "arena_ops (local Supabase: Android emulator)",
@@ -17,7 +17,7 @@
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
       "stopOnEntry": false,
-      "toolArgs": ["--dart-define-from-file=dart_define.local-android.json"]
+      "toolArgs": ["--flavor", "dev", "--dart-define-from-file=dart_define.local-android.json"]
     },
     {
       "name": "arena_ops (offline demo, no server)",
@@ -25,7 +25,8 @@
       "type": "dart",
       "cwd": "apps/mobile",
       "program": "lib/main.dart",
-      "stopOnEntry": false
+      "stopOnEntry": false,
+      "toolArgs": ["--flavor", "dev"]
     }
   ]
 }

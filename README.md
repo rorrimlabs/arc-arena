@@ -17,14 +17,27 @@ live on the hosted project is a separate, manual step
 ```bash
 supabase start                                    # repo root; Docker Desktop running
 cd apps/admin && npm run dev                      # dashboard → local stack (http://localhost:4200)
-cd apps/mobile && flutter run --dart-define-from-file=dart_define.local.json
+cd apps/mobile && flutter run --flavor dev --dart-define-from-file=dart_define.local.json
                  # Android emulator: dart_define.local-android.json
 ```
 
 Both configs are committed (localhost URL + the local stack's publishable key),
 and VS Code's launch list has them as "arena_ops (local Supabase: …)". Plain
 `flutter run` in a debug build is an offline demo (Drift only, no server).
-Release builds are cloud-only (`dart_define.prod.json` plus the signing key).
+
+The floor app has three flavors, each bound to one environment
+(`lib/core/config/app_config.dart`):
+
+| Flavor | Environment | Define file | App id (Android / iOS) |
+|---|---|---|---|
+| `dev` (default) | local stack or offline demo | `dart_define.local.json` / `dart_define.local-android.json` (committed) | `in.rorrim.arena_ops.dev` / `in.rorrim.arenaOps.dev` |
+| `staging` | personal QA project | `dart_define.staging.json` (git-ignored) | `….staging` |
+| `prod` | the company's project | `dart_define.prod.json` (git-ignored) | `in.rorrim.arena_ops` / `in.rorrim.arenaOps` |
+
+`AO_ENVIRONMENT` must match the flavor; dev never builds a release, prod never
+runs in debug, and staging / prod reach only the hosts listed for them in
+`AppConfig.hostedSupabaseHosts` (empty until each project exists, so those
+flavors refuse to start until then). Release builds also need the signing key.
 See **Backend** below.
 
 ## Verify

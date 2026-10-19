@@ -36,11 +36,13 @@ Future<Customer?> showCreateCustomerDialog(
               textCapitalization: TextCapitalization.words,
               decoration: const InputDecoration(labelText: 'Name'),
             ),
+            const SizedBox(height: 8),
             TextField(
               controller: phoneCtrl,
               keyboardType: TextInputType.phone,
               decoration: const InputDecoration(labelText: 'Phone (optional)'),
             ),
+            const SizedBox(height: 8),
             TextField(
               controller: yearCtrl,
               keyboardType: TextInputType.number,
@@ -63,6 +65,8 @@ Future<Customer?> showCreateCustomerDialog(
             onPressed: saving
                 ? null
                 : () async {
+                    // A second tap before the rebuild disables the button.
+                    if (saving) return;
                     final name = nameCtrl.text.trim();
                     if (name.isEmpty) return;
                     final yearProblem =

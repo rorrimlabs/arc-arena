@@ -26,3 +26,13 @@
 - §3: BL-004, BL-005, DB-010, CQ-002/003/004, NG-004; BL-002 groups; P3s.
 - BL-002 for groups (shared-pool sweep) not done; admin UI for offline_rules not built.
 - Recommend: `tool/pricing_parity.sh`, `tool/sync_it.sh` (billing + sync changes).
+
+## Environment separation (local / staging / prod), started 2026-10-19
+
+**Decisions:** D1 staging = NEW personal project `arena-ops-staging` (don't rebuild/reset the old hosted project `<ref in docs §4a>` until its data + history are reviewed). D2 prod app ID unchanged (`in.rorrim.arena_ops` / `in.rorrim.arenaOps`), `.dev` / `.staging` suffixes. D3 devices running a build from today's `prod.json`: unknown — switch no backend, touch nothing hosted until verified. D4 prod flavor refused in debug. D5 no VS Code staging entry. D6 Claude edits the Xcode project, user verifies in Xcode. D7 admin staging config in Phase B.
+
+**Phases:** A (Flutter flavors, validation, build checks, docs) → B (create `arena-ops-staging`, pin its host, `dart_define.staging.json`, admin staging, retire `hosted-dev.json`) → C (company prod project, pin, rewrite `prod.json`, company signing/Sentry).
+
+**Phase A done (uncommitted, 2026-10-19):** `AppConfig.problemFor(mode:)` + `environmentForFlavor` + `hostedSupabaseHosts` (both sets EMPTY → staging/prod refuse to start); Gradle `productFlavors` + per-flavor check; iOS 9 flavor configs, schemes dev/staging/prod, "Check Environment" phase (`ios/scripts/check_build_environment.sh`), `APP_DISPLAY_NAME`; macOS `*-dev` configs + dev scheme (for `default-flavor: dev`); launch.json `--flavor dev`; docs. Verified: analyze clean, 34 config/sentry tests pass, Gradle + iOS refusals, dev debug builds on Android / iOS sim / macOS. User to verify in Xcode. Consequence: no build can reach the old hosted project now.
+
+**Next:** Phase B on the user's go-ahead (user creates `arena-ops-staging`).
