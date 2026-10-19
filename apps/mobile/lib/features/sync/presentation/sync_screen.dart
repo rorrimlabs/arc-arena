@@ -225,6 +225,13 @@ String reasonFor(String code) => switch (code) {
       'invalid_method' => 'that payment method is not accepted here',
       // Sessions and groups.
       'invalid_time' => 'its times were out of order',
+      'time_in_future' => 'its time is ahead of the server — check the '
+          'tablet\'s date and time',
+      'time_too_old' => 'it waited offline too long to be accepted — tell the '
+          'owner, who can record it from the dashboard',
+      'activity_not_offered' => 'that station does not offer that type',
+      'waive_reason_required' => 'a waive needs a reason',
+      'waive_over_limit' => 'only an owner can waive that much',
       'no_open_segment' => 'the session had already moved or ended on another device',
       'no_open_assignment' =>
         'that player had already moved or ended on another device',

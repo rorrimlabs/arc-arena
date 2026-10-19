@@ -37,6 +37,8 @@ import { VoidDialog, VoidDialogData } from '../dialogs/void-dialog';
 
 /** A start that reached the server this much later was sent from an offline device or clock. */
 const LATE_MS = 5 * 60_000;
+/** An end that reached the server this much later: possibly back-dated (offline window, BL-001). */
+const LATE_END_MS = 15 * 60_000;
 
 /**
  * Design: `if (p === 'sales')` detail. The list's summary shows at once; the charge lines (with
@@ -87,6 +89,13 @@ const LATE_MS = 5 * 60_000;
         <app-detail-row label="Ended" [value]="ended()" />
         <app-detail-row label="Member" [value]="b.customer + ' · ' + memberType()" />
         <app-detail-row label="Started by" [value]="b.startedBy ?? '—'" />
+        @if (lateEnd(); as late) {
+          <app-detail-row label="End reached the server" [value]="late" />
+          <p class="-mt-2 text-[12.5px] leading-[1.4] text-muted">
+            More than 15 minutes after the end the device recorded: it was offline, or the end
+            was dated back. The bill is priced on the device's end time.
+          </p>
+        }
         @if (lateRecord(); as late) {
           <app-detail-row label="Reached the server" [value]="late" />
           <p class="-mt-2 text-[12.5px] leading-[1.4] text-muted">
@@ -259,6 +268,12 @@ export class BillDetail {
     return b.endedAt ? formatTime(b.endedAt) : 'Voided while it ran';
   });
   protected readonly memberType = computed(() => customerType(this.shown()));
+  protected readonly lateEnd = computed(() => {
+    const b = this.shown();
+    if (!b.endRecordedAt || !b.endedAt) return null;
+    const late = Date.parse(b.endRecordedAt) - Date.parse(b.endedAt);
+    return late > LATE_END_MS ? `${formatDate(b.endRecordedAt)}, ${formatTime(b.endRecordedAt)}` : null;
+  });
   protected readonly lateRecord = computed(() => {
     const b = this.shown();
     if (!b.recordedAt) return null;

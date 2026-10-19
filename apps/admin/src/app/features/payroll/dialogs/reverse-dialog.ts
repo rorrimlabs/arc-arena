@@ -14,6 +14,7 @@ import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
 import { formatPaise } from '../../../shared/money/rupees.pipe';
 import { PayrollStore } from '../data/payroll-store';
 import { SalaryAdjustment, adjustmentLabel } from '../data/payroll.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export interface ReverseDialogData {
   readonly runId: string;
@@ -80,6 +81,9 @@ export class ReverseDialog {
   protected readonly error = signal('');
   protected readonly busy = signal(false);
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async confirm(event: Event): Promise<void> {
     event.preventDefault();
     if (!this.note().trim()) {
@@ -89,7 +93,7 @@ export class ReverseDialog {
     this.busy.set(true);
     this.error.set('');
     try {
-      await this.store.reverse(this.data.runId, this.data.adjustment.id, this.note());
+      await this.store.reverse(this.data.runId, this.data.adjustment.id, this.note(), this.attempt);
       this.ref.close(true);
     } catch (e) {
       this.error.set(toAppError(e).message);

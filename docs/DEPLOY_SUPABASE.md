@@ -40,8 +40,8 @@ empty.
 
 | Area | Result |
 |---|---|
-| Migration order | `0001` … `0016`, then the generated `2026…` migrations (list in §4a), applied in filename order by `supabase db push`. 0013 renames the 0011 op functions to `_v1` and wraps them, 0014 tightens grants, 0015 closes the app's route to arena ownership, 0016 wraps four ops again (payments, staff, pad moves, stations) and adds same-arena triggers — order matters and is exactly the filename order. No step needs manual ordering. |
-| Fresh-project compatibility | `0001`–`0016` apply cleanly on an empty database (verified by `supabase db reset --local` on the same Postgres 17 image); the generated migrations are applied on the local stack. Extensions: `pgcrypto` (already present on hosted — `if not exists` is a no-op), `btree_gist` (unused; 0014 moves it to `extensions`). `0001`–`0016` touch neither `auth`, `storage` nor `realtime`; the generated migrations add the `realtime.messages` policies and tables to the `supabase_realtime` publication. No migration inserts users or needs superuser beyond what `postgres` has on hosted. |
+| Migration order | The files in `supabase/migrations/`, oldest first: one generated baseline (`20261015054055_declarative_sync`, the whole schema from scratch) and the generated migrations after it, applied in filename order by `supabase db push`. The old hand-written `0001`–`0016` and the 2026-10-11…14 migrations were squashed into that baseline; **never squash history again once a remote has applied it**. |
+| Fresh-project compatibility | The baseline creates every schema object on an empty project (verified by `supabase db reset --local` on the same Postgres 17 image). Extensions: `pgcrypto` (already present on hosted — `if not exists` is a no-op), `btree_gist` in `extensions`. The migrations add the `realtime.messages` policies and tables to the `supabase_realtime` publication; none inserts users or needs superuser beyond what `postgres` has on hosted. **It cannot be pushed onto a project that already has the old history** (§4a). |
 | `seed.sql` | Intentionally empty (arenas start with no catalog). `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created by the owner's sign-up or once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
 | RLS | Enabled on every public table; every policy is scoped to arena membership. Payment and charge rows also need `bill`, `money` or `reports`; customers `start`, `members`, `money` or `reports`; `audit_log` owner level; `staff_invites` has no client access. Views are not client-readable (views bypass RLS). The device feed (`sync_pull`) is unchanged: every active member's device still receives the arena's rows, payments and customers included (an open product decision). |
@@ -80,7 +80,7 @@ client functions predates the current client API (it still names
      * **Confirm signup**: subject `404 Arena: confirm your e-mail`, body = `supabase/templates/confirmation.html`. It shows an owner signing up the confirmation link (it opens the dashboard's `/register`), and an invited new address the invitation link (it tells them apart by the `signup: "owner"` user metadata the sign-up sets).
      * **Magic Link**: subject `You're invited to 404 Arena`, body = `supabase/templates/magic_link.html` (invitations to an address that already has a confirmed login).
      * **Project Settings → Authentication → SMTP**: set up your own SMTP sender. The built-in one delivers only to the project's team members, at a low rate, so real sign-ups would never get their link and invitations would never arrive.
-   * **Attack protection**: turn on **CAPTCHA** (hCaptcha or Turnstile) once the app sends a captcha token — until then leave it off or sign-up fails. Keep the default sign-up rate limits.
+   * **Attack protection → CAPTCHA (Turnstile)**: create a Turnstile widget in Cloudflare for the dashboard's domain; put its **site key** (public) in `apps/admin/src/environments/environment.production.ts` (`turnstileSiteKey`) and its **secret key** here (Provider: Turnstile). The dashboard then sends a token with sign-up, sign-in, password reset and invitations. **Do not turn CAPTCHA on until the floor app sends a token too**: Supabase then refuses every password sign-in without one, including staff signing in on the floor app. Keep the default sign-up rate limits.
    * **Secure password change**: ON. A person whose last sign-in is older than 24 h may be asked to sign out and back in before More → Change password succeeds.
 2. **Authentication → Sign In / Providers → Anonymous sign-ins**: **OFF**.
 3. **Authentication → Policies / Passwords** (wording varies): minimum length **10**, require letters and digits; enable **leaked-password protection** if your plan offers it.
@@ -107,9 +107,9 @@ Prompts for the database password from step 2.3. This writes `supabase/.temp/pro
 ```bash
 supabase db push --dry-run
 ```
-For a new project: must list exactly `0001` … `0016` followed by the generated
-migrations in §4a, in that order, and nothing else. (For the existing hosted
-dev project, see §4a.)
+For a new project: must list exactly the files in `supabase/migrations/`, oldest
+first, and nothing else. On a project that already has the old history it fails
+or lists a baseline that would collide with existing objects: stop, see §4a.
 
 ```bash
 supabase db push
@@ -126,131 +126,45 @@ Rules while linked:
 * Every repo script (`tool/verify_all.sh`, `tool/sync_it.sh`, `tool/pricing_parity.sh`, the race scripts) targets the local Docker container only and refuses anything else; keep using them locally.
 * Future schema changes: edit `supabase/schemas/` and generate the migration (CLAUDE.md, "Supabase — declarative schemas only"; never write one by hand), run `bash tool/verify_all.sh --with-it --with-psql` locally, then `supabase db push --dry-run` / `db push`.
 
-## 4a. Bringing an already-deployed project up to date (0016 and after)
+## 4a. The existing hosted dev project (old history)
 
-**Status 2026-10-14 (with the owner's approval): done on the hosted dev project
-`ouxvtvlzhxddmqirmnxo`.** `0016` was already there; the 20 files from
-`20261011202706` to `20261014065708` were pushed after the pre-checks below
-passed (`verify_all.sh --with-it --with-psql`: no failures, no skips; drift check
-clean; hosted publication empty). `supabase migration list --linked`: 36/36
-match. `supabase db advisors --linked`: only `auth_leaked_password_protection`
-(an Auth setting, §3). `staff-admin` deployed (`--no-verify-jwt`, no
-`ADMIN_SITE_URL` yet: links use the dashboard's own address) — since removed from
-the repo: delete it there with `supabase functions delete staff-admin`. The dashboard's
-`environment.production.ts` holds the hosted URL and anon key. Still to do by
-the owner: §3.4 redirect URLs (add `http://127.0.0.1:4200/**` and
-`http://localhost:4200/**` while the dashboard runs locally against hosted),
-custom SMTP (§3; without it Supabase e-mails only the project's team
-members), leaked-password protection.
+The hosted dev project `ouxvtvlzhxddmqirmnxo` was pushed with the old history
+(36 versions, `0001` … `20261014105230`) before the migrations were squashed. The
+new baseline cannot be pushed onto it, and **the obvious "fixes" destroy data or
+drift the schema: never run `supabase db reset --linked`, and never `migration
+repair` by hand.**
 
-The hosted dev project was pushed with `0001` … `0015` on 2026-10-11. The list
-below is what was pending before 2026-10-14, in push order:
+Decided 2026-10-19: **production is a fresh project** on the current history
+(§§1–4 as written). The old dev project is not upgraded in place:
 
-1. `0016_integrity_and_authz` (money integrity, owner protection, pad-move
-   permission, same-arena triggers, pinned `search_path` — see SYNC.md "Money
-   and permission rules")
-2. `20261011202706_drop_legacy_rpcs_flatten_ops`
-3. `20261011203332_security_hardening`
-4. `20261011203913_activity_fk_indexes`
-5. `20261012105945_drift_check`
-6. `20261012113650_self_serve_owner_signup`
-7. `20261012165818_admin_arena_staff`
-8. `20261012173542_add_member_by_email_roles`
-9. `20261013050414_admin_sales`
-10. `20261013090648_owner_built_catalog`
-11. `20261013093743_admin_pricing_read`
-12. `20261013105623_activity_remove`
-13. `20261013142228_admin_catalog_details`
-14. `20261013143752_floor_options_and_birth_year`
-15. `20261013151140_enable_supabase_realtime_publication`
-16. `20261013165054_security_definer_to_private_schema`
-17. `20261013173321_staff_invitations`
-18. `20261013174103_realtime_probe` (despite its name it holds the
-    `realtime.messages` authorization policies and
-    `private.can_use_arena_topic`; generated, so not renamed)
-19. `20261013174642_live_sync_publication_money_rls_staff_update`
-20. `20261014053857_game_lifecycle_delete_archive` (`game.delete` for never-used
-    games; game names trimmed and unique ignoring case; an edit over a newer
-    archive is refused; a deleted game is never re-created; `game.set_compat`
-    keeps a note it is not sent)
-21. `20261014065708_station_status_guard` (a station with a live session can no
-    longer be taken out of service or removed through `resource.set_status` /
-    `resource.upsert`; a `resource.upsert` without a status keeps it)
-22. `20261014102347_sales_corrections_and_audit` (a void needs a reason; refunds
-    allowed on a voided bill; waives audited; new server-only op
-    `op_payment_correct` = `payment.correct`; `arena_sales` / `arena_sale` return
-    the payments ledger, returning customer, player-minutes, void who/when,
-    server receipt time and the audit history)
-23. `20261014102752_payment_voided_before_balance` (a payment on a voided bill is
-    refused as `voided` before the balance check)
-24. `20261014105230_sales_correction_rows_not_refunds` (a method correction's
-    rows are flagged and left out of the refunds total)
+1. **Before touching it**, take a copy: Database → Backups (or
+   `pg_dump --schema-only` and `--data-only` of the linked project) and keep it
+   with the release records.
+2. **Clean up what the repo no longer has** (SEC-002): `supabase functions list
+   --project-ref ouxvtvlzhxddmqirmnxo` → `supabase functions delete staff-admin`
+   (it holds the service-role key and was deployed `--no-verify-jwt`).
+3. Either leave it as an old staging copy (no new builds point at it) or delete
+   it and create a new staging project from §1. The dashboard's
+   `environment.production.ts` and `dart_define.prod.json` must point at the new
+   production project, never at this one.
 
-> **Verified read-only on 2026-10-14** with `supabase migration list --linked`:
-> hosted has `0001` … `0016`. Item 1 above (`0016`) is therefore already applied;
-> items 2–24 are not. `supabase functions list` shows no Edge Function deployed.
+### Backups (every hosted project holding real takings)
 
-The first two 2026-10-14 migrations only replace function bodies and add one new
-server-only function (`op_game_delete`, no client grant); no table changes,
-nothing rewritten. Older floor-app builds keep working: they always send the
-fields the new checks read as optional. A floor app on the new build also
-needs these migrations: it sends `base_active` on game edits (an older server
-ignores it) and drops games/station types the server deleted.
-
-Items 22–24 (the staff handover audit) also
-only replace function bodies and add one server-only function
-(`op_payment_correct`, no client grant); no table changes. Behaviour a client can
-notice: a void without a reason is refused (`void_reason_required`; the dashboard
-always sends one, the floor app never voids); a payment on a voided bill answers
-`voided` instead of `overpayment`. Floor builds that do not send `waive_reason`
-still end waived sessions (the reason is optional on the server). The dashboard
-from this audit needs items 22–24 (it reads the new `arena_sales` fields and
-sends `payment.correct`).
-
-```bash
-bash tool/verify_all.sh --with-it --with-psql
-```
-Everything locally first; it must end `NO FAILURES` with no `SKIP` line. Then
-run the declarative drift check by hand (`supabase db schema declarative sync
---no-apply` must say "No schema changes found").
-
-**Before pushing, check the hosted publication** (SQL Editor):
-`select * from pg_publication_tables where pubname = 'supabase_realtime';` —
-the publication migrations use `alter publication … add table` and fail if a
-table is already published there.
-
-```bash
-supabase db push --dry-run
-```
-Must list exactly the files above, in that order, and nothing else.
-
-```bash
-supabase db push
-```
-`20261013165054_security_definer_to_private_schema` drops and recreates 31
-policies and 11 RPCs inside its transaction: expect a brief PostgREST
-schema-cache reload.
-
-```bash
-supabase migration list --linked
-```
-Both columns show the same list.
-
-Right after the push, set the e-mail templates (step 3.1) and re-run step 5. `supabase db advisors --linked` should no longer
-list `function_search_path_mutable` or any
-`authenticated_security_definer_function_executable` /
-`anon_security_definer_function_executable` row (locally, `supabase db
-advisors --local --type all` returns none).
-
-Accounts created on hosted dev by the old `staff-admin` (already confirmed,
-password chosen by the owner) still exist: those people should reset their
-password.
-
-0016 is safe on live data: it adds checks to future writes only. Existing rows are
-not re-validated, nothing is deleted or rewritten, and an op that was already
-applied replays its stored answer. Devices on an older build keep working;
-the only difference they see is that an overpayment, an over-refund or an
-owner edit that would remove the owner is now refused or adjusted.
+* Use a plan with daily backups, and turn on **Point-in-Time Recovery** for
+  production (Database → Backups). Write down the retention.
+* Before every `supabase db push`: a `pg_dump --schema-only` and a
+  `--data-only` of the linked project.
+* Once before go-live, restore one backup into a scratch project and check that
+  sessions, payments and salary runs are there (a restore drill).
+* Money, audit and evidence rows are append-only in the database itself
+  (`_append_only` triggers on payments, charges, bill discounts, `audit_log`,
+  salary adjustments, punches and pad moves): deleting a session or an arena
+  that has them is refused. To really remove a test arena, take a backup first,
+  then in one SQL Editor transaction `set local session_replication_role =
+  replica;` before the delete.
+* Migrations are forward-only. A generated migration that drops a column
+  (e.g. `20261016123826_game_play_modes` drops `games.player_mode`) must never
+  reach a database holding real rows of it without a copy step first.
 
 ## 5. Verify the hosted database
 
@@ -309,7 +223,7 @@ of the app. Serve it at the https URL you set as Site URL (step 3.4).
 4. **Check the e-mail setup once**: step 3.1 (SMTP, both templates, sign-ups on) and step 3.4 (the dashboard's `/accept-invite` in Redirect URLs). Nothing to deploy: the dashboard asks Supabase Auth to send the invitation itself. If an older version deployed the `staff-admin` Edge Function, delete it (`supabase functions delete staff-admin`).
 5. **Admin dashboard** → Users → **Invite user**: name, e-mail, role (staff, or owner for a co-owner — only an owner may invite an owner) and permissions. No password: the person receives the link by e-mail (valid 7 days; a newer invite to the same address replaces it). Pending invitations are listed on the Users page with **Withdraw**.
 6. The person opens the link → the dashboard's `/accept-invite` page → a new login chooses its own password (an existing one may keep its own) → accepted. Their confirmed e-mail must be the invited address. On their phone: *Sign in* with that e-mail and password.
-7. To remove a staff member's access: admin dashboard → Users → **Deactivate** (their device returns to sign-in; their Realtime access ends within the JWT expiry). To remove the login entirely: Authentication → Users → delete.
+7. To remove a staff member's access: admin dashboard → Users → **Deactivate** (their device returns to sign-in; their Realtime access ends within the JWT expiry). **Never delete the login** of anyone who has punched in, applied for leave or been on a pay run: their attendance, leave and salary lines are records, and the database refuses the delete (`staff_profiles` → staff tables are `no action`, not cascade). Deactivating is enough. Only a login that never did anything (e.g. a mistyped invitation) can be deleted under Authentication → Users.
 8. Run the multi-device checks on **different networks** (one on mobile data):
    * start a session on one phone, see it on the other within about a second (Realtime), at worst on the next 10 s poll;
    * put one phone in airplane mode, take a payment and start a session there; reconnect; confirm it syncs (or, if the other phone took the same station meanwhile, that it is refused and shown under Sync → Needs attention, money included);

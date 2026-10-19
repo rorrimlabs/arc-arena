@@ -42,7 +42,7 @@ create or replace function public._sales (
   AS $function$
   select jsonb_build_object(
       'kind', 'single', 'id', s.id, 'at', b.at,
-      'started_at', s.started_at, 'ended_at', s.actual_ended_at, 'recorded_at', s.created_at,
+      'started_at', s.started_at, 'ended_at', s.actual_ended_at, 'recorded_at', s.created_at, 'end_recorded_at', s.ended_recorded_at,
       'status', s.status, 'payment_status', s.payment_status,
       'customer', c.name, 'guest', c.is_guest,
       'returning', not c.is_guest and (
@@ -130,7 +130,7 @@ create or replace function public._sales (
   union all
   select jsonb_build_object(
       'kind', 'group', 'id', gs.id, 'at', b.at,
-      'started_at', gs.started_at, 'ended_at', gs.actual_ended_at, 'recorded_at', gs.created_at,
+      'started_at', gs.started_at, 'ended_at', gs.actual_ended_at, 'recorded_at', gs.created_at, 'end_recorded_at', gs.ended_recorded_at,
       'status', gs.status, 'payment_status', gs.payment_status,
       'customer', c.name, 'guest', c.is_guest,
       'returning', not c.is_guest and (

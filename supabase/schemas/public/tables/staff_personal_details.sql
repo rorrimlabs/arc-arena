@@ -29,7 +29,7 @@ create table "public"."staff_personal_details" (
   constraint "staff_personal_details_phones_check" check ((((phone IS NULL) OR (phone ~ '^\+?[0-9][0-9 -]{5,18}[0-9]$'::text)) AND ((emergency_phone IS NULL) OR (emergency_phone ~ '^\+?[0-9][0-9 -]{5,18}[0-9]$'::text)))),
   constraint "staff_personal_details_pin_code_check" check (((pin_code IS NULL) OR (pin_code ~ '^[1-9][0-9]{5}$'::text))),
   constraint "staff_personal_details_pkey" primary key (staff_id),
-  constraint "staff_personal_details_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade,
+  constraint "staff_personal_details_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "staff_personal_details_updated_by_fkey" foreign key (updated_by) references auth.users(id) on delete set null
 );
 

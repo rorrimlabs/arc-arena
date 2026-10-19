@@ -105,6 +105,12 @@ create trigger t_same_arena
     public._assert_same_arena('assignment_id', 'group_assignments', 'group_id', 'group_sessions',
     'resource_id', 'resources');
 
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_group_charges_append_only
+  before update or delete on public.group_charges
+  for each row
+  execute function public._append_only();
+
 -- Readable by an active member holding bill, or owner level (money/reports): bill lines are financial records.
 -- No write policy: clients change data only through sync_push.
 create policy "p_sel_group_charges" on "public"."group_charges"

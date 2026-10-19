@@ -5,6 +5,7 @@ import { LoginScope } from '../../../core/auth/login-scope';
 import { PayPolicy, payPolicyPayload } from '../../payroll/data/pay-policy';
 import { PaySetupApi } from './pay-setup-api';
 import { HrDraft, PaySetupData, RateDraft, hrPayload, ratePayload } from './pay-setup.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 /**
  * The current arena's pay setup: staff, HR profiles, pay rates and pay rules. A write goes to
@@ -90,18 +91,24 @@ export class PaySetupStore {
     await this.load(true);
   }
 
-  async addRate(staffId: string, draft: RateDraft): Promise<void> {
+  async addRate(staffId: string, draft: RateDraft, attempt = new Attempt()): Promise<void> {
     await this.api.send(this.arena.current().id, {
       kind: 'pay_rate.add',
-      payload: ratePayload(crypto.randomUUID(), staffId, draft),
+      opId: attempt.id('op'),
+      payload: ratePayload(attempt.id('rate'), staffId, draft),
     });
     await this.load(true);
   }
 
-  async addPolicy(effectiveFrom: string, policy: PayPolicy): Promise<void> {
+  async addPolicy(
+    effectiveFrom: string,
+    policy: PayPolicy,
+    attempt = new Attempt(),
+  ): Promise<void> {
     await this.api.send(this.arena.current().id, {
       kind: 'pay_policy.add',
-      payload: payPolicyPayload(crypto.randomUUID(), effectiveFrom, policy),
+      opId: attempt.id('op'),
+      payload: payPolicyPayload(attempt.id('policy'), effectiveFrom, policy),
     });
     await this.load(true);
   }

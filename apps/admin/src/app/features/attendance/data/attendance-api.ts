@@ -39,7 +39,7 @@ export abstract class AttendanceApi {
   /** Entries by id, whatever their status (a correction's earlier rows). */
   abstract entries(arenaId: string, ids: readonly string[]): Promise<AttendanceEntry[]>;
   /** attendance.correct; resolves with the new row's id (or the voided row's). */
-  abstract correct(arenaId: string, payload: CorrectionPayload): Promise<string>;
+  abstract correct(arenaId: string, payload: CorrectionPayload, opId?: string): Promise<string>;
   /** attendance.review: a pending entry becomes accepted. */
   abstract review(arenaId: string, entryId: string, note: string): Promise<void>;
 }
@@ -171,11 +171,11 @@ class SupabaseAttendanceApi extends AttendanceApi {
     return (data as Row[]).map(toEntry);
   }
 
-  async correct(arenaId: string, payload: CorrectionPayload): Promise<string> {
+  async correct(arenaId: string, payload: CorrectionPayload, opId?: string): Promise<string> {
     const [result] = await pushOps(
       await this.supabase.client(),
       arenaId,
-      [{ kind: 'attendance.correct', payload: { ...payload } }],
+      [{ kind: 'attendance.correct', payload: { ...payload }, opId }],
       CORRECTION_MESSAGES,
     );
     return String(result?.['entry_id'] ?? '');

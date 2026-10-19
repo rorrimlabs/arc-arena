@@ -8,7 +8,9 @@
 --   played_minutes, billed_minutes, unit_minutes, unit_price_paise, amount_paise}.
 --   discount? ({id?, discount_id? | code? | manual: {value_kind, value}, reason?, amount_paise}:
 --   validated and recorded by _discount_apply; billed = cash-rounded subtotal − discount).
--- Checks / errors: forbidden; not_found (hint group); not_active; stale (assignment ids or
+-- Checks / errors: forbidden; time_in_future, time_too_old (_client_time: device time after now + 2 min or
+--   over 24 h old); waive_reason_required; waive_over_limit (below owner level, a
+--   write-off above discount_options.manual_max_percent of the bill); not_found (hint group); not_active; stale (assignment ids or
 --   scheduled end differ from what the device saw; compared with is distinct from, so a missing
 --   expected value counts as stale); invalid_time (ended_at before a player's open assignment
 --   started); price_mismatch (total differs from _pr_group_bill, or the charge rows differ from
@@ -37,7 +39,13 @@ declare
   v_bill jsonb; v_keys text[]; v_disc bigint := 0; v_total bigint; pol jsonb;
 begin
   perform _need(p_arena, 'bill');
-  if v_waive then perform _need(p_arena, 'discount'); end if;
+  perform _client_time(p_arena, v_ended, 'ended_at');
+  if v_waive then
+    perform _need(p_arena, 'discount');
+    if nullif(btrim(coalesce(p->>'waive_reason', '')), '') is null then
+      raise exception 'waive_reason_required';
+    end if;
+  end if;
   perform _group_active(p_arena, v_group);
   select scheduled_end_at into v_end from group_sessions where id = v_group;
   select coalesce(array_agg(id), '{}') into v_ids from group_assignments where group_id = v_group;
@@ -63,10 +71,11 @@ begin
   -- Payments may already have been taken against the running bill.
   v_pay := case when v_waive then 'waived' else _payment_status(v_billed, v_paid) end;
   update group_sessions set status = 'completed', actual_ended_at = v_ended,
-      billed_amount_paise = v_billed, payment_status = v_pay, updated_at = v_now
+      billed_amount_paise = v_billed, payment_status = v_pay, updated_at = v_now,
+      ended_recorded_at = v_now
     where id = v_group;
   -- A waive writes off what was not paid: audited with the amount and the staff reason
-  -- (waive_reason; optional here so floor builds that do not send it still end the group).
+  -- (waive_reason, required: waive_reason_required).
   if v_waive then
     insert into audit_log(arena_id, entity_type, entity_id, action, reason, before, after,
         created_by, created_at)
@@ -93,6 +102,8 @@ begin
     v_total := _pr_money((v_bill->>'subtotal')::bigint - v_disc, (pol->>'money_rounding_paise')::int,
       pol->>'money_rounding_dir');
   end if;
+  -- Below owner level a waive is capped like a manual discount.
+  if v_waive then perform _waive_check(p_arena, v_billed, v_paid); end if;
   if v_total is distinct from v_billed then
     perform _price_mismatch('bill', v_total, v_billed);
   end if;

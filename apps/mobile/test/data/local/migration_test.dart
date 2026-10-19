@@ -39,6 +39,58 @@ void main() {
     if (dir.existsSync()) await dir.delete(recursive: true);
   });
 
+  /// Reverses v17 -> v18 on a file the current AppDatabase built: the old
+  /// one-value `player_mode` column instead of `play_modes`.
+  void undoV18(Database raw) {
+    raw.execute(
+        "ALTER TABLE games ADD COLUMN player_mode TEXT NOT NULL DEFAULT 'single'");
+    raw.execute('ALTER TABLE games DROP COLUMN play_modes');
+  }
+
+  /// Reverses v16 -> v17 and v17 -> v18: every fixture older than v17 is the
+  /// current schema minus these (and its own later additions).
+  void undoV17AndV18(Database raw) {
+    undoV18(raw);
+    raw.execute('ALTER TABLE activities DROP COLUMN overtime_grace_minutes');
+  }
+
+  /// One completed, billed and paid hour on HEX, for the v16 / v17 fixtures.
+  Future<String> paidHour(AppDatabase db) async {
+    final sessions = LocalSessionRepository(db);
+    final who = await LocalCustomerRepository(db).create(name: 'Isha');
+    final snapshot = await LocalCatalogRepository(db).currentSnapshot();
+    final started = await sessions.start(StartSessionCommand(
+      customerId: who.id,
+      startedAt: start,
+      scheduledEndAt: start.add(const Duration(hours: 1)),
+      snapshot: snapshot,
+      resourceId: 'hex',
+      resourceName: 'HEX',
+      activityCode: 'PS5',
+      controllerCount: 1,
+    ));
+    final id = started.valueOrNull!.id;
+    final bill = const SegmentBilling().bill(
+      snapshot: snapshot,
+      segments: await sessions.segmentsFor(id),
+      openEndAt: start.add(const Duration(hours: 1)),
+      sessionStart: start,
+    );
+    final ended = await sessions.end(EndSessionCommand(
+      sessionId: id,
+      actualEndedAt: start.add(const Duration(hours: 1)),
+      billedAmountPaise: bill.total.value,
+      charges: bill.charges,
+    ));
+    expect(ended.isOk, isTrue, reason: ended.failureOrNull?.display);
+    await sessions.recordPayment(RecordPaymentCommand(
+      sessionId: id,
+      amountPaise: bill.total.value,
+      method: PaymentMethod.cash,
+    ));
+    return id;
+  }
+
   /// Builds a genuine **v10** database holding one session, one segment and one
   /// payment, plus two staff accounts with plaintext PINs.
   ///
@@ -96,6 +148,7 @@ void main() {
     // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    undoV17AndV18(raw);
     raw.execute('PRAGMA user_version = 10');
     raw.close();
     return sessionId;
@@ -279,6 +332,7 @@ void main() {
     // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    undoV17AndV18(raw);
     raw.execute('PRAGMA user_version = 11');
     raw.close();
     return sessionId;
@@ -387,6 +441,7 @@ void main() {
     // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    undoV17AndV18(raw);
     raw.execute('PRAGMA user_version = 12');
     raw.close();
     return started.valueOrNull!.id;
@@ -480,6 +535,7 @@ void main() {
     // customers.birth_year arrived in v15, pricing_rules in v16.
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    undoV17AndV18(raw);
     raw.execute('PRAGMA user_version = 13');
     raw.close();
     return started.valueOrNull!.id;
@@ -572,6 +628,7 @@ void main() {
     final raw = sqlite3.open(file.path);
     raw.execute('ALTER TABLE customers DROP COLUMN birth_year');
     raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    undoV17AndV18(raw);
     raw.execute('PRAGMA user_version = 14');
     raw.close();
     return (sessionId: started.valueOrNull!.id, customerId: who.id);
@@ -706,6 +763,7 @@ void main() {
         "unit_minutes, price_paise) VALUES ('ps5_2_old', 'PS5', 'retired_band', 2, 60, 1)");
     raw.execute("INSERT INTO sync_meta (key, value) VALUES ('pull_cursor', '98765')");
     raw.execute('DROP TABLE IF EXISTS pricing_rules');
+    undoV17AndV18(raw);
     raw.execute('PRAGMA user_version = 15');
     raw.close();
     return (live: liveId, done: doneId);
@@ -797,6 +855,147 @@ void main() {
       addTearDown(db.close);
       expect(db.rebuiltFromVersion, 0);
       expect(await LocalSessionRepository(db).getById(ids.done), isNotNull);
+    });
+  });
+
+  /// A genuine v16 database: no overtime grace, the old `player_mode`, a cloud
+  /// pull cursor and one paid session.
+  Future<String> buildV16Database() async {
+    final db = AppDatabase(NativeDatabase(file));
+    await LocalSeed.apply(db);
+    final id = await paidHour(db);
+    await db.close();
+    final raw = sqlite3.open(file.path);
+    raw.execute("INSERT INTO sync_meta (key, value) VALUES ('pull_cursor', '98765')");
+    undoV17AndV18(raw);
+    raw.execute('PRAGMA user_version = 16');
+    raw.close();
+    return id;
+  }
+
+  group('v16 -> v17 (overtime grace)', () {
+    test('the session, charge and payment survive; every type gets 0 grace; '
+        'the pull cursor rewinds', () async {
+      final id = await buildV16Database();
+      final before = sqlite3.open(file.path);
+      expect(before.userVersion, 16);
+      expect(
+          before
+              .select("SELECT 1 FROM pragma_table_info('activities') "
+                  "WHERE name = 'overtime_grace_minutes'")
+              .isEmpty,
+          isTrue);
+      before.close();
+
+      final db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0, reason: 'sequential, not a rebuild');
+      final sessions = LocalSessionRepository(db);
+      final done = (await sessions.getById(id))!;
+      expect((await sessions.chargesFor(id)).single.amountPaise, done.billedAmountPaise);
+      expect((await sessions.paymentsFor(id)).single.amountPaise, done.billedAmountPaise);
+      final types = await db.select(db.activities).get();
+      expect(types, isNotEmpty);
+      expect(types.every((a) => a.overtimeGraceMinutes == 0), isTrue);
+      final cursor = await (db.select(db.syncMeta)
+            ..where((t) => t.key.equals('pull_cursor')))
+          .getSingle();
+      expect(cursor.value, '0', reason: 'the next pull re-reads the grace');
+      final check = sqlite3.open(file.path);
+      expect(check.userVersion, AppDatabase.expectedSchemaVersion);
+      check.close();
+    });
+
+    test('migrating twice is a no-op', () async {
+      final id = await buildV16Database();
+      var db = AppDatabase(NativeDatabase(file));
+      expect(await LocalSessionRepository(db).getById(id), isNotNull);
+      await db.close();
+      db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0);
+      expect(await LocalSessionRepository(db).getById(id), isNotNull);
+    });
+  });
+
+  /// A genuine v17 database: one `player_mode` per game (one game of each
+  /// value), a set overtime grace and one paid session.
+  Future<String> buildV17Database() async {
+    final db = AppDatabase(NativeDatabase(file));
+    await LocalSeed.apply(db);
+    final id = await paidHour(db);
+    for (final g in ['m_single', 'm_local', 'm_online', 'm_both']) {
+      await db.into(db.games).insert(GamesCompanion.insert(
+            id: g,
+            name: g,
+            aliases: const [],
+            platforms: const ['PS5'],
+          ));
+    }
+    await db.close();
+    final raw = sqlite3.open(file.path);
+    undoV18(raw);
+    for (final m in ['single', 'local', 'online', 'both']) {
+      raw.execute('UPDATE games SET player_mode = ? WHERE id = ?', [m, 'm_$m']);
+    }
+    raw.execute("UPDATE activities SET overtime_grace_minutes = 5 WHERE code = 'PS5'");
+    raw.execute("INSERT INTO sync_meta (key, value) VALUES ('pull_cursor', '98765')");
+    raw.execute('PRAGMA user_version = 17');
+    raw.close();
+    return id;
+  }
+
+  group('v17 -> v18 (play modes)', () {
+    test('each player mode becomes its play modes and the old column goes; '
+        'sessions, payments, grace and the pull cursor are untouched', () async {
+      final id = await buildV17Database();
+      final before = sqlite3.open(file.path);
+      expect(before.userVersion, 17);
+      before.close();
+
+      final db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0, reason: 'sequential, not a rebuild');
+      Future<List<String>> modes(String g) async =>
+          (await (db.select(db.games)..where((t) => t.id.equals(g))).getSingle())
+              .playModes;
+      expect(await modes('m_single'), ['single']);
+      expect(await modes('m_local'), ['local']);
+      expect(await modes('m_online'), ['online']);
+      expect(await modes('m_both'), ['local', 'online']);
+
+      final sessions = LocalSessionRepository(db);
+      final done = (await sessions.getById(id))!;
+      expect((await sessions.paymentsFor(id)).single.amountPaise, done.billedAmountPaise);
+      final ps5 = await (db.select(db.activities)
+            ..where((t) => t.code.equals('PS5')))
+          .getSingle();
+      expect(ps5.overtimeGraceMinutes, 5);
+      final cursor = await (db.select(db.syncMeta)
+            ..where((t) => t.key.equals('pull_cursor')))
+          .getSingle();
+      expect(cursor.value, '98765', reason: 'catalog-only step, no re-read');
+
+      final check = sqlite3.open(file.path);
+      expect(
+          check
+              .select("SELECT 1 FROM pragma_table_info('games') "
+                  "WHERE name = 'player_mode'")
+              .isEmpty,
+          isTrue);
+      expect(check.userVersion, AppDatabase.expectedSchemaVersion);
+      check.close();
+    });
+
+    test('migrating twice is a no-op', () async {
+      final id = await buildV17Database();
+      var db = AppDatabase(NativeDatabase(file));
+      expect(await LocalSessionRepository(db).getById(id), isNotNull);
+      await db.close();
+      db = AppDatabase(NativeDatabase(file));
+      addTearDown(db.close);
+      expect(db.rebuiltFromVersion, 0);
+      expect(await LocalSessionRepository(db).getById(id), isNotNull);
     });
   });
 }

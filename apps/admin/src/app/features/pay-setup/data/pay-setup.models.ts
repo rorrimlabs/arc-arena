@@ -268,6 +268,7 @@ export function ratePayload(id: string, staffId: string, d: RateDraft): Record<s
 export const PAY_SETUP_MESSAGES: Readonly<Record<string, string>> = {
   forbidden: 'You need the Payroll permission for that',
   not_found: 'That person is no longer there. Refresh',
+  own_record: 'You can’t set up your own pay. The owner must',
   invalid_payload: 'Check the values and try again',
   invalid_rate: 'The server refused this rate: check the amount and the extra-hours rate',
   duplicate: 'Something already starts on that day: pick another day',

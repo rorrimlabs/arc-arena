@@ -101,7 +101,12 @@ the demo seed itself refuses to run in a release build.
 
 `dart_define.prod.json` (git-ignored, like every `dart_define*.json`) holds
 `AO_BACKEND=supabase`, the hosted https URL and its publishable key — never a
-secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md) §0).
+secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md) §0) — plus
+`AO_ENVIRONMENT=production` and `AO_SENTRY_DSN` (crash reports; see
+`dart_define.example.json`). A release build not marked
+`AO_ENVIRONMENT=production` refuses to start: outside production Sentry records
+every session (Session Replay) and traces everything. Leaving `AO_SENTRY_DSN`
+empty is allowed but ships without crash reporting.
 
 ### Android
 

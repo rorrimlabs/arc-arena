@@ -18,7 +18,7 @@ import { formatPaise } from '../../../shared/money/rupees.pipe';
 import { StatTile } from '../../../shared/stat-tile/stat-tile';
 import { StatusPill } from '../../../shared/status-pill/status-pill';
 import { formatCount, formatHMin } from '../../../shared/staff/staff-format';
-import { formatDate, formatTime } from '../../../shared/time/ist';
+import { formatDate, formatIsoDate, formatTime } from '../../../shared/time/ist';
 import { payTypeLabel } from '../data/pay-policy';
 import { PayrollStore } from '../data/payroll-store';
 import {
@@ -104,7 +104,12 @@ export const FINALISE_PERM = 'payroll_finalise';
               </button>
             }
             @if (r.status === 'draft' && canFinalise()) {
-              <button mat-flat-button type="button" [disabled]="busy()" (click)="finalise()">
+              <button
+                mat-flat-button
+                type="button"
+                [disabled]="busy() || endsLater()"
+                (click)="finalise()"
+              >
                 <mat-icon aria-hidden="true">lock</mat-icon>Finalise…
               </button>
               <button mat-stroked-button type="button" [disabled]="busy()" (click)="discard()">
@@ -136,6 +141,12 @@ export const FINALISE_PERM = 'payroll_finalise';
               >
             </mat-menu>
           </div>
+          @if (r.status === 'draft' && canFinalise() && endsLater()) {
+            <p role="note" class="text-[13px] leading-[1.45] text-muted">
+              This period ends {{ endDay() }}. It can be finalised once its last shifts are over:
+              pay never covers days still to come.
+            </p>
+          }
           @if (r.status === 'draft' && !canFinalise()) {
             <p role="note" class="text-[13px] leading-[1.45] text-muted">
               Finalising or discarding needs the Finalise pay permission.
@@ -352,6 +363,11 @@ export class RunDetail {
   protected readonly editable = computed(() => this.run().status === 'draft' && this.canPayroll());
   protected readonly status = computed(() => runStatus(this.run().status));
   protected readonly period = computed(() => periodLabel(this.run()));
+  /** The period ends after today (IST): the server refuses to finalise it (period_not_over). */
+  protected readonly endsLater = computed(
+    () => this.run().periodEnd > formatIsoDate(this.clock.now()),
+  );
+  protected readonly endDay = computed(() => formatDate(`${this.run().periodEnd}T12:00:00+05:30`));
   protected readonly lines = computed<readonly RunLine[]>(() =>
     [...(this.store.detail()?.lines ?? [])].sort((a, b) => a.staffName.localeCompare(b.staffName)),
   );
@@ -403,7 +419,7 @@ export class RunDetail {
     const ok = await this.confirm({
       title: `Finalise pay for ${this.period()}?`,
       message:
-        'The lines are recalculated one last time and then locked, with your keep / waive decisions and adjustments. Attendance and leave on these dates can no longer change; anything missed goes into the next run as an adjustment.',
+        'The lines are recalculated one last time and then locked, with your keep / waive decisions and adjustments. Every open clock-in and every flagged entry in the period must be dealt with first. Attendance and leave on these dates can no longer change; anything missed goes into the next run as an adjustment.',
       confirm: 'Finalise',
     });
     if (!ok) return;

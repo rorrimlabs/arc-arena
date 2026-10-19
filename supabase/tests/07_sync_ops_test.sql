@@ -15,6 +15,11 @@ select * from no_plan();
 -- left by the two-device suite, a half-finished run — cannot change what it
 -- sees. Created inside this transaction and rolled back with it.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000007'::uuid, 'pgtap 07');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000007'::uuid);
 -- Happy hours are a pricing rule: Tue–Fri 14:00–17:00 IST (08:30–11:30Z), not on holidays,
 -- PS5, 20% lower for the whole session when it starts inside the window.
@@ -347,6 +352,21 @@ select throws_ok($$ select sync_push('e0000000-0000-4000-8000-000000000007'::uui
   'a non-member cannot push');
 select throws_ok($$ select sync_pull('e0000000-0000-4000-8000-000000000007'::uuid) $$, '42501', null,
   'a non-member cannot pull');
+
+-- ---------------------------------------------------------------- a bad op never blocks the batch
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select is((select array(select r->>'status' || ':' || coalesce(r->>'error', '')
+                          from jsonb_array_elements(sync_push('e0000000-0000-4000-8000-000000000007'::uuid,
+    jsonb_build_array(
+      jsonb_build_object('op_id', 'not-a-uuid', 'kind', 'customer.create', 'payload', '{}'::jsonb),
+      jsonb_build_object('op_id', gen_random_uuid(), 'kind', 'no.such_op', 'payload', '{}'::jsonb)),
+    'pgtap')->'results') r)::text),
+  '{rejected:invalid_op_id,rejected:unknown_op}',
+  'a malformed op id is refused on its own and the next op still runs');
+select throws_ok($$ select sync_push('e0000000-0000-4000-8000-000000000007'::uuid,
+    (select jsonb_agg(jsonb_build_object('op_id', gen_random_uuid(), 'kind', 'no.such_op'))
+       from generate_series(1, 201)), 'pgtap') $$,
+  '54000', 'batch_too_large', 'more than 200 ops in one push is refused');
 
 select * from finish();
 rollback;

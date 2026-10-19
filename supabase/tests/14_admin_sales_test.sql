@@ -10,6 +10,11 @@ select * from no_plan();
 
 -- Isolated fixture: this file's own arena, rolled back with the transaction.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000140'::uuid, 'pgtap 14');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000140'::uuid);
 insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
     adjust_kind, adjust_value)
@@ -176,7 +181,7 @@ select is(jsonb_array_length(pg_temp.sales('2026-10-01T10:00:00Z', '2026-10-01T1
 -- ---------------------------------------------------------------- the summaries
 create temp table day as select pg_temp.sales('2026-10-01T00:00:00Z', '2026-10-02T00:00:00Z') as l;
 select is((select pg_temp.bill(l, 'a1400000-0000-0000-0000-00000000000a')
-            - array['at','started_at','ended_at','recorded_at','payments'] from day),
+            - array['at','started_at','ended_at','recorded_at','end_recorded_at','payments'] from day),
   jsonb_build_object('kind','single','id','a1400000-0000-0000-0000-00000000000a',
     'status','completed','payment_status','paid','customer','Kiran','guest',false,
     'returning', false,

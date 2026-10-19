@@ -319,7 +319,7 @@ export function firstDay(r: LeaveRequest): string {
 export const LEAVE_MESSAGES: Readonly<Record<string, string>> = {
   forbidden: 'You need the Approve leave permission for that',
   not_found: 'That request or person is no longer there. Refresh',
-  own_record: 'You can’t decide your own leave. Another approver (or the owner) must',
+  own_record: 'You can’t decide or adjust your own leave. Another approver (or the owner) must',
   invalid_state: 'This request was already decided or cancelled. Refresh to see where it stands',
   invalid_paid_days: 'Paid days must be from 0 to the request’s days, in whole or half days',
   period_finalised:

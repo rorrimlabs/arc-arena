@@ -412,6 +412,21 @@ class SessionActions {
 
   // --- in-session changes (close current, open new at the exact instant) -----
 
+  /// The session's frozen price list has no rate for the new segment: it
+  /// would bill ₹0, and the server refuses it (`no_rate`).
+  Failure? _unpriced(Session session, String activityCode, int? count) {
+    if (session.snapshot.prices(activityCode, count)) return null;
+    return Failure(
+      message: 'This session\'s price list has no rate for that.',
+      fix: count == null
+          ? 'Pick a station type it prices, or end this session and start a new one.'
+          : 'It has no $activityCode rate for $count '
+              'controller${count == 1 ? '' : 's'}: pick another count, or end '
+              'this session and start a new one with the current prices.',
+      code: 'no_rate',
+    );
+  }
+
   Future<Result<SessionSegment>> switchSystem({
     required Session session,
     required SessionSegment current,
@@ -433,6 +448,8 @@ class SessionActions {
     );
     final locked = await _modeLock(resourceId, activityCode);
     if (locked != null) return Err(locked);
+    final unpriced = _unpriced(session, activityCode, choice.count);
+    if (unpriced != null) return Err(unpriced);
     final problem = await checkControllers(
       choice: choice,
       resourceId: resourceId,
@@ -541,6 +558,8 @@ class SessionActions {
       controllerCount,
       controllerIds,
     );
+    final unpriced = _unpriced(session, current.activityCode, choice.count);
+    if (unpriced != null) return Err(unpriced);
     final name = await _resourceName(current.resourceId);
     final problem = await checkControllers(
       choice: choice,
@@ -701,6 +720,17 @@ class SessionActions {
     final reason = waiveReason?.trim() ?? '';
     if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
     final actualEnd = at ?? clock.now();
+    final bill = endSummary(session, segments, at: actualEnd);
+    if (markWaived) {
+      final over = waiveOverLimit(
+        ownerLevel: guard.actor?.isOwner ?? false,
+        billedPaise: bill.total.value,
+        paidPaise: (await sessions.paymentsFor(session.id))
+            .fold(0, (sum, p) => sum + p.amountPaise),
+        maxPercent: await catalog.manualDiscountMaxPercent(),
+      );
+      if (over != null) return Err(over);
+    }
     if (actualEnd.isBefore(session.startedAt)) {
       AppTelemetry.reportTimerAnomaly(
         sessionId: session.id,
@@ -710,7 +740,6 @@ class SessionActions {
         actualEndedAt: actualEnd,
       );
     }
-    final bill = endSummary(session, segments, at: actualEnd);
     final res = await sessions.end(
       EndSessionCommand(
         sessionId: session.id,

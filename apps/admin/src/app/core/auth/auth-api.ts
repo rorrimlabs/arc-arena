@@ -1,5 +1,6 @@
 import { DOCUMENT, Service, inject } from '@angular/core';
 import type { PostgrestError, User } from '@supabase/supabase-js';
+import { Captcha } from '../../shared/turnstile/turnstile';
 import { Supabase } from '../supabase/supabase';
 
 /** The signed-in person, as the dashboard shows them. */
@@ -158,6 +159,8 @@ export function toAccount(user: User | null | undefined): Account | null {
 class SupabaseAuthApi extends AuthApi {
   private readonly supabase = inject(Supabase);
   private readonly document = inject(DOCUMENT);
+  /** Each public Auth call carries a Turnstile token once CAPTCHA is on (SEC-004). */
+  private readonly captcha = inject(Captcha);
 
   private async auth() {
     return (await this.supabase.client()).auth;
@@ -185,7 +188,11 @@ class SupabaseAuthApi extends AuthApi {
   }
 
   async signIn(email: string, password: string): Promise<void> {
-    const { error } = await (await this.auth()).signInWithPassword({ email, password });
+    const { error } = await (await this.auth()).signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: this.captcha.take() },
+    });
     if (error) throw toAppError(error);
   }
 
@@ -197,7 +204,11 @@ class SupabaseAuthApi extends AuthApi {
       password,
       // `signup: 'owner'` picks the owner wording in templates/confirmation.html (an invited new
       // address gets the same template without it).
-      options: { emailRedirectTo: this.confirmUrl(), data: { signup: 'owner' } },
+      options: {
+        emailRedirectTo: this.confirmUrl(),
+        data: { signup: 'owner' },
+        captchaToken: this.captcha.take(),
+      },
     });
     if (error) throw toAppError(error);
     return data.session ? 'signed-in' : 'confirm';
@@ -206,7 +217,11 @@ class SupabaseAuthApi extends AuthApi {
   async resendConfirmation(email: string): Promise<void> {
     const { error } = await (
       await this.auth()
-    ).resend({ type: 'signup', email, options: { emailRedirectTo: this.confirmUrl() } });
+    ).resend({
+      type: 'signup',
+      email,
+      options: { emailRedirectTo: this.confirmUrl(), captchaToken: this.captcha.take() },
+    });
     if (error) throw toAppError(error);
   }
 
@@ -240,6 +255,7 @@ class SupabaseAuthApi extends AuthApi {
       await this.auth()
     ).resetPasswordForEmail(email, {
       redirectTo: new URL('/reset-password', this.document.location.origin).href,
+      captchaToken: this.captcha.take(),
     });
     if (error) throw toAppError(error);
   }

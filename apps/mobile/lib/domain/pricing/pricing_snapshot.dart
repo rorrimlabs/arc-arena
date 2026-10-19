@@ -58,6 +58,11 @@ class PricingSnapshot {
 
   ActivitySpec? activity(String code) => activities[code];
 
+  /// Whether any band prices (activity, controllerCount): a segment without
+  /// one would bill ₹0, so the server refuses it (`no_rate`, _seg_priced).
+  bool prices(String activityCode, int? controllerCount) => rates.any((r) =>
+      r.activityCode == activityCode && r.controllerCount == controllerCount);
+
   /// Exact rate match for (activity, band, controllerCount); no fallback.
   Rate? rateFor({
     required String activityCode,

@@ -166,7 +166,7 @@ begin
   if v_kind = 'in' then
     insert into attendance_entries(arena_id, staff_id, work_date, in_at, in_punch_id, flags,
         review, created_by)
-      values (p_arena, v_staff, _pr_ist_date(v_now), v_now, v_punch,
+      values (p_arena, v_staff, _att_work_date(v_staff, v_now), v_now, v_punch,
         array(select f || '_in' from unnest(v_flags) f order by f), v_review, auth.uid())
       returning id into v_entry;
   else

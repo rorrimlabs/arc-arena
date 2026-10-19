@@ -1,3 +1,6 @@
+-- op_session_start — device-stamped started_at is bounded by _client_time (time_in_future,
+--   time_too_old); the segment must be billable from the session's snapshot (_seg_priced:
+--   no_rate, activity_not_offered).
 create or replace function public.op_session_start (
   p_arena uuid,
   p       jsonb
@@ -25,6 +28,7 @@ declare
   v_origins  uuid[];
 begin
   perform _need(p_arena, 'start');
+  perform _client_time(p_arena, v_started, 'started_at');
   v_origins := _pad_origins(p_arena, v_borrow);
   perform _lock_resources(p_arena, array[v_resource] || v_origins);
   perform _lock_pads(p_arena, v_borrow || v_pads);
@@ -71,6 +75,8 @@ begin
   -- The price list the device froze into the session must be this arena's
   -- current one (0013); checked last so earlier errors keep their precedence.
   perform _assert_snapshot(p_arena, p->'pricing_snapshot');
+  -- And the segment must be billable from it (no ₹0 segments).
+  perform _seg_priced(p_arena, v_resource, p->'pricing_snapshot', v_act, v_cc);
   return jsonb_build_object('session_id', v_session, 'adjusted', v_skipped > 0);
 end;
 $function$;

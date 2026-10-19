@@ -1077,6 +1077,17 @@ class GroupSessionActions {
     final reason = waiveReason?.trim() ?? '';
     if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
     final actualEnd = at ?? clock.now();
+    final bill = endSummary(g, at: actualEnd);
+    if (markWaived) {
+      final over = waiveOverLimit(
+        ownerLevel: guard.actor?.isOwner ?? false,
+        billedPaise: bill.total.value,
+        paidPaise: (await groups.paymentsFor(g.group.id))
+            .fold(0, (sum, p) => sum + p.amountPaise),
+        maxPercent: await catalog.manualDiscountMaxPercent(),
+      );
+      if (over != null) return Err(over);
+    }
     if (actualEnd.isBefore(g.group.startedAt)) {
       AppTelemetry.reportTimerAnomaly(
         sessionId: g.group.id,
@@ -1086,7 +1097,6 @@ class GroupSessionActions {
         actualEndedAt: actualEnd,
       );
     }
-    final bill = endSummary(g, at: actualEnd);
     final res = await groups.end(
       EndGroupCommand(
         groupId: g.group.id,

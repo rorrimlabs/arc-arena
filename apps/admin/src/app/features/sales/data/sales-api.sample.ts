@@ -189,6 +189,7 @@ function build(spec: Spec, now: Date, n: number): BillDetail {
     startedAt: startedAt.toISOString(),
     endedAt: at.toISOString(),
     recordedAt: startedAt.toISOString(),
+    endRecordedAt: at.toISOString(),
     voided: !!spec.voidReason,
     paymentStatus: spec.status ?? 'paid',
     customer: spec.customer,

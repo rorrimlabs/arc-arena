@@ -2,7 +2,7 @@ import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { LoginScope } from '../../../core/auth/login-scope';
-import { SyncOp } from '../../../core/sync/push-ops';
+import { Attempt, SyncOp } from '../../../core/sync/push-ops';
 import { PayrollApi, PayrollOverview } from './payroll-api';
 import {
   DeductionCode,
@@ -162,21 +162,29 @@ export class PayrollStore {
     kind: NewAdjustmentKind,
     amountPaise: number,
     note: string,
+    attempt = new Attempt(),
   ): Promise<void> {
     await this.send(
       {
         kind: 'salary_adjustment.add',
-        payload: adjustmentPayload(crypto.randomUUID(), runId, staffId, kind, amountPaise, note),
+        opId: attempt.id('op'),
+        payload: adjustmentPayload(attempt.id('adjustment'), runId, staffId, kind, amountPaise, note),
       },
       runId,
     );
   }
 
-  async reverse(runId: string, adjustmentId: string, note: string): Promise<void> {
+  async reverse(
+    runId: string,
+    adjustmentId: string,
+    note: string,
+    attempt = new Attempt(),
+  ): Promise<void> {
     await this.send(
       {
         kind: 'salary_adjustment.reverse',
-        payload: reversePayload(crypto.randomUUID(), adjustmentId, note),
+        opId: attempt.id('op'),
+        payload: reversePayload(attempt.id('reversal'), adjustmentId, note),
       },
       runId,
     );

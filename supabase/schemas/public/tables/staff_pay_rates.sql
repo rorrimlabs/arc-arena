@@ -23,7 +23,7 @@ create table "public"."staff_pay_rates" (
   constraint "staff_pay_rates_extra_check" check ((extra_hours_paid OR (extra_hourly_paise IS NULL))),
   constraint "staff_pay_rates_pkey" primary key (id),
   constraint "staff_pay_rates_staff_id_effective_from_key" unique (staff_id, effective_from),
-  constraint "staff_pay_rates_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade,
+  constraint "staff_pay_rates_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "staff_pay_rates_type_check" check ((pay_type = ANY (ARRAY['monthly'::text, 'daily'::text, 'hourly'::text])))
 );
 

@@ -11,6 +11,7 @@ import { MatFormField, MatHint, MatLabel } from '@angular/material/form-field';
 import { MatInput } from '@angular/material/input';
 import { MatOption, MatSelect } from '@angular/material/select';
 import { toAppError } from '../../../core/auth/auth-api';
+import { Attempt } from '../../../core/sync/push-ops';
 import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
 import { formatRupees } from '../../../shared/money/rupees.pipe';
 import { formatTime } from '../../../shared/time/ist';
@@ -228,6 +229,9 @@ export class MoneyDialog {
     this.amount.set(rupeesText(this.left.get(id) ?? 0));
   }
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async save(event: Event): Promise<void> {
     event.preventDefault();
     const paise = parseRupees(this.amount());
@@ -258,10 +262,16 @@ export class MoneyDialog {
             amountPaise: paise,
             method: this.method(),
             note: this.note().trim() || null,
+            attempt: this.attempt,
           });
           break;
         case 'refund':
-          await this.store.refund(bill, { amountPaise: paise, method: this.method(), reason });
+          await this.store.refund(bill, {
+            amountPaise: paise,
+            method: this.method(),
+            reason,
+            attempt: this.attempt,
+          });
           break;
         case 'correct':
           await this.store.correct(bill, {
@@ -269,6 +279,7 @@ export class MoneyDialog {
             method: this.method(),
             amountPaise: paise,
             reason,
+            attempt: this.attempt,
           });
           break;
       }

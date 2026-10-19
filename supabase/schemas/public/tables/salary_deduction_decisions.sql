@@ -19,7 +19,7 @@ create table "public"."salary_deduction_decisions" (
   constraint "salary_deduction_decisions_pkey" primary key (id),
   constraint "salary_deduction_decisions_run_id_staff_id_code_key" unique (run_id, staff_id, code),
   constraint "salary_deduction_decisions_run_id_fkey" foreign key (run_id) references public.salary_runs(id) on delete cascade,
-  constraint "salary_deduction_decisions_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade
+  constraint "salary_deduction_decisions_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
 );
 
 comment on table public.salary_deduction_decisions is 'The owner''s keep (applied) or waive decision on each suggested salary deduction of a draft run.';

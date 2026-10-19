@@ -19,6 +19,16 @@ select * from no_plan();
 
 -- Isolated fixture: this file's own arena, rolled back with the transaction.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000220'::uuid, 'pgtap 22');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
+-- Staff here waive whole bills: let them (the cap itself is tested in 08).
+insert into settings(arena_id, key, json)
+  select id, 'discount_options', '{"manual_max_percent": 100, "reason_required": false}' from arenas
+   where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000220'::uuid);
 insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
     adjust_kind, adjust_value)
@@ -99,9 +109,10 @@ create function pg_temp.group_(p_id text, p_asg text, p_res text, p_from text, p
       'activity_code', 'PS5', 'controller_count', 1,
       'allocations','[]'::jsonb, 'moves','[]'::jsonb)))) $$ language sql;
 create function pg_temp.group_end(p_id text, p_asg text, p_res text, p_from text, p_to text,
-    p_waive boolean) returns jsonb as $$
+    p_waive boolean, p_reason text default null) returns jsonb as $$
   select pg_temp.push('group.end', jsonb_build_object('group_id', p_id,
     'ended_at', p_to, 'billed_amount_paise', 12000, 'mark_waived', p_waive,
+    'waive_reason', p_reason,
     'expected_assignment_ids', jsonb_build_array(p_asg), 'expected_scheduled_end_at', p_to,
     'charges', jsonb_build_array(jsonb_build_object('id', gen_random_uuid(),
       'player_number', 1, 'charge_index', 0, 'band_code', 'standard', 'activity_code', 'PS5',
@@ -123,7 +134,7 @@ create function pg_temp.methods(p_id text) returns jsonb as $$
 -- B: GHOST 10:00–11:00Z, 1 pad, ₹120, Kiran again, paid ₹120 UPI, then voided and refunded.
 -- W: RIFT 09:00–10:00Z, 1 pad, ₹120, a walk-in, ₹20 cash then waived ("Birthday treat").
 -- G: group on VOID 09:00–10:00Z, ₹120, paid ₹120 cash (really card: corrected below).
--- H: group on VOID 10:00–11:00Z, ₹120, waived with no reason (an older floor build).
+-- H: group on VOID 10:00–11:00Z, ₹120, waived ("Walked out"; refused without a reason).
 select pg_temp.as_user('22000000-0000-0000-0000-000000000002');
 select is(pg_temp.push('customer.create', jsonb_build_object(
     'id','cccccccc-0000-0000-0000-000000000022','name','Kiran','phone','9800002222',
@@ -170,8 +181,11 @@ select is(pg_temp.pay('group', '92200000-0000-0000-0000-000000000001',
 select is(pg_temp.group_('92200000-0000-0000-0000-000000000002', '93200000-0000-0000-0000-000000000002',
     'VOID', '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z')->>'status', 'applied', 'H starts on VOID');
 select is(pg_temp.group_end('92200000-0000-0000-0000-000000000002', '93200000-0000-0000-0000-000000000002',
-    'VOID', '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', true)->'result'->>'payment_status', 'waived',
-  'H ends waived without a reason (accepted: older floor builds send none)');
+    'VOID', '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', true, '  ')->>'error', 'waive_reason_required',
+  'a waive without a reason is refused');
+select is(pg_temp.group_end('92200000-0000-0000-0000-000000000002', '93200000-0000-0000-0000-000000000002',
+    'VOID', '2026-10-01T10:00:00Z', '2026-10-01T11:00:00Z', true, 'Walked out')->'result'->>'payment_status', 'waived',
+  'H ends waived, with a reason');
 
 -- ---------------------------------------------------------------- waives are audited
 select is((select (reason, before, after)::text from audit_log
@@ -182,9 +196,9 @@ select is((select (reason, before, after)::text from audit_log
 select is((select created_by::text from audit_log
             where entity_id = 'a2200000-0000-0000-0000-0000000000c1' and action = 'waive'),
   '22000000-0000-0000-0000-000000000002', 'recorded as the staff member who waived it');
-select is((select (entity_type, reason is null, after->>'written_off_paise')::text from audit_log
+select is((select (entity_type, reason, after->>'written_off_paise')::text from audit_log
             where entity_id = '92200000-0000-0000-0000-000000000002' and action = 'waive'),
-  '(group_session,t,12000)', 'H''s waive is audited too, with no reason and ₹120 written off');
+  '(group_session,"Walked out",12000)', 'H''s waive is audited too, with its reason and ₹120 written off');
 select is((select count(*)::int from audit_log
             where arena_id = 'e0000000-0000-4000-8000-000000000220' and action = 'waive'), 2,
   'only the two waived bills have a waive entry');

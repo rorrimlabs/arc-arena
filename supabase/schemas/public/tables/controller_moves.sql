@@ -83,6 +83,12 @@ create trigger t_same_arena
     public._assert_same_arena('controller_id', 'controllers', 'from_resource_id', 'resources',
     'to_resource_id', 'resources');
 
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_controller_moves_append_only
+  before update or delete on public.controller_moves
+  for each row
+  execute function public._append_only();
+
 -- Members read their arenas' rows. No write policy: clients change data only through sync_push.
 create policy "p_sel_controller_moves" on "public"."controller_moves"
   for select

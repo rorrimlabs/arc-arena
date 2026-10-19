@@ -1,13 +1,28 @@
 # Working state
 
-**Objective:** staff personal details (own edit on floor app, owner view/edit on admin) + versioned staff terms that non-owner staff must accept on the floor app (blocking gate).
+**Objective:** fix the pre-production audit (`audit/`, run 2026-10-16 at `24a4bdd`). Roadmap: `audit/09-remediation-roadmap.md`. User said "fix all issues" (2026-10-19).
 
-**Done (2026-10-16):**
-- Games: Settings › Games in the 3-panel detail pane (`games-library.ts`, table view); multiselect play modes (`games.play_modes`, story/single/local/online; `player_mode` dropped; Drift v18); age 3–18. Migration `20261016123826_game_play_modes`.
-- Server: `staff_personal_details`, `staff_terms`, `staff_terms_acceptances`; ops `staff_details.save` (self or owner level), `terms.publish` (owner level), `terms.accept` (self, latest only, idempotent). Migration `20261016125200_staff_details_and_terms` applied locally; smoke-run OK; advisors clean. Docs: `docs/STAFF_API.md`, `supabase/README.md`.
+**Decisions (2026-10-19):**
+- Payroll: fix. Run may end on pay date; finalise refused while period not over / clock-in open / entry pending review.
+- BL-001: refuse future (>2 min) and older than offline window (settings `offline_rules.max_offline_hours`, default 24, 1–720); flag end recorded >15 min late on Sales.
+- FL-003: warn only for launch. SEC-001: narrow sync_pull by permission. DEP-001: fresh prod project.
+- Waive: reason now required server-side. **Waive cap NOT done — needs owner decision** (manual cap defaults 0% → would block all non-settings waives).
 
-**In progress:** admin UI (Team › Profile tab, Settings › Staff › Terms tab) and mobile (My profile screen, terms gate) — delegated; verify diffs, `npm run build`, `flutter analyze`.
+**Done (all local; pgTAP 1495 PASS; Drift migration suite 32 PASS; analyze/build clean):**
+- A: NG-001, FL-005/DEP-006, SEC-003/ST-006 (+ salary_adjustment.reverse), FL-004/CQ-001 (fixtures + v16→17, v17→18 tests), stale pgTAP 00/16/19/30 fixed.
+- B: DB-002 (10 FKs → no action, runbook), ST-001/ST-010/DB-006 (finalise guards + share lock in `_period_finalised`, admin button/notes/messages).
+- C: BL-001 (`_client_time`, `ended_recorded_at`, Sales late-end flag, `offline_rules` setting), BL-002 single sessions (`_seg_priced`: no_rate / activity_not_offered; mobile pre-flight on switch/change controllers; end-sheet copy), BL-003 reason only. Test fixtures widened via offline_rules.
+- Migrations: 20261018200818, 201749, 202010, 202941, 203328, 203502.
 
-**Decisions:** fields = phone, personal e-mail, DOB, blood group, address (2 lines, city, state, PIN), emergency contact; no bank/ID. Gate blocks until accepted; owner level exempt; demo mode no gate. Owners view+edit details.
+- D (done): NG-002 (`Attempt` ids, all money/pay/leave/attendance dialogs), FL-001/DB-008 (sync_push per-op refusals, transient classes, 200 cap; mobile batch halving + stuck message), FL-002/DB-005 (per-source limited paging, verified vs single page on local data), FL-003 (unsent count on revoke), SEC-001 (`_sync_hidden`, pull scope + mobile re-pull).
+- E (done): FL-006/DEP-005 (release refuses non-production env; RELEASE.md), NG-003/DEP-004 (`public/_headers` CSP, `_redirects`, inlineCritical off), DEP-003 (`.github/workflows/ci.yml`), DEP-001/DEP-002/SEC-002 docs (§4a rewritten), DEP-007 (prod env emptied).
+- §3 (done): DB-004 (`_append_only` triggers on 9 tables), DB-009 (sync_ops.payload for config/pay ops; staff access audit).
+- 2026-10-19 decisions done: BL-003 waive cap (owner level uncapped; `_waive_check`, mobile `waiveOverLimit`, discount_options synced), ST-002 (refuse turning off a shift in use: `shift_in_use`; `shift_inactive`), ST-007 (unassign ends yesterday; assignment edits into finalised periods refused), ST-008 (`_att_work_date`: entry belongs to the shift it falls in), SEC-004 admin side (`shared/turnstile`, `Captcha` service, env `turnstileSiteKey`, CSP).
+- pgTAP 1523 PASS.
 
-**Outdated tests to flag:** pgTAP 00/15/19 (`player_mode`), `games-page.spec.ts` (old Games page).
+**Open:**
+- SEC-004 floor app: needs a Turnstile dependency (cloudflare_turnstile / webview_flutter) — ask user. Don't enable hosted CAPTCHA before.
+- Need go-ahead (pay semantics): ST-003, ST-004, ST-005, DB-007. ST-009 docs.
+- §3: BL-004, BL-005, DB-010, CQ-002/003/004, NG-004; BL-002 groups; P3s.
+- BL-002 for groups (shared-pool sweep) not done; admin UI for offline_rules not built.
+- Recommend: `tool/pricing_parity.sh`, `tool/sync_it.sh` (billing + sync changes).

@@ -29,6 +29,7 @@ import {
 } from '../../payroll/data/pay-policy';
 import { PaySetupStore } from '../data/pay-setup-store';
 import { finalisedLimitText, minEffectiveFrom } from '../data/pay-setup.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export interface PayPolicyDialogData {
   /** The rules in force now, to start from. */
@@ -338,6 +339,9 @@ export class PayPolicyDialog {
     this.set({ lateAppliesTo: on ? [...now, t] : now.filter((x) => x !== t) });
   }
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async confirm(event: Event): Promise<void> {
     event.preventDefault();
     this.tried.set(true);
@@ -349,7 +353,7 @@ export class PayPolicyDialog {
     this.busy.set(true);
     this.error.set('');
     try {
-      await this.store.addPolicy(this.from(), policy);
+      await this.store.addPolicy(this.from(), policy, this.attempt);
       this.ref.close(true);
     } catch (e) {
       this.error.set(toAppError(e).message);

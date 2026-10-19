@@ -4,7 +4,7 @@
 -- Payload: run_id, staff_id, code (absent | lop_leave | half_day | late), applied (bool),
 --   note (optional). The owner decides each suggested reduction (OWNER_CONFIRMATION S23); the
 --   choice survives recalculation.
--- Checks / errors: forbidden; not_found (run / line); run_not_draft; invalid_payload.
+-- Checks / errors: forbidden; not_found (run / line); own_record (your own line, unless role owner); run_not_draft; invalid_payload.
 -- Writes: salary_deduction_decisions (upsert); the person's line and the run totals.
 -- Returns: {net_paise}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
@@ -31,6 +31,7 @@ begin
   if not exists (select 1 from salary_run_lines where run_id = r.id and staff_id = v_staff) then
     raise exception 'not_found' using hint = 'line';
   end if;
+  perform _own_record(p_arena, v_staff);
   insert into salary_deduction_decisions(arena_id, run_id, staff_id, code, applied, note, decided_by)
     values (p_arena, r.id, v_staff, v_code, (p->>'applied')::boolean,
             nullif(btrim(coalesce(p->>'note', '')), ''), auth.uid())

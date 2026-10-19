@@ -6,6 +6,27 @@ import { AppError } from '../auth/auth-api';
 export interface SyncOp {
   readonly kind: string;
   readonly payload: Record<string, unknown>;
+  /** The op id to send (an [Attempt]'s); a fresh one when absent. */
+  readonly opId?: string;
+}
+
+/**
+ * The ids of one user action (op id, payment id, adjustment id…): the same on every resend of
+ * that action, so a Save repeated after an ambiguous network failure replays the server's first
+ * answer instead of recording the money or the adjustment twice. A dialog holds one per opening.
+ */
+export class Attempt {
+  private readonly ids = new Map<string, string>();
+
+  /** The id named `name` for this action, made on first use. */
+  id(name: string): string {
+    let id = this.ids.get(name);
+    if (!id) {
+      id = crypto.randomUUID();
+      this.ids.set(name, id);
+    }
+    return id;
+  }
 }
 
 /** The arena's private Realtime channel (Realtime Authorization admits only its members). */
@@ -75,7 +96,7 @@ export async function pushOps(
 ): Promise<Record<string, unknown>[]> {
   if (!ops.length) return [];
   const batch = ops.map((op) => ({
-    op_id: crypto.randomUUID(),
+    op_id: op.opId ?? crypto.randomUUID(),
     kind: op.kind,
     payload: op.payload,
   }));

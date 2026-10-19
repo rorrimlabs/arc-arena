@@ -108,6 +108,11 @@ abstract interface class CatalogRepository {
   /// admin dashboard, read-only here. [FloorOptions.defaults] until the arena sets them.
   Future<FloorOptions> floorOptions();
 
+  /// The most a member below owner level may take off a bill by hand, in
+  /// percent (settings discount_options.manual_max_percent; 0 until set). A
+  /// waive is capped the same way (server _waive_check).
+  Future<int> manualDiscountMaxPercent();
+
   /// What the venue calls its resources (tables, grounds…); set on the admin dashboard,
   /// read-only here. [VenueProfile.defaults] until the arena sets it.
   Future<VenueProfile> venueProfile();

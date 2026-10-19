@@ -296,6 +296,45 @@ select is((select x->>'status' from all_days, jsonb_array_elements(j) x
   'with the same status as the salary run will use');
 select throws_ok($$ select attendance_days('e0000000-0000-4000-8000-000000000290', '2026-01-01', '2026-03-31') $$,
   'P0001', 'invalid_period', 'at most 62 days');
+-- ------------------------------------------------ roster changes never rewrite worked days
+reset role;
+select pg_temp.as_user(4);
+select is((pg_temp.push('shift.upsert', jsonb_build_object('id', 'a5000000-0000-4000-8000-000000000291',
+    'name', 'Day', 'start_min', 660, 'end_min', 1200, 'days', '[1,2,3,4,5,6]'::jsonb, 'break_min', 60,
+    'active', false)))->>'detail', 'Ravi',
+  'a shift someone is still on cannot be turned off (end their assignment first)');
+select pg_temp.push('shift.upsert', jsonb_build_object('id', 'a5000000-0000-4000-8000-0000000002f1',
+  'name', 'Night', 'start_min', 1320, 'end_min', 360, 'days', '[1,2,3,4,5,6,7]'::jsonb, 'break_min', 0));
+select pg_temp.push('shift.assign', jsonb_build_object('id', 'a6000000-0000-4000-8000-0000000002f1',
+  'staff_id', '5f000000-0000-4000-8000-000000000293', 'shift_id', 'a5000000-0000-4000-8000-0000000002f1',
+  'effective_from', (_pr_ist_date(now()) - 30)::text));
+select pg_temp.push('shift.assign', jsonb_build_object('id', 'a6000000-0000-4000-8000-0000000002f2',
+  'staff_id', '5f000000-0000-4000-8000-000000000292', 'shift_id', 'a5000000-0000-4000-8000-0000000002f1',
+  'effective_from', (_pr_ist_date(now()) + 7)::text));
+-- A shift counts from its start to its end on the day it starts (Night 22:00–06:00).
+select is(_att_work_date('5f000000-0000-4000-8000-000000000293',
+    pg_temp.ist(_pr_ist_date(now())::text || ' 02:00')), _pr_ist_date(now()) - 1,
+  'a clock-in at 02:00 inside the night shift belongs to the night it started');
+select is(_att_work_date('5f000000-0000-4000-8000-000000000293',
+    pg_temp.ist(_pr_ist_date(now())::text || ' 21:15')), _pr_ist_date(now()),
+  'a clock-in shortly before 22:00 belongs to that night');
+select is(_att_work_date('5f000000-0000-4000-8000-000000000292',
+    pg_temp.ist(_pr_ist_date(now())::text || ' 02:00')), _pr_ist_date(now()),
+  'with no shift around it, the IST date');
+select pg_temp.push('shift.unassign', jsonb_build_object('id', 'a6000000-0000-4000-8000-0000000002f1'));
+select is((select effective_to from staff_shifts where id = 'a6000000-0000-4000-8000-0000000002f1'),
+  _pr_ist_date(now()) - 1, 'ending an assignment that has started keeps it, ended yesterday');
+select pg_temp.push('shift.unassign', jsonb_build_object('id', 'a6000000-0000-4000-8000-0000000002f2'));
+select ok(not exists (select 1 from staff_shifts where id = 'a6000000-0000-4000-8000-0000000002f2'),
+  'an assignment that has not started is deleted');
+select is((pg_temp.push('shift.upsert', jsonb_build_object('id', 'a5000000-0000-4000-8000-0000000002f1',
+    'name', 'Night', 'start_min', 1320, 'end_min', 360, 'days', '[1,2,3,4,5,6,7]'::jsonb, 'break_min', 0,
+    'active', false)))->>'status', 'applied', 'once nobody is on it from today, the shift can be turned off');
+select is((pg_temp.push('shift.assign', jsonb_build_object('id', gen_random_uuid(),
+    'staff_id', '5f000000-0000-4000-8000-000000000292', 'shift_id', 'a5000000-0000-4000-8000-0000000002f1',
+    'effective_from', (_pr_ist_date(now()) + 1)::text)))->>'error', 'shift_inactive',
+  'nobody is put on a shift that is not in use');
+
 reset role;
 
 select * from finish();

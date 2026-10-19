@@ -87,6 +87,12 @@ create trigger t_same_arena
   for each row
   execute function public._assert_same_arena('group_id', 'group_sessions');
 
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_group_payments_append_only
+  before update or delete on public.group_payments
+  for each row
+  execute function public._append_only();
+
 -- Readable by an active member holding bill, or owner level (money/reports): floor billing and the dashboard's Sales.
 -- No write policy: clients change data only through sync_push.
 create policy "p_sel_group_payments" on "public"."group_payments"

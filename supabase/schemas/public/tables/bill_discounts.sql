@@ -95,6 +95,12 @@ create trigger t_same_arena
     public._assert_same_arena('session_id', 'sessions', 'group_id', 'group_sessions',
       'discount_id', 'discounts');
 
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_bill_discounts_append_only
+  before update or delete on public.bill_discounts
+  for each row
+  execute function public._append_only();
+
 create policy "p_sel_bill_discounts" on "public"."bill_discounts"
   for select
   to authenticated

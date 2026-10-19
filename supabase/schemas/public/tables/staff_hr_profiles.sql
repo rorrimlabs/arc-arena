@@ -19,7 +19,7 @@ create table "public"."staff_hr_profiles" (
   constraint "staff_hr_profiles_dates_check" check (((left_on IS NULL) OR (joined_on IS NULL) OR (left_on >= joined_on))),
   constraint "staff_hr_profiles_leave_check" check (((paid_leave_days IS NULL) OR ((paid_leave_days >= (0)::numeric) AND (paid_leave_days <= (366)::numeric)))),
   constraint "staff_hr_profiles_pkey" primary key (staff_id),
-  constraint "staff_hr_profiles_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade,
+  constraint "staff_hr_profiles_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "staff_hr_profiles_std_day_check" check (((standard_day_min IS NULL) OR ((standard_day_min >= 60) AND (standard_day_min <= 1440))))
 );
 

@@ -55,8 +55,8 @@ select results_eq(
   $$ select age_rating, media from games where id = '91600000-0000-0000-0000-000000000001' $$,
   $$ values (null::smallint, null::text) $$, '... both are cleared');
 
-select is(pg_temp.push('game.upsert', pg_temp.game('{"age_rating":15}'))->>'status', 'rejected',
-  'an age rating outside 3/7/12/16/18 is refused');
+select is(pg_temp.push('game.upsert', pg_temp.game('{"age_rating":19}'))->>'status', 'rejected',
+  'an age rating outside 3–18 is refused');
 select is(pg_temp.push('game.upsert', pg_temp.game('{"media":"cartridge"}'))->>'status', 'rejected',
   'an unknown media is refused');
 

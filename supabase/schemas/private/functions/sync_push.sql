@@ -7,9 +7,15 @@
 -- p_ops = [{op_id, kind, payload}], applied in order. An op_id already in
 -- sync_ops returns its stored outcome (replayed=true); otherwise _sync_apply
 -- runs it in its own subtransaction and the outcome is recorded in sync_ops
--- ('applied' + result, or 'rejected' + error code/detail). A lock/serialization
--- SQLSTATE yields status 'retry', is not recorded, and stops the batch so order
--- is kept. Returns {results: [{op_id, status, result|error, detail, replayed}], server_time}.
+-- ('applied' + result, or 'rejected' + error code/detail). A transient SQLSTATE
+-- (lock / serialization 40xxx, 55P03, connection 08xxx, resources 53xxx,
+-- internal XXxxx) yields status 'retry', is not recorded, and stops the batch so
+-- order is kept: a resend can still apply it. An op whose op_id is not a uuid
+-- (invalid_op_id) or belongs to another arena (op_id_reused) is refused on its
+-- own, unrecorded, without aborting the rest. At most 200 ops per call
+-- (batch_too_large, 54000). A statement timeout still aborts the whole call
+-- (PL/pgSQL cannot catch it safely): devices halve their batch and resend.
+-- Returns {results: [{op_id, status, result|error, detail, replayed}], server_time}.
 -- SECURITY DEFINER; gate: active member of p_arena, else 'forbidden'. op_* check perms.
 -- Client API: callable by signed-in users (authenticated).
 create or replace function private.sync_push (
@@ -32,14 +38,27 @@ begin
      or not exists (select 1 from private.app_arena_ids() a where a = p_arena) then
     raise exception 'forbidden' using errcode = '42501', hint = 'not an active member of this arena';
   end if;
+  if jsonb_typeof(p_ops) = 'array' and jsonb_array_length(p_ops) > 200 then
+    raise exception 'batch_too_large' using errcode = '54000', hint = 'at most 200 ops per push';
+  end if;
   for v_op in select value from jsonb_array_elements(coalesce(p_ops, '[]'::jsonb)) loop
-    v_id := (v_op->>'op_id')::uuid;
     v_kind := v_op->>'kind';
+    if coalesce(v_op->>'op_id', '')
+         !~* '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then
+      v_out := v_out || jsonb_build_array(jsonb_build_object('op_id', v_op->'op_id',
+        'status', 'rejected', 'error', 'invalid_op_id', 'replayed', false));
+      continue;
+    end if;
+    v_id := (v_op->>'op_id')::uuid;
     -- Two pushes of the same op (a retry racing the original) queue here.
     perform pg_advisory_xact_lock(hashtextextended(v_id::text, 0));
     select * into v_prev from sync_ops where op_id = v_id;
     if found then
-      if v_prev.arena_id <> p_arena then raise exception 'op_id_reused'; end if;
+      if v_prev.arena_id <> p_arena then
+        v_out := v_out || jsonb_build_array(jsonb_build_object('op_id', v_id,
+          'status', 'rejected', 'error', 'op_id_reused', 'replayed', false));
+        continue;
+      end if;
       v_out := v_out || jsonb_build_array(jsonb_build_object('op_id', v_id,
         'status', v_prev.status, 'result', v_prev.result, 'error', v_prev.error_code,
         'detail', v_prev.error_message, 'replayed', true));
@@ -48,16 +67,23 @@ begin
     begin
       v_res := _sync_apply(p_arena, v_kind, coalesce(v_op->'payload', '{}'::jsonb));
       if v_res is null then raise exception 'unknown_op' using hint = coalesce(v_kind, 'null'); end if;
-      insert into sync_ops(op_id, arena_id, user_id, device_id, kind, status, result)
-        values (v_id, p_arena, auth.uid(), p_device, v_kind, 'applied', v_res);
+      -- Configuration, permission and pay ops keep what they asked for (audit).
+      insert into sync_ops(op_id, arena_id, user_id, device_id, kind, status, result, payload)
+        values (v_id, p_arena, auth.uid(), p_device, v_kind, 'applied', v_res,
+          case when split_part(v_kind, '.', 1) in ('staff', 'arena', 'activity', 'resource', 'rate',
+                 'policy', 'settings', 'holiday', 'rule', 'discount', 'shift', 'staff_holiday',
+                 'hr_profile', 'pay_rate', 'pay_policy', 'salary_run', 'salary_adjustment')
+                 or v_kind = 'leave.adjust'
+               then v_op->'payload' end);
       v_out := v_out || jsonb_build_array(jsonb_build_object('op_id', v_id,
         'status', 'applied', 'result', v_res, 'replayed', false));
     exception when others then
       get stacked diagnostics v_state = returned_sqlstate, v_msg = message_text,
         v_hint = pg_exception_hint;
       -- Transient (serialization failure, deadlock, lock not available, query
-      -- cancelled): not recorded, so the device resends this op and the rest later.
-      if v_state in ('40001', '40P01', '55P03', '57014') then
+      -- cancelled, connection, out of resources, internal): not recorded, so the
+      -- device resends this op and the rest later.
+      if left(v_state, 2) in ('40', '08', '53', 'XX') or v_state in ('55P03', '57014') then
         v_out := v_out || jsonb_build_array(jsonb_build_object('op_id', v_id,
           'status', 'retry', 'error', v_state));
         exit;

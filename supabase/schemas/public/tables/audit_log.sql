@@ -48,6 +48,12 @@ comment on column public.audit_log.after is 'Relevant state after the action, if
 
 comment on column public.audit_log.created_by is 'auth.users id of the staff member whose sync op caused the entry.';
 
+
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_audit_log_append_only
+  before update or delete on public.audit_log
+  for each row
+  execute function public._append_only();
 alter table "public"."audit_log"
   enable row level security;
 

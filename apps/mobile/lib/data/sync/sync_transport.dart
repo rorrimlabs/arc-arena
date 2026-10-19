@@ -50,11 +50,16 @@ class PullPage {
     required this.hasMore,
     required this.changes,
     this.serverTime,
+    this.scope,
   });
   final String cursor;
   final bool hasMore;
   final List<Map<String, dynamic>> changes;
   final DateTime? serverTime;
+
+  /// The feeds this member may not receive (customers / money / coupons, by
+  /// permission); null from a server that does not narrow the feed.
+  final List<String>? scope;
 
   factory PullPage.fromJson(Map<String, dynamic> j) => PullPage(
     cursor: j['cursor'] as String,
@@ -65,6 +70,9 @@ class PullPage {
     serverTime: j['server_time'] == null
         ? null
         : DateTime.parse(j['server_time'] as String).toUtc(),
+    scope: j['scope'] is List
+        ? [for (final s in j['scope'] as List) s as String]
+        : null,
   );
 }
 

@@ -116,6 +116,8 @@ select is(_att_day('5f000000-0000-4000-8000-000000000302', pg_temp.d(-1)::date, 
 select pg_temp.as_user(3);
 select is((pg_temp.push('leave.adjust', jsonb_build_object('staff_id', '5f000000-0000-4000-8000-000000000302',
     'days', -7, 'reason', 'Took 7 days before the app')))->>'status', 'applied', 'an opening balance correction');
+select is((pg_temp.push('leave.adjust', jsonb_build_object('staff_id', '5f000000-0000-4000-8000-000000000303',
+    'days', 10, 'reason', 'Top up')))->>'error', 'own_record', 'an approver cannot adjust their own balance');
 select pg_temp.as_user(2);
 select pg_temp.ask('1e000000-0000-4000-8000-000000000302', pg_temp.d(7), pg_temp.d(8));
 select pg_temp.as_user(3);
@@ -185,8 +187,8 @@ select throws_ok($$ select leave_balances('e0000000-0000-4000-8000-000000000300'
 select pg_temp.as_user(3);
 select is((select count(distinct staff_id)::int from leave_requests where arena_id = 'e0000000-0000-4000-8000-000000000300'),
   3, 'an approver sees every request');
-select is(jsonb_array_length(leave_balances('e0000000-0000-4000-8000-000000000300')), 4,
-  'and every balance');
+select is(jsonb_array_length(leave_balances('e0000000-0000-4000-8000-000000000300')), 3,
+  'and every balance (an owner who does not clock in has none)');
 reset role;
 
 select * from finish();

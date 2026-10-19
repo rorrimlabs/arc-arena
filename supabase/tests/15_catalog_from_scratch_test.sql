@@ -12,6 +12,11 @@ select * from no_plan();
 insert into arenas(id, name) values
   ('e0000000-0000-4000-8000-000000000150'::uuid, 'pgtap 15'),
   ('e0000000-0000-4000-8000-000000000151'::uuid, 'pgtap 15 neighbour');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
     created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_sso_user,is_anonymous)
   select '00000000-0000-0000-0000-000000000000', u.id::uuid, 'authenticated', 'authenticated',

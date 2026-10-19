@@ -12,7 +12,7 @@ create table "public"."staff_terms_acceptances" (
   "device_at"   timestamp with time zone,
   constraint "staff_terms_acceptances_arena_id_fkey" foreign key (arena_id) references public.arenas(id) on delete cascade,
   constraint "staff_terms_acceptances_pkey" primary key (id),
-  constraint "staff_terms_acceptances_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade,
+  constraint "staff_terms_acceptances_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "staff_terms_acceptances_staff_id_terms_id_key" unique (staff_id, terms_id),
   constraint "staff_terms_acceptances_terms_id_fkey" foreign key (terms_id) references public.staff_terms(id) on delete cascade
 );

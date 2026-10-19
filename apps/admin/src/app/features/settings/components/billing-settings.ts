@@ -113,6 +113,8 @@ import { FloorOptionsStore } from '../data/floor-options';
           </mat-form-field>
           <p class="-mt-2 text-[13px] leading-[1.45] text-muted">
             0 = staff can't discount by hand. Owners (Settings permission) are not limited.
+            The same limit caps how much of a bill staff may waive; only owners (Money or
+            Reports) waive more.
           </p>
           <app-toggle-row
             label="Discount needs a reason"

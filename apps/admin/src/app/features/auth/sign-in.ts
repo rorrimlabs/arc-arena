@@ -9,6 +9,7 @@ import { Session } from '../../core/auth/session';
 import { AuthCard } from './auth-card';
 import { MATERIAL_DEFAULTS } from '../../shared/material/material-defaults';
 import { focusOnStepChange } from './step-focus';
+import { Captcha, Turnstile } from '../../shared/turnstile/turnstile';
 
 type Step = 'sign-in' | 'forgot' | 'sent';
 
@@ -19,7 +20,7 @@ type Step = 'sign-in' | 'forgot' | 'sent';
 @Component({
   selector: 'app-sign-in',
   providers: [MATERIAL_DEFAULTS],
-  imports: [AuthCard, FormField, MatFormField, MatLabel, MatInput, MatButton, RouterLink],
+  imports: [AuthCard, FormField, MatFormField, MatLabel, MatInput, MatButton, RouterLink, Turnstile],
   template: `
     @switch (currentStep()) {
       @case ('forgot') {
@@ -43,7 +44,13 @@ type Step = 'sign-in' | 'forgot' | 'sent';
                 {{ error() }}
               </p>
             }
-            <button mat-flat-button type="submit" class="arena-cta" [disabled]="busy()">
+            <app-turnstile />
+            <button
+              mat-flat-button
+              type="submit"
+              class="arena-cta"
+              [disabled]="busy() || !captcha.ready()"
+            >
               Send reset link
             </button>
           </form>
@@ -61,11 +68,12 @@ type Step = 'sign-in' | 'forgot' | 'sent';
           } @else if (resent()) {
             <p role="status" class="text-sm leading-[1.3] font-medium">Sent a new link.</p>
           }
+          <app-turnstile />
           <button
             mat-stroked-button
             type="button"
             class="arena-cta"
-            [disabled]="busy()"
+            [disabled]="busy() || !captcha.ready()"
             (click)="resend()"
           >
             Send again
@@ -103,7 +111,13 @@ type Step = 'sign-in' | 'forgot' | 'sent';
                 {{ error() }}
               </p>
             }
-            <button mat-flat-button type="submit" class="arena-cta" [disabled]="busy()">
+            <app-turnstile />
+            <button
+              mat-flat-button
+              type="submit"
+              class="arena-cta"
+              [disabled]="busy() || !captcha.ready()"
+            >
               Sign in
             </button>
           </form>
@@ -119,6 +133,7 @@ type Step = 'sign-in' | 'forgot' | 'sent';
   `,
 })
 export class SignIn {
+  protected readonly captcha = inject(Captcha);
   private readonly session = inject(Session);
   private readonly api = inject(AuthApi);
   private readonly router = inject(Router);

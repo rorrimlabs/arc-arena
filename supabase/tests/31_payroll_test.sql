@@ -221,6 +221,60 @@ select is((pg_temp.m('salary_run.discard', jsonb_build_object('id', (select id f
 select is((pg_temp.m('salary_run.create', jsonb_build_object('id', gen_random_uuid(), 'period_start', '2026-02-01',
     'period_end', '2026-02-28')))->>'status', 'applied', 'and its period is free again');
 
+-- ------------------------------------------------ nobody changes their own pay (S7), owners may
+select pg_temp.m('pay_rate.add', jsonb_build_object('id', gen_random_uuid(), 'staff_id', '5f000000-0000-4000-8000-000000000315',
+  'effective_from', '2026-03-01', 'pay_type', 'monthly', 'base_paise', 2000000, 'extra_hours_paid', false));
+create temp table run4 as select gen_random_uuid() as id;
+select pg_temp.m('salary_run.create', jsonb_build_object('id', (select id from run4), 'period_start', '2026-03-01',
+  'period_end', '2026-03-31'));
+create temp table adj4 as select gen_random_uuid() as id;
+select pg_temp.m('salary_adjustment.add', jsonb_build_object('id', (select id from adj4), 'run_id', (select id from run4),
+  'staff_id', '5f000000-0000-4000-8000-000000000315', 'kind', 'deduction', 'amount_paise', 50000, 'note', 'Breakage'));
+select is((pg_temp.m('hr_profile.save', jsonb_build_object('staff_id', '5f000000-0000-4000-8000-000000000311',
+    'employee_code', 'OWN-1')))->>'status', 'applied', 'role owner may edit their own HR profile');
+select pg_temp.as_user(5);
+select is((pg_temp.m('pay_rate.add', jsonb_build_object('id', gen_random_uuid(), 'staff_id', '5f000000-0000-4000-8000-000000000315',
+    'effective_from', '2026-03-15', 'pay_type', 'monthly', 'base_paise', 9000000, 'extra_hours_paid', false)))->>'error',
+  'own_record', 'a payroll holder cannot set their own pay rate');
+select is((pg_temp.m('hr_profile.save', jsonb_build_object('staff_id', '5f000000-0000-4000-8000-000000000315',
+    'paid_leave_days', 60)))->>'error', 'own_record', 'nor their own HR profile');
+select is((pg_temp.m('salary_run.set_deduction', jsonb_build_object('run_id', (select id from run4),
+    'staff_id', '5f000000-0000-4000-8000-000000000315', 'code', 'absent', 'applied', false)))->>'error', 'own_record',
+  'nor waive their own deductions');
+select is((pg_temp.m('salary_adjustment.add', jsonb_build_object('id', gen_random_uuid(), 'run_id', (select id from run4),
+    'staff_id', '5f000000-0000-4000-8000-000000000315', 'kind', 'bonus', 'amount_paise', 100000, 'note', 'Me')))->>'error',
+  'own_record', 'nor give themselves a bonus');
+select is((pg_temp.m('salary_adjustment.reverse', jsonb_build_object('id', gen_random_uuid(), 'reverses_id', (select id from adj4),
+    'note', 'Undo')))->>'error', 'own_record', 'nor reverse a deduction on their own line');
+select is((select count(*)::int from salary_adjustments where run_id = (select id from run4)), 1, 'nothing was written');
+select pg_temp.as_user(1);
+
+-- ------------------------------------------------ finalise only a period that is over and reviewed
+create temp table run5 as select gen_random_uuid() as id;
+select pg_temp.m('salary_run.create', jsonb_build_object('id', (select id from run5),
+  'period_start', (_pr_ist_date(now()) - 5)::text, 'period_end', (_pr_ist_date(now()) + 3)::text));
+select is((pg_temp.m('salary_run.finalise', jsonb_build_object('id', (select id from run5))))->>'error',
+  'period_not_over', 'a period that ends after today cannot be finalised');
+select is((select status from salary_runs where id = (select id from run5)), 'draft', 'it stays a draft');
+select pg_temp.m('salary_run.discard', jsonb_build_object('id', (select id from run5)));
+create temp table run6 as select gen_random_uuid() as id;
+select pg_temp.m('salary_run.create', jsonb_build_object('id', (select id from run6),
+  'period_start', (_pr_ist_date(now()) - 10)::text, 'period_end', (_pr_ist_date(now()) - 1)::text));
+select pg_temp.work('e0000000-0000-4000-8000-000000000310', '5f000000-0000-4000-8000-000000000312',
+  (_pr_ist_date(now()) - 3)::text || ' 10:00', (_pr_ist_date(now()) - 3)::text || ' 19:00');
+update attendance_entries set review = 'pending'
+ where staff_id = '5f000000-0000-4000-8000-000000000312' and work_date = _pr_ist_date(now()) - 3;
+select is((pg_temp.m('salary_run.finalise', jsonb_build_object('id', (select id from run6))))->>'detail',
+  'Ravi', 'an entry still flagged for review blocks finalise, naming the person');
+update attendance_entries set review = 'accepted'
+ where staff_id = '5f000000-0000-4000-8000-000000000312' and work_date = _pr_ist_date(now()) - 3;
+select is((pg_temp.m('salary_run.finalise', jsonb_build_object('id', (select id from run6))))->>'status',
+  'applied', 'once reviewed, a period that ended yesterday finalises');
+
+-- ------------------------------------------------ a login with pay records cannot be deleted
+select throws_ok($$ delete from staff_profiles where id = '5f000000-0000-4000-8000-000000000312' $$,
+  '23503', null, 'deleting a profile with salary lines is refused (deactivate instead)');
+
 -- ------------------------------------------------ Example 2: weekly, hourly, nearest 15 min
 select pg_temp.as_user(6);
 select pg_temp.w('settings.save', jsonb_build_object('key', 'work_hours', 'json',

@@ -110,7 +110,7 @@ import { ShiftDialog, ShiftDialogData, ShiftDialogResult } from '../dialogs/shif
               <button
                 mat-icon-button
                 type="button"
-                [attr.aria-label]="'Remove ' + nameOf(a) + ' from ' + s.name"
+                [attr.aria-label]="'End ' + nameOf(a) + ' on ' + s.name"
                 [disabled]="busy() || !canEdit()"
                 (click)="remove(a)"
               >
@@ -206,9 +206,9 @@ export class ShiftDetail {
   protected remove(a: ShiftAssignment): void {
     const name = this.nameOf(a);
     const data: ConfirmDialogData = {
-      title: `Remove ${name} from ${this.shift().name}?`,
-      message: `The assignment (${assignmentDates(a)}) is deleted. Days it covered become week offs unless another shift covers them. Finalised salary runs keep what they were paid on.`,
-      confirm: 'Remove',
+      title: `End ${name} on ${this.shift().name}?`,
+      message: `The assignment (${assignmentDates(a)}) ends yesterday: the days already worked keep this shift, and from today they are week offs unless another shift covers them. One that has not started yet is removed.`,
+      confirm: 'End assignment',
       danger: true,
     };
     this.dialog
@@ -224,7 +224,7 @@ export class ShiftDetail {
         this.error.set('');
         try {
           await this.store.unassign(a.id);
-          this.say(`${name} removed from ${this.shift().name}`);
+          this.say(`${name} taken off ${this.shift().name} from today`);
         } catch (e) {
           this.error.set(toAppError(e).message);
         } finally {

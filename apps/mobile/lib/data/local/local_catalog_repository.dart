@@ -509,6 +509,20 @@ class LocalCatalogRepository implements CatalogRepository {
   }
 
   @override
+  Future<int> manualDiscountMaxPercent() async {
+    final row = await (_db.select(_db.settings)
+          ..where((t) => t.key.equals('discount_options')))
+        .getSingleOrNull();
+    if (row == null) return 0;
+    try {
+      final v = (jsonDecode(row.json) as Map<String, dynamic>)['manual_max_percent'];
+      return v is int ? v.clamp(0, 100) : 0;
+    } on FormatException {
+      return 0;
+    }
+  }
+
+  @override
   Future<VenueProfile> venueProfile() async {
     final row = await (_db.select(_db.settings)
           ..where((t) => t.key.equals(venueProfileKey)))

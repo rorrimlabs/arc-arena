@@ -17,7 +17,7 @@ create table "public"."leave_adjustments" (
   constraint "leave_adjustments_days_check" check ((days <> (0)::numeric)),
   constraint "leave_adjustments_pkey" primary key (id),
   constraint "leave_adjustments_reason_check" check ((btrim(reason) <> ''::text)),
-  constraint "leave_adjustments_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade
+  constraint "leave_adjustments_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
 );
 
 comment on table public.leave_adjustments is 'Append-only manual changes (signed days, with a reason) to a staff member''s paid-leave balance for one leave year.';

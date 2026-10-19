@@ -362,9 +362,16 @@ export const PAYROLL_MESSAGES: Readonly<Record<string, string>> = {
   forbidden:
     'You need the Payroll permission for that (finalising or discarding needs Finalise pay)',
   not_found: 'That run, person or adjustment is no longer there. Refresh',
+  own_record: 'You can’t change your own pay line. The owner must',
   invalid_period: 'A run must end on or after its first day and cover at most 62 days',
   run_overlap: 'Another run already covers some of these dates',
   run_not_draft: 'This run is no longer a draft: finalised and discarded runs can’t change',
+  period_not_over:
+    'This period isn’t over yet. Finalise once its last shifts are over, or end the run today',
+  entries_open:
+    'Someone is still clocked in during this period. Close or correct their entry in Attendance first',
+  entries_pending_review:
+    'Some entries in this period still need review. Accept or correct them in Attendance first',
   note_required: 'Write a note saying what this is for',
   invalid_payload: 'Check the values and try again',
   already_reversed: 'That adjustment was already reversed',

@@ -102,6 +102,12 @@ create trigger t_session_charges_tomb
   for each row
   execute function public.sync_record_delete();
 
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_session_charges_append_only
+  before update or delete on public.session_charges
+  for each row
+  execute function public._append_only();
+
 -- Readable by an active member holding bill, or owner level (money/reports): bill lines are financial records.
 -- No write policy: clients change data only through sync_push.
 create policy "p_sel_session_charges" on "public"."session_charges"

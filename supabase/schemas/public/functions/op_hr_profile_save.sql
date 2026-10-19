@@ -4,7 +4,7 @@
 -- Payload: staff_id, and any of joined_on, left_on, tracks_attendance, employee_code,
 --   paid_leave_days (0–366 in halves), standard_day_min (60–1440). A key left out keeps its
 --   value; an explicit null clears it (back to the default).
--- Checks / errors: forbidden; not_found (hint staff); invalid_payload (hint names the field).
+-- Checks / errors: forbidden; not_found (hint staff); own_record (your own profile, unless role owner); invalid_payload (hint names the field).
 -- Writes: staff_hr_profiles (upsert). Returns: {}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_hr_profile_save (
@@ -26,6 +26,7 @@ begin
   if not exists (select 1 from staff_profiles where id = v_staff and arena_id = p_arena) then
     raise exception 'not_found' using hint = 'staff';
   end if;
+  perform _own_record(p_arena, v_staff);
   select * into v_old from staff_hr_profiles where staff_id = v_staff;
   select * into v_hr from _staff_hr(v_staff);
   v_new.staff_id := v_staff;

@@ -28,7 +28,7 @@ create table "public"."salary_run_lines" (
   constraint "salary_run_lines_pkey" primary key (id),
   constraint "salary_run_lines_run_id_staff_id_key" unique (run_id, staff_id),
   constraint "salary_run_lines_run_id_fkey" foreign key (run_id) references public.salary_runs(id) on delete cascade,
-  constraint "salary_run_lines_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade
+  constraint "salary_run_lines_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
 );
 
 comment on table public.salary_run_lines is 'One staff member''s pay in one salary run: day-by-day timesheet, rates used, base, extra hours, suggested deductions with keep/waive, adjustments and net, in paise.';

@@ -9,6 +9,11 @@ select * from no_plan();
 insert into arenas(id, name) values
   ('e0000000-0000-4000-8000-000000000010'::uuid, 'pgtap 10 A'),
   ('e0000000-0000-4000-8000-000000000011'::uuid, 'pgtap 10 B');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000010'::uuid);
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000011'::uuid);
 
@@ -152,6 +157,21 @@ select pg_temp.as_user('10000000-0000-0000-0000-000000000001');
 select is(pg_temp.push('staff.update', jsonb_build_object('user_id','10000000-0000-0000-0000-000000000002',
     'name','Staff','perms','["start","root"]'::jsonb,'active',true))->>'error', 'invalid_permission',
   'staff.update refuses unknown permission codes');
+-- Access changes are audited with before and after; the op itself is kept in sync_ops.
+select is(pg_temp.push('staff.update', jsonb_build_object('user_id','10000000-0000-0000-0000-000000000002',
+    'perms','["start","bill"]'::jsonb))->>'status', 'applied', 'the owner gives Staff bill');
+select is((select (before->'perms')::text || ' -> ' || (after->'perms')::text from audit_log
+            where entity_type = 'staff_profile' and action = 'access'
+              and arena_id = 'e0000000-0000-4000-8000-000000000010'),
+  '["start", "bill", "discount", "members"] -> ["start", "bill"]',
+  'the access change is audited with before and after');
+select is((select payload->'perms' from sync_ops where kind = 'staff.update' and status = 'applied'
+            and arena_id = 'e0000000-0000-4000-8000-000000000010'
+            and payload->>'user_id' = '10000000-0000-0000-0000-000000000002'),
+  '["start", "bill"]'::jsonb, 'and sync_ops keeps what the op asked for');
+-- Back as the rest of this file expects (that change is audited too).
+select pg_temp.push('staff.update', jsonb_build_object('user_id','10000000-0000-0000-0000-000000000002',
+  'perms','["start","bill","discount","members"]'::jsonb));
 -- A partial staff.update keeps what it leaves out: it never wipes someone's
 -- permissions or silently reactivates them.
 update staff_profiles set active = false, perms = array['start']

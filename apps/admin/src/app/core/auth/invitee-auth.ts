@@ -2,6 +2,7 @@ import { Service, inject } from '@angular/core';
 import type { Session as AuthSession, SupabaseClient } from '@supabase/supabase-js';
 import { isOwnerLevel, toMemberships } from '../arena/arena-api';
 import { dbError } from '../supabase/db-error';
+import { Captcha } from '../../shared/turnstile/turnstile';
 import { Supabase } from '../supabase/supabase';
 import { Account, AcceptedInvite, AppError, acceptError, toAccount, toAppError } from './auth-api';
 
@@ -42,6 +43,7 @@ export abstract class InviteeAuth {
 
 class SupabaseInviteeAuth extends InviteeAuth {
   private readonly supabase = inject(Supabase);
+  private readonly captcha = inject(Captcha);
   private client: Promise<SupabaseClient> | null = null;
   private session: AuthSession | null = null;
 
@@ -68,7 +70,11 @@ class SupabaseInviteeAuth extends InviteeAuth {
   }
 
   async signIn(email: string, password: string): Promise<Account> {
-    const { data, error } = await (await this.get()).auth.signInWithPassword({ email, password });
+    const { data, error } = await (await this.get()).auth.signInWithPassword({
+      email,
+      password,
+      options: { captchaToken: this.captcha.take() },
+    });
     if (error) throw toAppError(error);
     return this.signedIn(data.session);
   }

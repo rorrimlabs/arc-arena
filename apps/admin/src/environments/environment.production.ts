@@ -14,6 +14,8 @@
  */
 export const environment = {
   production: true,
-  supabaseUrl: 'https://ouxvtvlzhxddmqirmnxo.supabase.co',
-  supabaseKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im91eHZ0dmx6aHhkZG1xaXJtbnhvIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTE3MzMxOTYsImV4cCI6MjEwNzMwOTE5Nn0.iXmhphmepjbxKKfa6bp7V-4r6b2mSEza1AqyH0ePL_c',
+  supabaseUrl: '',
+  supabaseKey: '',
+  /** Cloudflare Turnstile site key (public). Empty = no CAPTCHA (the local stack has none). */
+  turnstileSiteKey: '',
 };

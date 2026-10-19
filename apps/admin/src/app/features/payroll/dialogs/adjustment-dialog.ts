@@ -16,6 +16,7 @@ import { formatPaise } from '../../../shared/money/rupees.pipe';
 import { parseRupees } from '../../sales/data/sale.models';
 import { PayrollStore } from '../data/payroll-store';
 import { NEW_ADJUSTMENT_KINDS, NewAdjustmentKind } from '../data/payroll.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export interface AdjustmentDialogData {
   readonly runId: string;
@@ -122,6 +123,9 @@ export class AdjustmentDialog {
   protected readonly error = signal('');
   protected readonly busy = signal(false);
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async confirm(event: Event): Promise<void> {
     event.preventDefault();
     this.tried.set(true);
@@ -143,6 +147,7 @@ export class AdjustmentDialog {
         this.kind(),
         paise,
         this.note(),
+        this.attempt,
       );
       this.ref.close(true);
     } catch (e) {

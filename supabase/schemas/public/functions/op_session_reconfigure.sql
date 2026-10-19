@@ -1,3 +1,6 @@
+-- op_session_reconfigure — device-stamped at is bounded by _client_time (time_in_future,
+--   time_too_old); the segment must be billable from the session's snapshot (_seg_priced:
+--   no_rate, activity_not_offered).
 create or replace function public.op_session_reconfigure (
   p_arena uuid,
   p       jsonb
@@ -23,6 +26,7 @@ declare
   v_origins uuid[];
 begin
   perform _need(p_arena, 'start');
+  perform _client_time(p_arena, v_at, 'at');
   select status into v_status from sessions where id = v_session and arena_id = p_arena for update;
   if not found then raise exception 'not_found' using hint = 'session'; end if;
   if v_status <> 'active' then raise exception 'not_active' using hint = v_status; end if;
@@ -49,6 +53,8 @@ begin
   perform _game_playable(v_game, v_resource);
   perform _single_supply(p_arena, v_resource, v_act, v_game,
     coalesce(array_length(v_pads, 1), 0), v_cc, v_open_res, v_open_cc);
+  perform _seg_priced(p_arena, v_resource,
+    (select pricing_snapshot from sessions where id = v_session), v_act, v_cc);
 
   update session_segments set ended_at = v_at where id = v_open;
   update controller_allocations set ended_at = v_at where segment_id = v_open and ended_at is null;

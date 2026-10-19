@@ -31,6 +31,7 @@ import {
   minEffectiveFrom,
   rateProblems,
 } from '../data/pay-setup.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export interface PayRateDialogData {
   readonly staffId: string;
@@ -220,6 +221,9 @@ export class PayRateDialog {
     this.error.set('');
   }
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async confirm(event: Event): Promise<void> {
     event.preventDefault();
     this.tried.set(true);
@@ -230,7 +234,7 @@ export class PayRateDialog {
     this.busy.set(true);
     this.error.set('');
     try {
-      await this.store.addRate(this.data.staffId, this.draft());
+      await this.store.addRate(this.data.staffId, this.draft(), this.attempt);
       this.ref.close(true);
     } catch (e) {
       this.error.set(toAppError(e).message);

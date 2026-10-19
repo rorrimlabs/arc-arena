@@ -3,7 +3,7 @@ import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { LoginScope } from '../../../core/auth/login-scope';
 import { Clock } from '../../../core/time/clock';
-import { writeThenReload } from '../../../core/sync/push-ops';
+import { Attempt, writeThenReload } from '../../../core/sync/push-ops';
 import { AttendanceApi } from './attendance-api';
 import {
   AttendanceEntry,
@@ -132,12 +132,12 @@ export class AttendanceStore {
   }
 
   /** attendance.correct (edit, void or add); resolves with the resulting row's id. */
-  async correct(payload: CorrectionPayload): Promise<string> {
+  async correct(payload: CorrectionPayload, attempt = new Attempt()): Promise<string> {
     const arenaId = this.arena.current().id;
     let id = '';
     await writeThenReload(
       async () => {
-        id = await this.api.correct(arenaId, payload);
+        id = await this.api.correct(arenaId, payload, attempt.id('op'));
       },
       () => this.refresh(),
     );

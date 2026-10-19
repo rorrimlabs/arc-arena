@@ -28,8 +28,9 @@ Conventions (same as the rest of the app):
 `role = 'owner'` holds everything. Any active member may clock in, read their own attendance and
 leave, and apply for or cancel their own leave.
 
-**Own-record rule:** nobody approves their own leave or corrects or accepts their own attendance,
-unless they are `role = 'owner'`. The refusal code is `own_record`.
+**Own-record rule:** nobody approves, records or adjusts their own leave, corrects or accepts their
+own attendance, or sets up or changes their own pay (HR profile, pay rate, run deductions and
+adjustments), unless they are `role = 'owner'`. The refusal code is `own_record`.
 
 ## Settings keys (op `settings.save {key, json}`, needs `settings`)
 
@@ -229,17 +230,21 @@ All refusal codes are listed. `forbidden` = missing permission; `not_found` (hin
 
 ### Shifts, holidays and HR profiles
 - **`shift.upsert`**: `{id, name, start_min, end_min, days, break_min, active}`. Needs `settings`.
-  - Refusals: `invalid_shift` (hint), `duplicate` (name taken).
+  - Refusals: `invalid_shift` (hint), `duplicate` (name taken), `shift_in_use` (turning off a
+    shift someone is assigned to from today on; hint names them: end those assignments first).
 - **`shift.assign`**: `{id, staff_id, shift_id, effective_from, effective_to?}`. Upserts by `id`.
   Needs `settings`.
-  - Refusals: `not_found`, `invalid_payload`, `assignment_overlap`.
-- **`shift.unassign`**: `{id}`. Deletes the assignment. Needs `settings`.
+  - Refusals: `not_found`, `invalid_payload`, `assignment_overlap`, `shift_inactive` (a new
+    assignment to a shift not in use), `period_finalised` (a new assignment, or the days an edit
+    moves, in a finalised salary period).
+- **`shift.unassign`**: `{id}`. Ends the assignment yesterday (IST), so days already worked keep
+  their shift; deletes it only if it has not started yet. Needs `settings`.
 - **`staff_holiday.upsert`**: `{day, name, paid?}`. Needs `settings`.
 - **`staff_holiday.delete`**: `{day}`. Needs `settings`.
 - **`hr_profile.save`**: `{staff_id, joined_on?, left_on?, tracks_attendance?, employee_code?,
   paid_leave_days?, standard_day_min?}`. Needs `payroll`.
   - A key left out keeps its value; an explicit `null` clears it.
-  - Refusals: `not_found`, `invalid_payload`.
+  - Refusals: `not_found`, `own_record`, `invalid_payload`.
 
 ### Personal details and terms
 - **`staff_details.save`**: `{staff_id?, phone?, email?, birth_date?, blood_group?,
@@ -301,13 +306,13 @@ All refusal codes are listed. `forbidden` = missing permission; `not_found` (hin
     `half_day_not_allowed`, `period_finalised`, `leave_overlap`, `no_working_days`.
 - **`leave.adjust`**: `{staff_id, days, reason}`. Needs `leave_approve`. Counts in the person's
   current leave year.
-  - Refusals: `reason_required`, `invalid_payload`, `not_found`.
+  - Refusals: `reason_required`, `invalid_payload`, `not_found`, `own_record`.
 
 ### Pay
 - **`pay_rate.add`**: `{id, staff_id, effective_from, pay_type, base_paise, extra_hours_paid,
   extra_hourly_paise?, note?}`. Needs `payroll`.
   - Refusals: `invalid_rate` (hint), `duplicate` (that date already has a rate),
-    `rate_in_finalised_period`.
+    `rate_in_finalised_period`, `own_record`.
 - **`pay_policy.add`**: `{id, effective_from, policy}`. Needs `payroll`.
   - Refusals: `invalid_pay_policy` (hint), `duplicate`, `rate_in_finalised_period`.
 
@@ -322,14 +327,20 @@ All refusal codes are listed. `forbidden` = missing permission; `not_found` (hin
   - Refusal: `run_not_draft`.
 - **`salary_run.set_deduction`**: `{run_id, staff_id, code, applied, note?}`. Needs `payroll`.
   Rebuilds that person's line.
-  - Refusals: `run_not_draft`, `invalid_payload`.
+  - Refusals: `run_not_draft`, `invalid_payload`, `own_record`.
 - **`salary_adjustment.add`**: `{id, run_id, staff_id, kind: bonus|advance|deduction,
   amount_paise > 0, note}`. Needs `payroll`. Stored signed.
-  - Refusals: `run_not_draft`, `note_required`, `invalid_payload`, `not_found`.
+  - Refusals: `run_not_draft`, `note_required`, `invalid_payload`, `not_found`, `own_record`.
 - **`salary_adjustment.reverse`**: `{id, reverses_id, note}`. Needs `payroll`.
-  - Refusals: `run_not_draft`, `already_reversed`, `not_found`.
+  - Refusals: `run_not_draft`, `already_reversed`, `not_found`, `own_record`.
 - **`salary_run.finalise`**: `{id}`. Needs `payroll_finalise`. Recalculates, then locks.
-  - Refusals: `run_not_draft`, `net_negative` (hint names the person).
+  - A run may end on the pay date (hourly staff are paid up to then), but never pays days to come.
+  - Refusals: `run_not_draft`; `period_not_over` (the period ends after today, IST, or ends today
+    while someone's shift that day is still to come); `entries_open` (a clock-in in the period is
+    still open; hint names the people); `entries_pending_review` (a flagged entry in the period is
+    not reviewed yet; hint names the people); `net_negative` (hint names the person).
+  - Attendance corrections and leave changes take a share lock on the runs covering their days,
+    so they never slip into a period being finalised.
 - **`salary_run.discard`**: `{id}`. Needs `payroll_finalise`.
   - Refusal: `run_not_draft`.
 

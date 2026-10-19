@@ -22,10 +22,11 @@ create or replace function private.sync_fetch_entity (
   set search_path to 'public'
   AS $function$
 declare
-  v_ref  jsonb;
-  v_id   uuid;
-  v_rows jsonb;
-  v_out  jsonb := '[]'::jsonb;
+  v_ref    jsonb;
+  v_id     uuid;
+  v_rows   jsonb;
+  v_out    jsonb := '[]'::jsonb;
+  v_hidden text[];
 begin
   -- `not in` is NULL (not true) for a null arena, so test membership explicitly.
   if p_arena is null or not exists (select 1 from private.app_arena_ids() a where a = p_arena) then
@@ -70,6 +71,10 @@ begin
           from sync_v_bookings s where s.arena_id = p_arena and s.id = v_id)
       else '[]'::jsonb
     end;
+    -- Customers, money and coupons only for those who may read them (as sync_pull).
+    v_hidden := coalesce(v_hidden, _sync_hidden(p_arena));
+    select coalesce(jsonb_agg(e), '[]'::jsonb) into v_rows
+      from jsonb_array_elements(v_rows) e where e->>'t' <> all(v_hidden);
     v_out := v_out || jsonb_build_array(jsonb_build_object('ref', v_ref, 'rows', v_rows));
   end loop;
   return v_out;

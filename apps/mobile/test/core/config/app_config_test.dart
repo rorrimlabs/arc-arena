@@ -17,11 +17,16 @@ String _jwt(String role) {
 const _publishable = 'sb_publishable_TESTONLY_not_a_real_key';
 const _hosted = 'https://abcdefghijklmnop.supabase.co';
 
-AppConfig _cloud(String url, String key) => AppConfig(
+AppConfig _cloud(
+  String url,
+  String key, {
+  String environment = 'production',
+}) => AppConfig(
   backend: Backend.supabase,
   supabaseUrl: url,
   supabaseAnonKey: key,
   backendSetting: 'supabase',
+  environment: environment,
 );
 
 void main() {
@@ -65,6 +70,12 @@ void main() {
         isNull,
         reason: 'legacy anon JWT',
       );
+    });
+
+    test('a release build not marked production is refused', () {
+      final c = _cloud(_hosted, _publishable, environment: 'development');
+      expect(c.problemFor(releaseBuild: true), contains('AO_ENVIRONMENT'));
+      expect(c.problemFor(releaseBuild: false), isNull);
     });
 
     test('missing URL or key is refused in any build', () {

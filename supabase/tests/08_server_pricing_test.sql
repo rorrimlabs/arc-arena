@@ -17,6 +17,16 @@ select * from no_plan();
 -- left by the two-device suite, a half-finished run — cannot change what it
 -- sees. Created inside this transaction and rolled back with it.
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000008'::uuid, 'pgtap 08');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
+-- Staff here waive whole bills: let them (the cap itself is tested in 08).
+insert into settings(arena_id, key, json)
+  select id, 'discount_options', '{"manual_max_percent": 100, "reason_required": false}' from arenas
+   where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000008'::uuid);
 insert into pricing_rules(arena_id, name, days, start_min, end_min, holiday_mode, activity_codes,
     adjust_kind, adjust_value)
@@ -70,7 +80,8 @@ create function pg_temp.ch(p_seg text, p_band text, p_res text, p_cc int, p_s te
 create function pg_temp.end_op(p_id text, p_segs jsonb, p_sched text, p_at text, p_billed bigint,
     p_charges jsonb, p_waive boolean default false) returns jsonb as $$
   select jsonb_build_object('session_id', p_id::uuid, 'ended_at', p_at,
-    'billed_amount_paise', p_billed, 'mark_waived', p_waive, 'expected_segment_ids', p_segs,
+    'billed_amount_paise', p_billed, 'mark_waived', p_waive,
+    'waive_reason', case when p_waive then 'Walked out' end, 'expected_segment_ids', p_segs,
     'expected_scheduled_end_at', p_sched, 'charges', p_charges) $$ language sql;
 
 select pg_temp.as_user('22222222-2222-2222-2222-222222222222');
@@ -294,6 +305,41 @@ select ok(not has_function_privilege('authenticated', f, 'execute'), f || ' is n
     'op_group_extend(uuid,jsonb)','_sync_apply(uuid,text,jsonb)']) f;
 select ok(not has_table_privilege('authenticated', 'pricing_catalog_history', 'select'),
   'price-list history is server-only');
+
+-- ---------------------------------------------------------------- device times are bounded
+select pg_temp.as_user('22222222-2222-2222-2222-222222222222');
+select is(pg_temp.push('session.start', pg_temp.start('a0800000-0000-0000-0000-0000000000f1',
+    'b0800000-0000-0000-0000-0000000000f1', 'RIFT', 1, (now() + interval '1 hour')::text,
+    (now() + interval '2 hours')::text))->>'error', 'time_in_future',
+  'a start dated an hour ahead of the server is refused');
+update settings set json = '{"max_offline_hours": 24}'
+ where arena_id = pg_temp.arena() and key = 'offline_rules';
+select is(pg_temp.push('session.start', pg_temp.start('a0800000-0000-0000-0000-0000000000f2',
+    'b0800000-0000-0000-0000-0000000000f2', 'RIFT', 1, (now() - interval '25 hours')::text,
+    (now() - interval '24 hours')::text))->>'error', 'time_too_old',
+  'a start older than the offline window is refused');
+select is(pg_temp.push('session.start', pg_temp.start('a0800000-0000-0000-0000-0000000000f3',
+    'b0800000-0000-0000-0000-0000000000f3', 'VOID', null, (now() - interval '10 minutes')::text,
+    (now() + interval '50 minutes')::text))->>'error', 'no_rate',
+  'a PS5 start with no controller count has no rate and is refused (no ₹0 segments)');
+select is(pg_temp.push('session.start', pg_temp.start('a0800000-0000-0000-0000-0000000000f4',
+    'b0800000-0000-0000-0000-0000000000f4', 'VOID', 1, (now() - interval '10 minutes')::text,
+    (now() + interval '50 minutes')::text))->>'status', 'applied',
+  'a start inside the window, with a rate, is accepted');
+select ok((select ended_recorded_at is null from sessions where id = 'a0800000-0000-0000-0000-0000000000f4'),
+  'no end receipt time while it runs');
+
+-- ---------------------------------------------------------------- waives above the manual cap: owner level only
+update settings set json = '{"manual_max_percent": 10, "reason_required": false}'
+ where arena_id = pg_temp.arena() and key = 'discount_options';
+select throws_ok($$ select _waive_check(pg_temp.arena(), 10000, 0) $$, 'P0001', 'waive_over_limit',
+  'staff cannot write off a whole bill above the 10% cap');
+select lives_ok($$ select _waive_check(pg_temp.arena(), 10000, 9000) $$,
+  'staff may write off up to the cap (₹10 of ₹100)');
+select throws_ok($$ select _waive_check(pg_temp.arena(), 10000, 8999) $$, 'P0001', 'waive_over_limit',
+  'one paisa over the cap is refused (exact, no rounding)');
+select pg_temp.as_user('11111111-1111-1111-1111-111111111111');
+select lives_ok($$ select _waive_check(pg_temp.arena(), 10000, 0) $$, 'the owner waives any amount');
 
 select * from finish();
 rollback;

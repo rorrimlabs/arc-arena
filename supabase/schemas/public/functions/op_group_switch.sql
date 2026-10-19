@@ -5,7 +5,8 @@
 -- Payload: group_id, player_number, expected_assignment_id, at; assignment {id, resource_id,
 --   activity_code, game_id?, controller_count?, allocations[], moves[]} (player_number and
 --   player_label are taken from the open assignment).
--- Checks / errors: forbidden; not_found (hint group); not_active; no_open_assignment; stale;
+-- Checks / errors: forbidden; time_in_future, time_too_old (_client_time: device time after now + 2 min or
+--   over 24 h old); not_found (hint group); not_active; no_open_assignment; stale;
 --   invalid_time; retry (40001); placement errors per assignment (_group_place ->
 --   _group_assignable): resource_missing, resource_unavailable, mode_locked, not_playable,
 --   resource_busy (single session on the station, or another group), controllers_exceeded (> 4 on
@@ -35,6 +36,7 @@ declare
   v_open uuid; v_open_res uuid; v_start timestamptz; v_idx int; v_label text; v_skipped int;
 begin
   perform _need(p_arena, 'start');
+  perform _client_time(p_arena, v_at, 'at');
   perform _group_active(p_arena, v_group);
   select id, resource_id, started_at, idx, player_label
     into v_open, v_open_res, v_start, v_idx, v_label

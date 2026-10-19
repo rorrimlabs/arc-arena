@@ -101,10 +101,16 @@ times are in order, but it cannot tell whether those times are true. So
 server-side amount validation is **not** protection against forged or wrong
 timestamps: a member with `bill` and direct API access could, for example,
 send an end time earlier than the real one and the correctly-priced, smaller
-bill for it. The evidence for an audit is the server's own receipt time on
-every op (`sync_ops.created_at`, `sessions.created_at`) and who sent it
-(`created_by`, `sync_ops.user_id`). In pooled group mode the purchased
-controller count is also staff's declaration.
+bill for it. What bounds it (`_client_time`): every session and group time
+(start, switch, add, end) is refused when later than the server's time plus
+2 minutes (`time_in_future`) or older than the arena's offline window
+(`time_too_old`; settings key `offline_rules`, `max_offline_hours` 1–720,
+default 24). Inside the window the server keeps its own receipt time
+(`sessions.created_at` / `ended_recorded_at`, the same on `group_sessions`), and
+the dashboard flags a start recorded over 5 minutes late and an end recorded
+over 15 minutes late. Who sent it stays on `created_by` / `sync_ops.user_id`.
+In pooled group mode the purchased controller count is also staff's
+declaration.
 
 ### Changing pricing (rule)
 
@@ -269,7 +275,7 @@ server is the referee for devices working on stale numbers.
 | Once a bill is final, payments may only fill it up to the bill (`overpayment`). A running session's advance payments are not capped. A waived bill is unchanged. | `op_payment` wrapper locks the bill, sums payments | `paymentBalanceProblem` (`lib/domain/services/payment_rules.dart`), checked inside the write transaction |
 | A refund may never exceed what was collected (`refund_exceeds_paid`). | same | same |
 | A void needs a reason (`void_reason_required`, 2026-10-14). A voided bill takes no payment (`voided`, checked before the balance) but may be refunded, so money taken before the void can go back. | `op_session_void`, `op_group_void`, `op_payment` | the floor app never voids; refunds only from the dashboard |
-| A waive writes an `audit_log` entry (amount written off, reason). The server accepts a waive without a reason so older builds still end the session; the current floor app refuses to waive without one (`waive_reason_required`). | `op_session_end`, `op_group_end` | `SessionActions.end` / `GroupSessionActions.end`, end sheets |
+| A waive writes an `audit_log` entry (amount written off, reason). A waive needs a reason on the server too (`waive_reason_required`), as in the floor app. Below owner level a waive may write off at most `discount_options.manual_max_percent` of the bill (`waive_over_limit`; exact integer check `_waive_check`, mirrored by `waiveOverLimit` on the floor). | `op_session_end`, `op_group_end` | `SessionActions.end` / `GroupSessionActions.end`, end sheets |
 | `payment.correct` (dashboard only, Money permission) moves all or part of a payment to another method as a refund + payment pair with a reason; never more than the payment. The device receives the two rows like any payment; they net to zero. | `op_payment_correct` | — |
 | The End sheet collects only what is still due (an advance taken while the session ran is not collected again) and says when the payment did not go in. Take payment books only the balance on a final bill and tells staff the change to return. | — | `end_session_sheet.dart`, `take_payment_sheet.dart` |
 | A `role='owner'` profile always holds every permission and stays active; `staff.update` rewrites it so and answers `adjusted` (the device refetches). An arena can therefore never be left without an owner; removing an owner is an operator action on the database. | `op_staff_update` wrapper | the device reverts to the server row |
@@ -483,9 +489,9 @@ Blocking production:
    is proven against the local stack (`tool/sync_it.sh`: real accounts, two
    device databases, the dashboard's data layer, real PostgREST and Realtime)
    — not on two phones.
-3. **Session times are device-asserted.** Server-side amount validation does
-   not protect against forged or wrong timestamps (see *What is still
-   trusted* above).
+3. **Session times are device-asserted, within bounds.** Future times and
+   times older than the offline window are refused; late ends inside it are
+   flagged on the bill, not refused (see *What is still trusted* above).
 
 Known limits (by design or not yet built):
 
@@ -506,14 +512,16 @@ Known limits (by design or not yet built):
   once when opened; reopen them to see another device's edit.
 * Success messages ("Paid in full", "Saved") mean saved on this device; the
   status strip says whether it has reached the server.
-* **Every active member's device holds the arena's rows** through `sync_pull`
-  (SECURITY DEFINER): payments, charges, customers and staff permissions — not
-  e-mails. Direct reads are narrower (RLS: payment and charge rows need
+* **Every active member's device holds the arena's rows it may read** through
+  `sync_pull` (SECURITY DEFINER): sessions, the catalog and staff permissions
+  for everyone; payments, charges and customers by permission — never e-mails.
+  Direct reads are narrower (RLS: payment and charge rows need
   `bill`, `money` or `reports`; customers `start`, `members`, `money` or
-  `reports`; `audit_log` owner level; `staff_invites` none), but the device
-  feed is unchanged. The app hides Money/Reports from staff; the data is on
-  their device. Whether floor devices should hold less (a time window, a
-  per-permission feed) is an open product decision.
+  `reports`; `audit_log` owner level; `staff_invites` none), and the device
+  feed narrows the same way (`_sync_hidden`; coupons also need `discount` or
+  `settings`), so an attendance-only login receives no customers or money.
+  Rows a device already holds when a permission is taken away stay in its
+  file until it is reinstalled or the person signs out.
 
 Worth doing next:
 

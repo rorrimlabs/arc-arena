@@ -92,3 +92,25 @@ const waiveReasonRequired = Failure(
   fix: 'Say why it is complimentary, then end it.',
   code: 'waive_reason_required',
 );
+
+/// Below owner level a waive may write off at most [maxPercent] of the bill —
+/// the manual-discount cap — exactly as the server checks it (_waive_check:
+/// written off × 100 > billed × cap). Null when allowed.
+Failure? waiveOverLimit({
+  required bool ownerLevel,
+  required int billedPaise,
+  required int paidPaise,
+  required int maxPercent,
+}) {
+  if (ownerLevel) return null;
+  final writtenOff = billedPaise - paidPaise > 0 ? billedPaise - paidPaise : 0;
+  if (writtenOff * 100 <= billedPaise * maxPercent) return null;
+  return Failure(
+    message: 'Only an owner can waive this much.',
+    fix: maxPercent == 0
+        ? 'Ask an owner to end it as waived.'
+        : 'You may waive up to $maxPercent% of a bill. Take payment for the '
+              'rest, or ask an owner.',
+    code: 'waive_over_limit',
+  );
+}

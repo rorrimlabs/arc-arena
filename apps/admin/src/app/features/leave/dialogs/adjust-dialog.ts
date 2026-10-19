@@ -14,6 +14,7 @@ import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
 import { formatCount } from '../../../shared/staff/staff-format';
 import { LeaveStore } from '../data/leave-store';
 import { LeaveBalance, parseAdjustDays, yearLabel } from '../data/leave.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export interface AdjustDialogData {
   readonly balance: LeaveBalance;
@@ -102,6 +103,9 @@ export class LeaveAdjustDialog {
   protected readonly error = signal('');
   protected readonly busy = signal(false);
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async confirm(event: Event): Promise<void> {
     event.preventDefault();
     this.tried.set(true);
@@ -117,7 +121,7 @@ export class LeaveAdjustDialog {
     this.busy.set(true);
     this.error.set('');
     try {
-      await this.store.adjust(this.data.balance.staffId, days, this.reason());
+      await this.store.adjust(this.data.balance.staffId, days, this.reason(), this.attempt);
       this.ref.close(true);
     } catch (e) {
       this.error.set(toAppError(e).message);

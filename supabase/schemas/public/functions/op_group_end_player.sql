@@ -3,7 +3,8 @@
 --
 -- Permission: start.
 -- Payload: group_id, player_number, expected_assignment_id, at.
--- Checks / errors: forbidden; not_found (hint group); not_active; no_open_assignment; stale
+-- Checks / errors: forbidden; time_in_future, time_too_old (_client_time: device time after now + 2 min or
+--   over 24 h old); not_found (hint group); not_active; no_open_assignment; stale
 --   (player was moved on another device); invalid_time (at before the assignment started).
 -- Writes: group_assignments.ended_at, controller_allocations.ended_at, group_sessions.updated_at.
 --   Returns: {}.
@@ -23,6 +24,7 @@ declare
   v_open uuid; v_start timestamptz;
 begin
   perform _need(p_arena, 'start');
+  perform _client_time(p_arena, v_at, 'at');
   perform _group_active(p_arena, v_group);
   select id, started_at into v_open, v_start from group_assignments
    where group_id = v_group and player_number = (p->>'player_number')::int and ended_at is null

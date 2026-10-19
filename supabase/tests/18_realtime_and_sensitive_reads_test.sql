@@ -149,5 +149,46 @@ select is((select count(*)::int from pg_publication_tables
             where pubname = 'supabase_realtime' and tablename in ('staff_invites', 'sync_ops', 'audit_log')),
   0, 'invites, the op ledger and the audit log are never announced');
 
+-- ---------------------------------------------------------------- sync_pull narrows the same way
+-- The feeds sync_pull leaves out for the caller (its scope). The fixture rows are in this test's
+-- own open transaction, which a pull never includes, so the rows themselves are checked through
+-- sync_fetch_entity below; both filter with _sync_hidden.
+create function pg_temp.pulled() returns text as $$
+  select array(select jsonb_array_elements_text(p->'scope'))::text
+    from (select public.sync_pull('e0000000-0000-4000-8000-000000000180', '0', 2000) p) x
+$$ language sql;
+set local role authenticated;
+select pg_temp.as_user(1);
+select is(pg_temp.pulled(), '{}', 'sync_pull: the owner gets everything');
+select pg_temp.as_user(2);
+select is(pg_temp.pulled(), '{discounts}', 'sync_pull: bill gets money and customers, not coupons');
+select pg_temp.as_user(3);
+select is(pg_temp.pulled(), '{bill_discounts,discounts,group_charges,group_payments,payments,session_charges}',
+  'sync_pull: start alone gets sessions and customers, no money');
+select pg_temp.as_user(4);
+select is(pg_temp.pulled(), '{bill_discounts,discounts,group_charges,group_payments,payments,session_charges}',
+  'sync_pull: members alone gets customers, no money');
+select pg_temp.as_user(5);
+select is(pg_temp.pulled(), '{}', 'sync_pull: reports (owner level) gets everything');
+create function pg_temp.fetched() returns text as $$
+  select array(select r->>'t' from jsonb_array_elements(f->0->'rows') r order by 1)::text
+    from (select public.sync_fetch_entity('e0000000-0000-4000-8000-000000000180',
+      '[{"type":"session","id":"51800000-0000-4000-8000-00000000000a"}]'::jsonb) f) x
+$$ language sql;
+select is(pg_temp.fetched(), '{payments,session_charges,sessions}', 'sync_fetch_entity: reports gets the whole bill');
+select pg_temp.as_user(3);
+select is(pg_temp.fetched(), '{sessions}', 'sync_fetch_entity: start alone gets the session, not its money');
+reset role;
+
+-- ---------------------------------------------------------------- money and audit rows are append-only
+select throws_ok($$ update payments set amount_paise = 1 where session_id = '51800000-0000-4000-8000-00000000000a' $$,
+  '55000', 'append_only', 'a payment is never edited, even by the database owner');
+select throws_ok($$ delete from session_charges where session_id = '51800000-0000-4000-8000-00000000000a' $$,
+  '55000', 'append_only', 'nor a bill line deleted');
+select throws_ok($$ delete from sessions where id = '51800000-0000-4000-8000-00000000000a' $$,
+  '55000', 'append_only', 'deleting a session with payments is refused (no cascade erases the ledger)');
+select throws_ok($$ delete from audit_log where arena_id = 'e0000000-0000-4000-8000-000000000180' $$,
+  '55000', 'append_only', 'the audit log is never deleted');
+
 select * from finish();
 rollback;

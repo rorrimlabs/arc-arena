@@ -45,6 +45,8 @@ export interface Bill {
   readonly endedAt: string | null;
   /** When the server received the start (the device stamps `startedAt`). */
   readonly recordedAt: string | null;
+  /** When the server received the end (the device stamps `endedAt`); null before it was kept. */
+  readonly endRecordedAt: string | null;
   readonly voided: boolean;
   readonly paymentStatus: PaymentStatus;
   readonly customer: string;

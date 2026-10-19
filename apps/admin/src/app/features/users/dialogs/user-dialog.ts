@@ -15,6 +15,7 @@ import { toAppError } from '../../../core/auth/auth-api';
 import { UsersStore } from '../data/users-store';
 import { ArenaUser, DEFAULT_STAFF_PERMS, INVITE_DAYS, UserRole } from '../data/user.models';
 import { MATERIAL_DEFAULTS } from '../../../shared/material/material-defaults';
+import { Captcha, Turnstile } from '../../../shared/turnstile/turnstile';
 
 export interface UserDialogData {
   /** Absent: invite someone new. Present: edit this user's name. */
@@ -59,6 +60,7 @@ const SUBTITLES: Readonly<Record<UserRole, string>> = {
     MatLabel,
     MatInput,
     MatButton,
+    Turnstile,
   ],
   template: `
     <h2 mat-dialog-title>{{ title }}</h2>
@@ -100,11 +102,18 @@ const SUBTITLES: Readonly<Record<UserRole, string>> = {
           @if (error()) {
             <p role="alert" class="text-sm leading-[1.3] font-medium text-danger">{{ error() }}</p>
           }
+          @if (!editing) {
+            <app-turnstile />
+          }
         </div>
       </mat-dialog-content>
       <mat-dialog-actions align="end">
         <button mat-button type="button" [disabled]="busy()" (click)="ref.close()">Cancel</button>
-        <button mat-flat-button type="submit" [disabled]="busy()">
+        <button
+          mat-flat-button
+          type="submit"
+          [disabled]="busy() || (!editing && !captcha.ready())"
+        >
           {{ editing ? 'Save' : 'Send invitation' }}
         </button>
       </mat-dialog-actions>
@@ -112,6 +121,7 @@ const SUBTITLES: Readonly<Record<UserRole, string>> = {
   `,
 })
 export class UserDialog {
+  protected readonly captcha = inject(Captcha);
   protected readonly data = inject<UserDialogData>(MAT_DIALOG_DATA);
   protected readonly ref = inject<MatDialogRef<UserDialog, UserDialogResult>>(MatDialogRef);
   private readonly store = inject(UsersStore);

@@ -23,6 +23,7 @@ import {
   istInstant,
   istParts,
 } from '../data/attendance.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export interface CorrectDialogData {
   /** Present: correct this entry's times. Absent: add a missing entry for someone. */
@@ -194,6 +195,9 @@ export class CorrectDialog {
     this.outTime().trim() ? istInstant(this.outDate(), this.outTime()) : null,
   );
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async save(event: Event): Promise<void> {
     event.preventDefault();
     if (!this.editing && !this.staffId()) {
@@ -227,7 +231,7 @@ export class CorrectDialog {
     this.busy.set(true);
     this.error.set('');
     try {
-      const id = await this.store.correct(payload);
+      const id = await this.store.correct(payload, this.attempt);
       const name = entry
         ? this.data.staffName
         : this.data.staff?.find((s) => s.id === this.staffId())?.name;

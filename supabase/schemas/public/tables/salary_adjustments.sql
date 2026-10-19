@@ -23,7 +23,7 @@ create table "public"."salary_adjustments" (
   constraint "salary_adjustments_reverses_id_key" unique (reverses_id),
   constraint "salary_adjustments_run_id_fkey" foreign key (run_id) references public.salary_runs(id) on delete cascade,
   constraint "salary_adjustments_sign_check" check (((amount_paise <> 0) AND ((kind <> 'bonus'::text) OR (amount_paise > 0)) AND ((kind <> ALL (ARRAY['advance'::text, 'deduction'::text])) OR (amount_paise < 0)) AND ((kind = 'reversal'::text) = (reverses_id IS NOT NULL)))),
-  constraint "salary_adjustments_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade
+  constraint "salary_adjustments_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
 );
 
 comment on table public.salary_adjustments is 'Append-only salary adjustments in a run (bonus, advance, deduction, reversal) with a note; signed paise.';
@@ -45,6 +45,12 @@ create trigger t_same_arena
   before insert or update on public.salary_adjustments
   for each row
   execute function public._assert_same_arena('staff_id', 'staff_profiles', 'run_id', 'salary_runs');
+
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_salary_adjustments_append_only
+  before update or delete on public.salary_adjustments
+  for each row
+  execute function public._append_only();
 
 -- payroll / payroll_finalise holders only.
 -- No write policy: clients change data only through sync_push.

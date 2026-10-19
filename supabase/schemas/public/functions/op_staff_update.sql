@@ -74,6 +74,15 @@ begin
       updated_at = statement_timestamp()
     where arena_id = p_arena and user_id = v_user;
   perform _assert_settings_holder(p_arena);
+  -- Access changes are audited with the before and after (permissions edit in place).
+  insert into audit_log(arena_id, entity_type, entity_id, action, before, after, created_by, created_at)
+    select p_arena, 'staff_profile', s.id, 'access',
+           jsonb_build_object('perms', to_jsonb(v_old_perms), 'active', v_old_active),
+           jsonb_build_object('perms', to_jsonb(s.perms), 'active', s.active),
+           auth.uid(), statement_timestamp()
+      from staff_profiles s
+     where s.arena_id = p_arena and s.user_id = v_user
+       and (s.perms is distinct from v_old_perms or s.active is distinct from v_old_active);
   -- adjusted = the device wrote something else: it refetches the staff list.
   return case when v_adj then '{"adjusted": true}'::jsonb else '{}'::jsonb end;
 end;

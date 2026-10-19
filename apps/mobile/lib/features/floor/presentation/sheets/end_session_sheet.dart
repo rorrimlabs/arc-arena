@@ -342,7 +342,8 @@ class _UnpricedWarning extends StatelessWidget {
                   ),
                 const SizedBox(height: 2),
                 Text(
-                  'Add the missing rate in Settings → Pricing, then bill again.',
+                  'The session\'s prices were fixed when it started, so a rate added '
+                  'now does not apply to this bill.',
                   style: ArenaType.caption.copyWith(color: arena.textMuted),
                 ),
               ],

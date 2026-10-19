@@ -4,7 +4,7 @@
 -- Payload: id (client uuid), staff_id, effective_from, pay_type (monthly | daily | hourly),
 --   base_paise (whole paise >= 0), extra_hours_paid (bool), extra_hourly_paise (optional, only
 --   with extra_hours_paid), note.
--- Checks / errors: forbidden; not_found (hint staff); invalid_rate (hint names the field);
+-- Checks / errors: forbidden; not_found (hint staff); own_record (your own pay, unless role owner); invalid_rate (hint names the field);
 --   rate_in_finalised_period (effective_from on or before the end of a finalised run — past
 --   pay never changes); duplicate (a rate on that date already).
 -- Writes: staff_pay_rates (append-only). Returns: {}.
@@ -30,6 +30,7 @@ begin
   if not exists (select 1 from staff_profiles where id = v_staff and arena_id = p_arena) then
     raise exception 'not_found' using hint = 'staff';
   end if;
+  perform _own_record(p_arena, v_staff);
   if v_from is null then raise exception 'invalid_rate' using hint = 'effective_from'; end if;
   if v_type is null or v_type not in ('monthly', 'daily', 'hourly') then
     raise exception 'invalid_rate' using hint = 'pay_type: monthly, daily or hourly';

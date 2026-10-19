@@ -42,8 +42,8 @@ export function fakeLeaflet() {
         group.add(l);
         return api;
       },
-      bindTooltip(text: string) {
-        l.tooltip = text;
+      bindTooltip(content: string | HTMLElement) {
+        l.tooltip = typeof content === 'string' ? content : (content.textContent ?? '');
         return api;
       },
       on(event: string, cb: () => void) {

@@ -168,6 +168,12 @@ class AppConfig {
           '(${supabaseUrl ?? '?'}). Build it with the production configuration '
           '(an https URL of the hosted project).';
     }
+    if (releaseBuild && !isProduction) {
+      // Outside production every session is recorded (Session Replay) and
+      // traced in full: a release must never ship that way.
+      return 'This release build is not marked AO_ENVIRONMENT=production '
+          '(it is "$environment"). Build it with dart_define.prod.json.';
+    }
     return null;
   }
 

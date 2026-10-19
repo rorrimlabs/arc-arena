@@ -3,7 +3,7 @@
 -- Permission: payroll.
 -- Payload: id (client uuid), run_id, staff_id, kind (bonus | advance | deduction),
 --   amount_paise (whole paise > 0; stored negative for an advance or a deduction), note.
--- Checks / errors: forbidden; not_found (run / line); run_not_draft; note_required;
+-- Checks / errors: forbidden; not_found (run / line); own_record (your own line, unless role owner); run_not_draft; note_required;
 --   invalid_payload; duplicate (id reused).
 -- Writes: salary_adjustments (append-only); the person's line and the run totals.
 -- Returns: {net_paise}.
@@ -36,6 +36,7 @@ begin
   if not exists (select 1 from salary_run_lines where run_id = r.id and staff_id = v_staff) then
     raise exception 'not_found' using hint = 'line';
   end if;
+  perform _own_record(p_arena, v_staff);
   insert into salary_adjustments(id, arena_id, run_id, staff_id, kind, amount_paise, note, created_by)
     values ((p->>'id')::uuid, p_arena, r.id, v_staff, v_kind,
             case when v_kind = 'bonus' then v_amt else -v_amt end::bigint, v_note, auth.uid());

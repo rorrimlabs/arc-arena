@@ -196,7 +196,8 @@ export class GeoMap {
         className: m.kind === 'in' ? 'geo-in' : 'geo-out',
         fillOpacity: m.kind === 'in' ? 0.9 : 0.15,
       })
-        .bindTooltip(m.label)
+        // Leaflet renders a string tooltip as HTML; labels carry user-entered names.
+        .bindTooltip(Object.assign(document.createElement('span'), { textContent: m.label }))
         .addTo(layers);
     }
     this.fit(center, radius, markers);

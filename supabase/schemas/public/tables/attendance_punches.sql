@@ -98,6 +98,12 @@ create trigger t_same_arena
   for each row
   execute function public._assert_same_arena('staff_id', 'staff_profiles');
 
+-- Append-only: corrections are new rows (_append_only).
+create trigger t_attendance_punches_append_only
+  before update or delete on public.attendance_punches
+  for each row
+  execute function public._append_only();
+
 -- A member reads their own punches; attendance_review (or an owner) reads everyone's.
 -- No write policy: clients change data only through sync_push.
 create policy "p_sel_attendance_punches" on "public"."attendance_punches"

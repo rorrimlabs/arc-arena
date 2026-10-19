@@ -18,6 +18,7 @@ create table "public"."sync_ops" (
   "error_code"    text,
   "error_message" text,
   "created_at"    timestamp with time zone not null default now(),
+  "payload"       jsonb,
   constraint "sync_ops_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade,
   constraint "sync_ops_pkey" primary key (op_id),
@@ -26,6 +27,8 @@ create table "public"."sync_ops" (
 );
 
 comment on table public.sync_ops is 'Server-only idempotency ledger for sync_push: one row per device op id with its outcome, replayed on retry. No client grants; RLS on with no policies (deny all).';
+
+comment on column public.sync_ops.payload is 'What an applied configuration, permission or pay op asked for (staff, arena, station types, stations, rates, billing rules, settings, holidays, pricing rules, discounts, shifts, staff holidays, HR profiles, pay rates and rules, salary runs and adjustments, leave adjustments): with user_id and created_at, who changed what and when. Null for floor ops.';
 
 comment on column public.sync_ops.op_id is 'Device-generated op id (outbox key); primary key, so an op is applied at most once. Reuse under another arena raises op_id_reused.';
 

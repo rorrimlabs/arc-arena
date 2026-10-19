@@ -40,7 +40,7 @@ create table "public"."leave_requests" (
     CASE WHEN (status = ANY (ARRAY['approved'::text, 'cancel_pending'::text]))
          THEN ((paid_days >= (0)::numeric) AND (lop_days >= (0)::numeric) AND ((paid_days + lop_days) = days) AND (day_split IS NOT NULL))
          ELSE ((paid_days IS NULL) AND (lop_days IS NULL)) END),
-  constraint "leave_requests_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade,
+  constraint "leave_requests_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "leave_requests_status_check" check ((status = ANY (ARRAY['pending'::text, 'approved'::text, 'rejected'::text, 'cancelled'::text, 'cancel_pending'::text])))
 );
 

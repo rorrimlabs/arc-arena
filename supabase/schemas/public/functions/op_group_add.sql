@@ -4,7 +4,8 @@
 -- Payload: group_id, at; assignment {id, player_number, player_label, resource_id, activity_code,
 --   game_id?, controller_count?, allocations[] {id?, controller_id}, moves[] {id?,
 --   controller_id}}.
--- Checks / errors: forbidden; not_found (hint group); not_active; player_busy (player already has
+-- Checks / errors: forbidden; time_in_future, time_too_old (_client_time: device time after now + 2 min or
+--   over 24 h old); not_found (hint group); not_active; player_busy (player already has
 --   an open assignment); retry (40001: a borrowed pad moved before it was locked); placement
 --   errors per assignment (_group_place -> _group_assignable): resource_missing,
 --   resource_unavailable, mode_locked, not_playable, resource_busy (single session on the station,
@@ -35,6 +36,7 @@ declare
   v_idx int; v_skipped int;
 begin
   perform _need(p_arena, 'start');
+  perform _client_time(p_arena, v_at, 'at');
   perform _group_active(p_arena, v_group);
   if exists (select 1 from group_assignments
               where group_id = v_group and player_number = v_player and ended_at is null) then

@@ -144,6 +144,9 @@ class SyncEngine {
 
   static const _uuid = Uuid();
   static const cursorKey = 'pull_cursor';
+
+  /// The pull scope last seen (the server's hidden feeds, comma-joined).
+  static const scopeKey = 'pull_scope';
   static const deviceKey = 'device_id';
   static const lastSyncKey = 'last_synced_at';
   static const clockOffsetKey = 'clock_offset_ms';
@@ -156,6 +159,17 @@ class SyncEngine {
   Timer? _debounce;
   int _failures = 0;
   DateTime? _notBefore;
+
+  /// Ops per push: halved after each push the server failed as a whole (a
+  /// timeout under load, a poison op), back to [batchSize] after a clean pass.
+  late int _batchLimit = batchSize;
+
+  /// After this many failed sends of a one-op batch the op is reported as
+  /// stuck (kept pending, in order: never skipped or rolled back).
+  static const stuckAfterAttempts = 8;
+
+  /// The op the last failed push could not get past, once it is stuck.
+  SyncOutboxRow? _stuck;
   bool _stopped = false;
 
   Stream<SyncStatus> get statusStream => _statusController.stream;
@@ -318,6 +332,8 @@ class SyncEngine {
       }
       _failures = 0;
       _notBefore = null;
+      _batchLimit = batchSize;
+      _stuck = null;
       final pending = await _count(OutboxStatus.pending);
       report.endedIn = pending == 0 ? SyncState.synced : SyncState.pending;
       final now = clock.now();
@@ -344,14 +360,22 @@ class SyncEngine {
     } on SyncAuthException catch (e) {
       report.endedIn = SyncState.authProblem;
       stop();
+      // Unsent work stays in this person's file and only they can send it:
+      // say so before the device signs them out (FL-003).
+      final unsent = e.revoked ? await _count(OutboxStatus.pending) : 0;
       _emit(
         await _counts(
           _status.copyWith(
             state: SyncState.authProblem,
             accessRevoked: e.revoked,
-            message: e.revoked
+            message: !e.revoked
+                ? 'Sign in again to keep syncing.'
+                : unsent == 0
                 ? 'Your access to this arena was turned off.'
-                : 'Sign in again to keep syncing.',
+                : 'Your access to this arena was turned off. $unsent '
+                      'change${unsent == 1 ? '' : 's'} on this device (payments '
+                      'included) did not reach the server: tell the owner, who '
+                      'can turn your access back on so they send.',
           ),
         ),
       );
@@ -365,9 +389,18 @@ class SyncEngine {
           operation: 'sync_engine_cycle',
         ),
       );
+      final stuck = _stuck;
       _emit(
         await _counts(
-          _status.copyWith(state: SyncState.error, message: 'Sync failed: $e'),
+          _status.copyWith(
+            state: SyncState.error,
+            message: stuck == null
+                ? 'Sync failed: $e'
+                : 'One change (${stuck.kind}) has failed to send '
+                    '${stuck.attempts} times and is holding back the rest. '
+                    'Keep the app open on Wi-Fi; if it stays stuck, contact '
+                    'support before signing out: $e',
+          ),
         ),
       );
     }
@@ -389,7 +422,7 @@ class SyncEngine {
           await (db.select(db.syncOutbox)
                 ..where((t) => t.status.equals(OutboxStatus.pending))
                 ..orderBy([(t) => OrderingTerm(expression: t.seq)])
-                ..limit(batchSize))
+                ..limit(_batchLimit))
               .get();
       if (batch.isEmpty) return;
 
@@ -407,14 +440,30 @@ class SyncEngine {
         }
       });
 
-      final results = await transport.push(arenaId, [
-        for (final o in batch)
-          (
-            opId: o.opId,
-            kind: o.kind,
-            payload: jsonDecode(o.payload) as Map<String, dynamic>,
-          ),
-      ], device);
+      final List<OpResult> results;
+      try {
+        results = await transport.push(arenaId, [
+          for (final o in batch)
+            (
+              opId: o.opId,
+              kind: o.kind,
+              payload: jsonDecode(o.payload) as Map<String, dynamic>,
+            ),
+        ], device);
+      } on SyncOfflineException {
+        rethrow;
+      } on SyncAuthException {
+        rethrow;
+      } on Object {
+        // The whole push failed: send fewer next time, down to the one op
+        // that may be causing it, and report that op once it keeps failing.
+        if (_batchLimit > 1) {
+          _batchLimit = (_batchLimit / 2).ceil();
+        } else if (batch.single.attempts + 1 >= stuckAfterAttempts) {
+          _stuck = batch.single.copyWith(attempts: batch.single.attempts + 1);
+        }
+        rethrow;
+      }
       final byId = {for (final r in results) r.opId: r};
 
       var stop = false;
@@ -548,7 +597,7 @@ class SyncEngine {
       catalogRows = [];
       var c = '0';
       while (true) {
-        final page = await transport.pull(arenaId, c, limit: 100000);
+        final page = await transport.pull(arenaId, c);
         for (final ch in page.changes) {
           final t = ch['t'] as String;
           if (catalogTables.contains(t)) {
@@ -567,6 +616,23 @@ class SyncEngine {
     var first = true;
     while (true) {
       final page = await transport.pull(arenaId, cursor);
+      // What this member may read changed (a permission granted or taken):
+      // re-read the feed from the start so newly visible rows arrive. The
+      // cursor is rewound before the scope is stored, so a pass cut short
+      // here rewinds again next time.
+      final scope = page.scope?.join(',');
+      if (scope != null) {
+        final known = await _meta(scopeKey);
+        if (known != scope) {
+          if (known != null && cursor != '0') {
+            await _setMeta(cursorKey, '0');
+            await _setMeta(scopeKey, scope);
+            cursor = '0';
+            continue;
+          }
+          await _setMeta(scopeKey, scope);
+        }
+      }
       final applied = await db.transaction(() async {
         // A local write slipped in since the push: its op has not reached the
         // server, so the server's rows must not be laid over it yet.

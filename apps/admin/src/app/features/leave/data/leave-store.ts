@@ -14,6 +14,7 @@ import {
   isOpen,
   recordPayload,
 } from './leave.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 /**
  * The current arena's leave: requests, balance adjustments and everyone's balance. A decision or
@@ -125,9 +126,15 @@ export class LeaveStore {
     await this.load(true);
   }
 
-  async adjust(staffId: string, days: number, reason: string): Promise<void> {
+  async adjust(
+    staffId: string,
+    days: number,
+    reason: string,
+    attempt = new Attempt(),
+  ): Promise<void> {
     await this.api.send(this.arena.current().id, {
       kind: 'leave.adjust',
+      opId: attempt.id('op'),
       payload: adjustPayload(staffId, days, reason),
     });
     await this.load(true);

@@ -19,6 +19,7 @@ import { InviteeAuth } from '../../core/auth/invitee-auth';
 import { Session } from '../../core/auth/session';
 import { MATERIAL_DEFAULTS } from '../../shared/material/material-defaults';
 import { AuthCard } from './auth-card';
+import { Captcha, Turnstile } from '../../shared/turnstile/turnstile';
 
 type Step =
   | 'loading'
@@ -63,6 +64,7 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
     MatButton,
     MatProgressBar,
     RouterLink,
+    Turnstile,
   ],
   template: `
     @switch (step()) {
@@ -112,7 +114,13 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
                 {{ error() }}
               </p>
             }
-            <button mat-flat-button type="submit" class="arena-cta" [disabled]="busy()">
+            <app-turnstile />
+            <button
+              mat-flat-button
+              type="submit"
+              class="arena-cta"
+              [disabled]="busy() || !captcha.ready()"
+            >
               Sign in and accept
             </button>
           </form>
@@ -269,6 +277,7 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
   `,
 })
 export class AcceptInvite {
+  protected readonly captcha = inject(Captcha);
   private readonly api = inject(AuthApi);
   private readonly invitee = inject(InviteeAuth);
   private readonly session = inject(Session);

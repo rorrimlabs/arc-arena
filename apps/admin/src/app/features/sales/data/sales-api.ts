@@ -2,7 +2,7 @@ import { Service, inject } from '@angular/core';
 import { dbError } from '../../../core/arena/arena-api';
 import { AppError } from '../../../core/auth/auth-api';
 import { Supabase } from '../../../core/supabase/supabase';
-import { SyncOp, pushOps } from '../../../core/sync/push-ops';
+import { Attempt, SyncOp, pushOps } from '../../../core/sync/push-ops';
 import { OverviewData, withAverage } from '../../overview/data/overview.models';
 import {
   Bill,
@@ -23,6 +23,8 @@ export interface PaymentEntry {
   readonly amountPaise: number;
   readonly method: PayMethod;
   readonly note: string | null;
+  /** This action's ids, reused when the same Save is sent again (NG-002). */
+  readonly attempt?: Attempt;
 }
 
 /** Money given back to the customer (allowed on a voided bill too). */
@@ -30,6 +32,8 @@ export interface RefundEntry {
   readonly amountPaise: number;
   readonly method: PayMethod;
   readonly reason: string;
+  /** This action's ids, reused when the same Save is sent again (NG-002). */
+  readonly attempt?: Attempt;
 }
 
 /** Move all or part of one payment to the method it was really taken by. */
@@ -39,6 +43,8 @@ export interface MethodCorrection {
   /** Null moves what is left of that payment. */
   readonly amountPaise: number | null;
   readonly reason: string;
+  /** This action's ids, reused when the same Save is sent again (NG-002). */
+  readonly attempt?: Attempt;
 }
 
 /**
@@ -128,6 +134,7 @@ export function toBill(r: Row): Bill {
     startedAt: String(r['started_at']),
     endedAt: text(r['ended_at']),
     recordedAt: text(r['recorded_at']),
+    endRecordedAt: text(r['end_recorded_at']),
     voided: r['status'] === 'voided',
     paymentStatus: (r['payment_status'] as PaymentStatus) ?? 'unpaid',
     customer: String(r['customer'] ?? 'Guest'),
@@ -304,9 +311,10 @@ class SupabaseSalesApi extends SalesApi {
   recordPayment(arenaId: string, bill: Bill, entry: PaymentEntry): Promise<void> {
     return this.push(arenaId, {
       kind: 'payment.record',
+      opId: entry.attempt?.id('op'),
       payload: {
         ...scopeOf(bill),
-        payment_id: crypto.randomUUID(),
+        payment_id: entry.attempt?.id('payment') ?? crypto.randomUUID(),
         amount_paise: entry.amountPaise,
         method: entry.method,
         note: entry.note,
@@ -317,9 +325,10 @@ class SupabaseSalesApi extends SalesApi {
   refund(arenaId: string, bill: Bill, entry: RefundEntry): Promise<void> {
     return this.push(arenaId, {
       kind: 'payment.record',
+      opId: entry.attempt?.id('op'),
       payload: {
         ...scopeOf(bill),
-        payment_id: crypto.randomUUID(),
+        payment_id: entry.attempt?.id('payment') ?? crypto.randomUUID(),
         amount_paise: entry.amountPaise,
         method: entry.method,
         is_refund: true,
@@ -331,14 +340,15 @@ class SupabaseSalesApi extends SalesApi {
   correct(arenaId: string, bill: Bill, correction: MethodCorrection): Promise<void> {
     return this.push(arenaId, {
       kind: 'payment.correct',
+      opId: correction.attempt?.id('op'),
       payload: {
         ...scopeOf(bill),
         payment_id: correction.paymentId,
         method: correction.method,
         ...(correction.amountPaise == null ? {} : { amount_paise: correction.amountPaise }),
         reason: correction.reason,
-        refund_id: crypto.randomUUID(),
-        new_payment_id: crypto.randomUUID(),
+        refund_id: correction.attempt?.id('refund') ?? crypto.randomUUID(),
+        new_payment_id: correction.attempt?.id('payment') ?? crypto.randomUUID(),
       },
     });
   }

@@ -50,8 +50,8 @@ select ok(
     like '%temporarily_unavailable%',
   'resources.status CHECK includes temporarily_unavailable');
 
--- games carries player_mode + max_local_players + last_played_at (exactly once).
-select has_column('public','games','player_mode','games.player_mode');
+-- games carries play_modes + max_local_players + last_played_at (exactly once).
+select has_column('public','games','play_modes','games.play_modes');
 select has_column('public','games','max_local_players','games.max_local_players');
 select has_column('public','games','last_played_at','games.last_played_at');
 

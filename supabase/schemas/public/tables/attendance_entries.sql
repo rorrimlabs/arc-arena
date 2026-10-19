@@ -56,7 +56,7 @@ comment on column public.attendance_entries.arena_id is 'Owning arena (tenant).'
 
 comment on column public.attendance_entries.staff_id is 'The staff profile that worked.';
 
-comment on column public.attendance_entries.work_date is 'IST calendar date of in_at: a shift crossing midnight belongs to the day it started.';
+comment on column public.attendance_entries.work_date is 'The work day: the start day of the shift the stretch falls in (_att_work_date; a shift crossing midnight belongs to the day it started), else the IST date of in_at.';
 
 comment on column public.attendance_entries.in_at is 'Server time of the clock-in.';
 

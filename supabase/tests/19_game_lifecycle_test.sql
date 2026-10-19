@@ -12,6 +12,11 @@ select * from no_plan();
 insert into arenas(id, name) values
   ('e0000000-0000-4000-8000-000000000190'::uuid, 'pgtap 19'),
   ('e0000000-0000-4000-8000-000000000191'::uuid, 'pgtap 19 neighbour');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,
     created_at,updated_at,raw_app_meta_data,raw_user_meta_data,is_sso_user,is_anonymous)
   select '00000000-0000-0000-0000-000000000000', u.id::uuid, 'authenticated', 'authenticated',
@@ -42,7 +47,7 @@ create function pg_temp.push(p_kind text, p jsonb) returns jsonb as $$
   select pg_temp.push_as(gen_random_uuid(), p_kind, p) $$ language sql;
 create function pg_temp.game(p_id text, p_name text, p_extra jsonb default '{}') returns jsonb as $$
   select jsonb_build_object('id', p_id, 'name', p_name, 'aliases', '[]'::jsonb,
-    'platforms', '["PS5"]'::jsonb, 'player_mode', 'local', 'max_local_players', 2) || p_extra $$
+    'platforms', '["PS5"]'::jsonb, 'play_modes', '["local"]'::jsonb, 'max_local_players', 2) || p_extra $$
   language sql;
 create function pg_temp.compat(p_game text, p_status text default 'playable') returns jsonb as $$
   select jsonb_build_object('game_id', p_game, 'resource_id', 'b1900000-0000-0000-0000-000000000001',
@@ -89,10 +94,10 @@ select is(pg_temp.push('game.upsert', pg_temp.game('d1900000-0000-0000-0000-0000
 select is(pg_temp.push('game.upsert', pg_temp.game('d1900000-0000-0000-0000-000000000002', 'Elsewhere'))
     ->>'status', 'applied', 'a name another arena uses is fine');
 select is(pg_temp.push('game.upsert', pg_temp.game('d1900000-0000-0000-0000-000000000002', 'Spare Title',
-    '{"max_local_players":4,"player_mode":"both"}'))->>'status', 'applied', 'the owner renames and edits it');
+    '{"max_local_players":4,"play_modes":["local","online"]}'))->>'status', 'applied', 'the owner renames and edits it');
 select results_eq(
-  $$ select name, max_local_players, player_mode from games where id = 'd1900000-0000-0000-0000-000000000002' $$,
-  $$ values ('Spare Title', 4, 'both') $$, 'the edit is stored');
+  $$ select name, max_local_players, play_modes from games where id = 'd1900000-0000-0000-0000-000000000002' $$,
+  $$ values ('Spare Title', 4, array['local', 'online']) $$, 'the edit is stored');
 select is(pg_temp.push('game.upsert', pg_temp.game('d1900000-0000-0000-0000-000000000002', 'Spare Title',
     '{"max_local_players":9}'))->>'error', 'invalid', 'more than 8 players is refused');
 select is(pg_temp.push('game.upsert', pg_temp.game('d1900000-0000-0000-0000-000000000003', 'Booked Game'))

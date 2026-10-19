@@ -2,7 +2,7 @@
 --
 -- Permission: payroll. Payload: id (client uuid of the reversal), reverses_id, note.
 -- Adds the opposite amount as a reversal row (append-only; the original stays).
--- Checks / errors: forbidden; not_found; run_not_draft; note_required; already_reversed.
+-- Checks / errors: forbidden; not_found; own_record (your own line, unless role owner); run_not_draft; note_required; already_reversed.
 -- Writes: salary_adjustments; the person's line and the run totals. Returns: {net_paise}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_salary_adjustment_reverse (
@@ -23,6 +23,7 @@ begin
   select * into a from salary_adjustments
    where id = (p->>'reverses_id')::uuid and arena_id = p_arena;
   if not found then raise exception 'not_found' using hint = 'adjustment'; end if;
+  perform _own_record(p_arena, a.staff_id);
   r := _pay_draft(p_arena, a.run_id);
   if v_note is null then raise exception 'note_required'; end if;
   if a.kind = 'reversal' then raise exception 'invalid_payload' using hint = 'a reversal cannot be reversed'; end if;

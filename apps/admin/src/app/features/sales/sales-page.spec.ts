@@ -388,6 +388,7 @@ describe('sales helpers', () => {
       startedAt: NOW.toISOString(),
       endedAt: NOW.toISOString(),
       recordedAt: NOW.toISOString(),
+      endRecordedAt: null,
       voided: false,
       paymentStatus: 'paid',
       customer: 'Guest',

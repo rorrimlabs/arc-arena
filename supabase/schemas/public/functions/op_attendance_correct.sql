@@ -74,7 +74,8 @@ begin
     raise exception 'invalid_times'
       using hint = 'clock-out after clock-in, not in the future, at most 24 h';
   end if;
-  v_day := _pr_ist_date(v_in);
+  -- The work day is the shift the stretch falls in (overnight shifts count on their start day).
+  v_day := _att_work_date(v_staff, v_in);
   if _period_finalised(p_arena, v_day, v_day) then
     raise exception 'period_finalised' using hint = v_day::text;
   end if;

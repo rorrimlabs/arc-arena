@@ -7,6 +7,11 @@ create extension if not exists pgtap;
 select * from no_plan();
 
 insert into arenas(id, name) values ('e0000000-0000-4000-8000-000000000126'::uuid, 'pgtap 26');
+-- These fixtures replay fixed past dates: widen the offline window (offline_rules, default
+-- 24 h) so device-stamped times from then are accepted.
+insert into settings(arena_id, key, json)
+  select id, 'offline_rules', '{"max_offline_hours": 100000}' from arenas where name like 'pgtap%'
+  on conflict (arena_id, key) do nothing;
 select _seed_arena_catalog('e0000000-0000-4000-8000-000000000126'::uuid);
 
 insert into auth.users(instance_id,id,aud,role,email,encrypted_password,email_confirmed_at,

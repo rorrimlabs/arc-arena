@@ -5,6 +5,7 @@ import { dbError } from '../../../core/arena/arena-api';
 import { AppError } from '../../../core/auth/auth-api';
 import { Supabase } from '../../../core/supabase/supabase';
 import { pushOps } from '../../../core/sync/push-ops';
+import { Captcha } from '../../../shared/turnstile/turnstile';
 import { ArenaUser, NewUser, PendingInvite, UserChange } from './user.models';
 
 /** Where the invitation link opens: this dashboard's own origin (its /accept-invite page). */
@@ -89,6 +90,7 @@ function sentence(hint: string): string {
 class SupabaseUsersApi extends UsersApi {
   private readonly supabase = inject(Supabase);
   private readonly linkBase = inject(INVITE_LINK_BASE);
+  private readonly captcha = inject(Captcha);
 
   async list(arenaId: string): Promise<ArenaUser[]> {
     const client = await this.supabase.client();
@@ -143,7 +145,12 @@ class SupabaseUsersApi extends UsersApi {
     const mailer = await this.supabase.isolatedClient();
     const { error: sendError } = await mailer.auth.signInWithOtp({
       email: user.email,
-      options: { shouldCreateUser: true, emailRedirectTo: link.href, data: { name: user.name } },
+      options: {
+        shouldCreateUser: true,
+        emailRedirectTo: link.href,
+        data: { name: user.name },
+        captchaToken: this.captcha.take(),
+      },
     });
     if (sendError) {
       // Nothing went out: take the invitation back so the list never shows one nobody received.

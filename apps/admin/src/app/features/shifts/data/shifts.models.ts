@@ -68,6 +68,11 @@ export const SHIFT_MESSAGES: Readonly<Record<string, string>> = {
   not_found: 'That is no longer there. Refresh',
   invalid_payload: 'Check the values and try again',
   forbidden: 'You need the Settings permission for that',
+  shift_in_use:
+    'People are still on this shift from today on. End their assignments first, then turn it off',
+  shift_inactive: 'This shift is not in use. Turn it back on before putting anyone on it',
+  period_finalised:
+    'Pay for some of those days is already finalised, so the roster for them can’t change. Pick later dates',
 };
 
 /** 540 → "9:00 AM", 0 → "12:00 AM", 1230 → "8:30 PM". */

@@ -18,7 +18,7 @@ create table "public"."staff_shifts" (
   constraint "staff_shifts_pkey" primary key (id),
   constraint "staff_shifts_range_check" check (((effective_to IS NULL) OR (effective_to >= effective_from))),
   constraint "staff_shifts_shift_id_fkey" foreign key (shift_id) references public.shifts(id) on delete cascade,
-  constraint "staff_shifts_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id) on delete cascade
+  constraint "staff_shifts_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
 );
 
 comment on table public.staff_shifts is 'Shift assignments per staff profile with an inclusive effective date range (null end = open-ended).';

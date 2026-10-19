@@ -26,6 +26,7 @@ create table "public"."sessions" (
   "updated_at"          timestamp with time zone not null default now(),
   "created_by"          uuid,
   "sync_xid"            xid8                     not null default pg_current_xact_id(),
+  "ended_recorded_at"   timestamp with time zone,
   constraint "sessions_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade,
   constraint "sessions_booking_id_fkey" foreign key (booking_id) references public.bookings(id)
@@ -58,6 +59,8 @@ comment on column public.sessions.started_at is 'Device-reported start instant (
 comment on column public.sessions.scheduled_end_at is 'Planned end of the countdown (UTC); moved forward by each session_extensions row.';
 
 comment on column public.sessions.actual_ended_at is 'When play actually ended (UTC); null while active. Billing uses actual time.';
+
+comment on column public.sessions.ended_recorded_at is 'Server time the end reached the server (actual_ended_at is the device''s); the dashboard flags an end recorded more than 15 minutes later. Null while active and for bills ended before it was recorded.';
 
 comment on column public.sessions.pricing_snapshot is 'Immutable copy of the arena''s price list (rates, activities, policy, holidays) frozen at start. Must match the arena''s current catalog or one retired within 72 h (_assert_snapshot); every bill and extension is priced from it.';
 

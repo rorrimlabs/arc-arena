@@ -17,7 +17,7 @@ staff member only ever sees the arenas they are an active member of.
 | `schemas/realtime/policies.sql` | `realtime.messages` policies for the private arena channels |
 | `schemas/_cluster/extensions/` | `pgcrypto`, `uuid-ossp`, `btree_gist` |
 | `schemas/_cluster/publications.sql` | The 29 tables in the `supabase_realtime` publication |
-| `migrations/` | **Generated** by `supabase db schema declarative sync` — never edit. `0001`–`0016` are the original hand-written history. |
+| `migrations/` | **Generated** by `supabase db schema declarative sync` — never edit. `20261015054055_declarative_sync` is the squashed baseline (the old `0001`–`0016` history is gone; see `docs/DEPLOY_SUPABASE.md` §4a). |
 | `tests/` | pgTAP (`supabase test db --local`) |
 | `seed.sql` | Intentionally empty: arenas start with no catalog (owners build it on the dashboard). |
 | `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station; `run.sh` (station race), `run_pads.sh` (pad races), `fixture.sh` (their own arena, removed on exit). Use `docker exec psql` on the local container (`tool/verify_all.sh --with-psql`). |
@@ -54,10 +54,11 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   everyone's with `attendance_review` (or owner). These are **not** in the sync feed: the floor app
   reads them online and punches straight through `sync_push` (server time, no outbox).
   `staff_invites`: no client access at all. These go through
-  `private.app_arena_ids_with(perms)`. The **device sync feed** (`sync_pull`, SECURITY DEFINER) is
-  unchanged: every active member's device still receives the arena's rows it needs offline,
-  payments and customers included. Whether floor devices should hold less is an open product
-  decision.
+  `private.app_arena_ids_with(perms)`. The **device sync feed** (`sync_pull`,
+  `sync_fetch_entity`, SECURITY DEFINER) narrows the same way (`_sync_hidden`): customers need
+  `start` / `members` / owner level, payments, charges and bill discounts `bill` / owner level,
+  coupons `discount` / `settings` / owner level. The pull returns that `scope`; a device whose
+  scope changes re-reads the feed from the start.
 - **Realtime.** One private channel per arena, topic `arena:<arena uuid>`. The
   `realtime.messages` policies `arena_members_receive` (select) and `arena_members_send` (insert),
   both `to authenticated`, admit only active members of that arena

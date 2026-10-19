@@ -3,7 +3,7 @@
 -- Permission: leave_approve.
 -- Payload: staff_id, days (signed, in halves, not 0), reason. Counts in the person's leave
 --   year containing today (IST).
--- Checks / errors: forbidden; not_found (hint staff); reason_required; invalid_payload.
+-- Checks / errors: forbidden; not_found (hint staff); own_record (your own balance, unless role owner); reason_required; invalid_payload.
 -- Writes: leave_adjustments. Returns: {year_start}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_leave_adjust (
@@ -25,6 +25,7 @@ begin
   if not exists (select 1 from staff_profiles where id = v_staff and arena_id = p_arena) then
     raise exception 'not_found' using hint = 'staff';
   end if;
+  perform _own_record(p_arena, v_staff);
   if v_reason is null then raise exception 'reason_required'; end if;
   if v_days is null or v_days = 0 or (v_days * 2) % 1 <> 0 or abs(v_days) > 366 then
     raise exception 'invalid_payload' using hint = 'days: a non-zero number of half days';

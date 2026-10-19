@@ -27,6 +27,7 @@ create table "public"."group_sessions" (
   "updated_at"                 timestamp with time zone not null default now(),
   "created_by"                 uuid,
   "sync_xid"                   xid8                     not null default pg_current_xact_id(),
+  "ended_recorded_at"          timestamp with time zone,
   constraint "group_sessions_arena_id_fkey" foreign key (arena_id) references public.arenas(id)
     on delete cascade,
   constraint "group_sessions_billing_mode_check"
@@ -63,6 +64,8 @@ comment on column public.group_sessions.started_at is 'Group start (UTC), as rep
 comment on column public.group_sessions.scheduled_end_at is 'Planned end of the shared countdown (UTC); moved by group_extensions.';
 
 comment on column public.group_sessions.actual_ended_at is 'When the group actually ended (UTC); null while active.';
+
+comment on column public.group_sessions.ended_recorded_at is 'Server time the end reached the server (actual_ended_at is the device''s); the dashboard flags an end recorded more than 15 minutes later. Null while active and for bills ended before it was recorded.';
 
 comment on column public.group_sessions.pricing_snapshot is 'Immutable copy of the arena''s price list frozen at create; must match the current catalog or one retired within 72 h (_assert_snapshot). Every bill and extension is priced from it.';
 

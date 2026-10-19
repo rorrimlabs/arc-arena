@@ -7,7 +7,8 @@
 --   'per_system'); assignments[] {id, player_number, player_label, resource_id, activity_code,
 --   game_id?, controller_count?, allocations[] {id?, controller_id}, moves[] {id?, controller_id},
 --   idx?}.
--- Checks / errors: forbidden; no_assignments; retry (40001); placement errors per assignment
+-- Checks / errors: forbidden; time_in_future, time_too_old (_client_time: device time after now + 2 min or
+--   over 24 h old); no_assignments; retry (40001); placement errors per assignment
 --   (_group_place -> _group_assignable): resource_missing, resource_unavailable, mode_locked,
 --   not_playable, resource_busy (single session on the station, or another group),
 --   controllers_exceeded (> 4 on the station), players_exceeded (game player limit),
@@ -38,6 +39,7 @@ declare
   v_skipped int := 0; a jsonb;
 begin
   perform _need(p_arena, 'start');
+  perform _client_time(p_arena, v_started, 'started_at');
   if jsonb_array_length(coalesce(p->'assignments', '[]'::jsonb)) = 0 then
     raise exception 'no_assignments';
   end if;

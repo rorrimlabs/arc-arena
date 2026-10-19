@@ -21,6 +21,7 @@ import { ShiftsStore } from '../../shifts/data/shifts-store';
 import { coversDay, isDay, toTimeValue } from '../../shifts/data/shifts.models';
 import { AttendanceStore } from '../data/attendance-store';
 import { StaffMember, correctionProblem, istInstant } from '../data/attendance.models';
+import { Attempt } from '../../../core/sync/push-ops';
 
 export type MarkKind = 'present' | 'paid_leave' | 'unpaid_leave';
 
@@ -250,6 +251,9 @@ export class MarkDialog {
     this.outTime.set(shift ? toTimeValue(shift.endMin) : '');
   }
 
+  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
+  private readonly attempt = new Attempt();
+
   protected async save(event: Event): Promise<void> {
     event.preventDefault();
     const name = this.data.staff.find((s) => s.id === this.staffId())?.name;
@@ -279,19 +283,22 @@ export class MarkDialog {
           this.error.set(problem ?? 'Pick the clock-in and clock-out times');
           return;
         }
-        await this.attendance.correct({
-          action: 'add',
-          staff_id: this.staffId(),
-          in_at: inAt,
-          out_at: outAt,
-          reason,
-        });
+        await this.attendance.correct(
+          {
+            action: 'add',
+            staff_id: this.staffId(),
+            in_at: inAt,
+            out_at: outAt,
+            reason,
+          },
+          this.attempt,
+        );
         this.ref.close({ snack: `${name} marked present` });
       } else {
         const to = isDay(this.to()) && this.to() >= this.day() ? this.to() : this.day();
         const paid = this.kind() === 'paid_leave';
         await this.leave.record({
-          id: crypto.randomUUID(),
+          id: this.attempt.id('leave'),
           staffId: this.staffId(),
           fromDate: this.day(),
           toDate: to,

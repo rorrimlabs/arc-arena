@@ -10,6 +10,7 @@ import { AuthApi, MIN_PASSWORD, passwordProblem, toAppError } from '../../core/a
 import { Session } from '../../core/auth/session';
 import { AuthCard } from './auth-card';
 import { MATERIAL_DEFAULTS } from '../../shared/material/material-defaults';
+import { Captcha, Turnstile } from '../../shared/turnstile/turnstile';
 
 type Step = 'details' | 'check' | 'confirming' | 'link-error';
 
@@ -38,6 +39,7 @@ const CONFIRM_LINK_INCOMPLETE =
     MatButton,
     MatProgressBar,
     RouterLink,
+    Turnstile,
   ],
   template: `
     @if (currentStep() === 'details') {
@@ -72,7 +74,13 @@ const CONFIRM_LINK_INCOMPLETE =
           @if (error()) {
             <p role="alert" class="text-sm leading-[1.3] font-medium text-danger">{{ error() }}</p>
           }
-          <button mat-flat-button type="submit" class="arena-cta" [disabled]="busy()">
+          <app-turnstile />
+          <button
+            mat-flat-button
+            type="submit"
+            class="arena-cta"
+            [disabled]="busy() || !captcha.ready()"
+          >
             Create account
           </button>
         </form>
@@ -95,11 +103,12 @@ const CONFIRM_LINK_INCOMPLETE =
         @if (info()) {
           <p role="status" class="text-sm leading-[1.3] text-muted">{{ info() }}</p>
         }
+        <app-turnstile />
         <button
           mat-stroked-button
           type="button"
           class="arena-cta"
-          [disabled]="busy()"
+          [disabled]="busy() || !captcha.ready()"
           (click)="resend()"
         >
           Resend link
@@ -123,6 +132,7 @@ const CONFIRM_LINK_INCOMPLETE =
   `,
 })
 export class Register {
+  protected readonly captcha = inject(Captcha);
   private readonly api = inject(AuthApi);
   private readonly session = inject(Session);
   private readonly router = inject(Router);
