@@ -2,8 +2,8 @@
 ///
 /// SERVER PARITY: exact ports of `_pr_rule` and `_pr_rule_price`
 /// (supabase/schemas/public/functions/). The server re-prices every bill and
-/// refuses any difference — change both sides together and run
-/// `bash tool/pricing_parity.sh` (docs/SYNC.md "Changing pricing").
+/// refuses any difference — change both sides together and check
+/// parity (docs/SYNC.md "Changing pricing").
 library;
 
 import 'package:arena_ops/core/money/rounding.dart';

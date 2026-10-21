@@ -13,6 +13,7 @@
 | `docs/RELEASE.md`, `docs/DEPLOY_SUPABASE.md` | Release, backup, going live |
 | `supabase/README.md` | Tables / functions / security map, pgTAP index |
 | `apps/admin/CLAUDE.md` | Angular rules (always follow for admin work) |
+| `CHANGELOG.md` | Every user-visible change (see Working efficiently) |
 | `docs/PLAN.md` | History only |
 | `.claude/WORKING_STATE.md` | Unfinished multi-session work, if present |
 
@@ -36,7 +37,6 @@
 | `apps/mobile/` | Flutter staff app. Run every `flutter`/`dart` command from here. |
 | `apps/admin/` | Angular 22 (signals, Tailwind 4, Vitest). `npm run dev` / `npm run build` / `npm test`; no `npm start`. Prefer the `angular-cli` MCP server over shelling out to `ng`. |
 | `supabase/` | Declarative schema (`schemas/`), generated migrations, pgTAP tests, seed, e-mail templates. |
-| `tool/` | `verify_all.sh` (all checks), `sync_it.sh` (cross-app integration, local stack), `pricing_parity.sh` (Dart vs SQL pricing). |
 | `.claude/skills/` | `supabase`, `supabase-postgres-best-practices` — load for any Supabase/Postgres work. |
 
 ## Supabase — declarative schemas only
@@ -56,7 +56,7 @@ Security rules (asserted by `supabase/tests/13_security_hardening_test.sql`):
 - No SECURITY DEFINER function in an exposed schema is client-executable. New client RPC = definer body in `private/functions/` + same-signature `security invoker` wrapper in `public/functions/` + add it to test 13's client-API allow-list. Server-only definers (`op_*`, `_*`, `bootstrap_owner`) stay in `public` with no client EXECUTE.
 - All writes: `sync_push` → `_sync_apply` (dispatch `case`) → `op_*` (definer, `set search_path`, `_need(arena, perm)`). No insert/update/delete policies. Views `security_invoker = true`.
 - 42501 on a client RPC = refusal or a call without a session: fix the client, never grant to `anon`.
-- Joining = invitation only (`invite_member` → Auth e-mail → `/accept-invite` → `accept_invite`); owners self-register via `create_my_arena`; non-magic-link logins choose a password first. No service-role key outside `tool/sync_it.sh`'s local setup. No Edge Functions.
+- Joining = invitation only (`invite_member` → Auth e-mail → `/accept-invite` → `accept_invite`); owners self-register via `create_my_arena`; non-magic-link logins choose a password first. No service-role key anywhere in the apps or repo. No Edge Functions.
 
 Permissions: `text[]` on `staff_profiles`, list in `_known_perms()` (start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise). `role='owner'` holds all. `money`/`reports` = owner level; only owner level grants money, reports, payroll, payroll_finalise. Nobody changes their own permissions.
 
@@ -94,8 +94,8 @@ Drift schema change (the device DB is the only copy of the day's takings; `DbSaf
 
 - Implement what was asked, reusing existing components, utilities, patterns and tables. No unrequested features, abstractions, dependencies, config layers or refactors; don't rewrite working code without a concrete reason.
 - **Tests:** do not create or run tests (unit, widget, component, integration, e2e, mocks, fixtures) unless the user asks. Keep existing tests and scripts; never delete them. If a change makes one outdated, say so briefly.
-- **Checks by default:** focused and cheap — `flutter analyze` (must be clean) for Dart changes; `npm run build` for admin compile; the schema workflow above for SQL. No repo-wide suites (`verify_all.sh`, `flutter test`, `npm test`, `supabase test db`) without being asked.
-- **Risky areas** (pricing, payments, money, migrations incl. Drift, permissions/RLS, sync, session timers/segments, bookings, salary): keep every integrity guarantee, never bypass server validation or authorization to simplify, never change billing semantics without explicit requirements. State the risk and recommend the matching check (`supabase test db`, `tool/pricing_parity.sh`, `tool/sync_it.sh`, a Drift migration test) instead of running it unasked. Before any production step, list critical verification not yet done.
+- **Checks by default:** focused and cheap — `flutter analyze` (must be clean) for Dart changes; `npm run build` for admin compile; the schema workflow above for SQL. No repo-wide suites (`flutter test`, `npm test`, `supabase test db`) without being asked.
+- **Risky areas** (pricing, payments, money, migrations incl. Drift, permissions/RLS, sync, session timers/segments, bookings, salary): keep every integrity guarantee, never bypass server validation or authorization to simplify, never change billing semantics without explicit requirements. State the risk and recommend the matching check (`supabase test db`, a Drift migration test; e2e suite once rebuilt — the old `tool/` parity and sync scripts were removed 2026-10-21) instead of running it unasked. Before any production step, list critical verification not yet done.
 - **No manual or visual testing** by Claude: no screenshots, headless browsers, driving the app, or inspecting `dist/`. The user tests by hand from a click-through checklist.
 - Never claim something was tested when it wasn't.
 
@@ -105,7 +105,8 @@ Drift schema change (the device DB is the only copy of the day's takings; `DbSaf
 - Small change → implement directly. Cross-module or architectural change → brief plan first.
 - Don't repeat a failed command unchanged. Use subagents only when parallel work clearly pays off; give them a precise contract and verify their claims.
 - Don't reopen settled decisions (S-rows in `docs/OWNER_CONFIRMATION.md`, this file) without new requirements.
-- **Docs:** no unrequested reports, changelogs or markdown files. Update docs only when asked, when a decision changes, or when they become wrong. For long multi-session work keep `.claude/WORKING_STATE.md` short (objective, done, decisions, key files, open tasks, blockers, next action); update at milestones or before a handoff, not after every edit.
+- **Changelog:** every user-visible change (feature, fix, behaviour, schema, security) adds a line under `## [Unreleased]` in `CHANGELOG.md` (Keep a Changelog; Added / Changed / Fixed / Removed / Security). A release moves `[Unreleased]` to `## [x.y.z] - YYYY-MM-DD` and bumps `apps/admin/package.json`, `apps/mobile/pubspec.yaml` (keep `+build`) and the label in `more_screen.dart` together; tag `v<version>` (the release workflow builds from it).
+- **Docs:** no unrequested reports or markdown files. Update docs only when asked, when a decision changes, or when they become wrong. For long multi-session work keep `.claude/WORKING_STATE.md` short (objective, done, decisions, key files, open tasks, blockers, next action); update at milestones or before a handoff, not after every edit.
 - **Compaction:** keep the task and outcome, decisions, files changed, constraints, done / remaining work, blockers; drop tool output, superseded plans and debugging history. Re-check a prior change before relying on it.
 
 ## Response format

@@ -18,7 +18,7 @@
 /// SERVER PARITY: the server re-prices every bill with a plpgsql port of this
 /// code (`_pr_quote`, `_pr_rule`, `_pr_rule_price`) and refuses any
 /// difference. Changing how money is computed here needs the matching change
-/// to `supabase/schemas/` and a green `bash tool/pricing_parity.sh` — see
+/// to `supabase/schemas/` and a green parity check — see
 /// docs/SYNC.md "Changing pricing".
 ///
 /// Late arrival (§8) and early exit (§5) are decided by the *caller* choosing

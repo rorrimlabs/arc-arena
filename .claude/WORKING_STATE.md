@@ -25,7 +25,7 @@
 - Need go-ahead (pay semantics): ST-003, ST-004, ST-005, DB-007. ST-009 docs.
 - §3: BL-004, BL-005, DB-010, CQ-002/003/004, NG-004; BL-002 groups; P3s.
 - BL-002 for groups (shared-pool sweep) not done; admin UI for offline_rules not built.
-- Recommend: `tool/pricing_parity.sh`, `tool/sync_it.sh` (billing + sync changes).
+- tool/ scripts removed 2026-10-21; e2e suite to replace them (billing + sync coverage).
 
 ## Environment separation (local / staging / prod), started 2026-10-19
 

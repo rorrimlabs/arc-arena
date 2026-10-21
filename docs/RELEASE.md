@@ -6,8 +6,8 @@ also lands in a sync outbox that is pushed to Supabase, and other devices'
 changes are pulled ([SYNC.md](SYNC.md)). Local mode is for debug builds.
 
 Verified on 2026-10-11: `flutter analyze` clean, `flutter test` **274 passed**.
-Since then `bash tool/verify_all.sh` is the one entry point for every
-automated check.
+The old `tool/verify_all.sh` wrapper was removed 2026-10-21; run each
+app's checks directly (README).
 
 ---
 

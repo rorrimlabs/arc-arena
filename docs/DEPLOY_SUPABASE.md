@@ -123,8 +123,8 @@ Local and Remote columns must both show the same list.
 
 Rules while linked:
 * **Never** run `supabase db reset --linked` or `supabase test db --linked` (the pgTAP files insert users and fixtures).
-* Every repo script (`tool/verify_all.sh`, `tool/sync_it.sh`, `tool/pricing_parity.sh`, the race scripts) targets the local Docker container only and refuses anything else; keep using them locally.
-* Future schema changes: edit `supabase/schemas/` and generate the migration (CLAUDE.md, "Supabase — declarative schemas only"; never write one by hand), run `bash tool/verify_all.sh --with-it --with-psql` locally, then `supabase db push --dry-run` / `db push`.
+* The race scripts (`supabase/concurrency_tests/`) target the local Docker container only and refuses anything else; keep using them locally.
+* Future schema changes: edit `supabase/schemas/` and generate the migration (CLAUDE.md, "Supabase — declarative schemas only"; never write one by hand), run `supabase db reset --local` and `supabase test db` locally, then `supabase db push --dry-run` / `db push`.
 
 ## 4a. The existing hosted dev project (old history)
 
@@ -254,7 +254,7 @@ of the app. Serve it at the https URL you set as Site URL (step 3.4).
   forged or wrong timestamps. Audit evidence: server receipt time and sender of
   every op (`sync_ops.created_at`, `user_id`). See SYNC.md.
 * A Dart pricing change needs a matching migration and a green
-  `tool/pricing_parity.sh` (SYNC.md "Changing pricing").
+  Dart-vs-SQL parity check (SYNC.md "Changing pricing").
 * No backups/PITR policy has been chosen for the hosted project (plan-dependent).
 * Realtime only nudges: a missed event is caught by the floor app's 10 s poll
   and by the catch-up pull on reconnect (the dashboard refetches on reconnect).
