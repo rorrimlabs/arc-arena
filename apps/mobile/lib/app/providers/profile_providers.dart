@@ -5,8 +5,10 @@ library;
 import 'dart:async';
 
 import 'package:arena_ops/app/auth/auth_controller.dart';
+import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/result/result.dart';
+import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/remote/unavailable_profile_repository.dart';
 import 'package:arena_ops/domain/profile/staff_details.dart';
 import 'package:arena_ops/domain/profile/staff_terms.dart';
@@ -53,9 +55,11 @@ final class TermsGateFailed extends TermsGate {
 /// Checks the terms after sign-in and again whenever the app comes back to
 /// the foreground. Fail-closed: until a check says otherwise the app is not
 /// shown. A re-check that cannot run (offline on resume) keeps the last
-/// answer, so a member already let in keeps working offline.
+/// answer, so a member already let in keeps working offline; so does a cold
+/// start offline, from the last answer this device's database remembers.
 class TermsGateController extends Notifier<TermsGate> {
   Future<void>? _running;
+  String _okKey = '';
 
   @override
   TermsGate build() {
@@ -64,6 +68,7 @@ class TermsGateController extends Notifier<TermsGate> {
         .select((u) => u == null ? null : (id: u.id, owner: u.isOwner)));
     // Owner level publishes the terms; the offline demo has none.
     if (!cloud || who == null || who.owner) return const TermsGateOpen();
+    _okKey = 'terms_ok:${who.id}';
     final resumed = AppLifecycleListener(onResume: () => unawaited(check()));
     ref.onDispose(resumed.dispose);
     Future.microtask(check);
@@ -77,18 +82,38 @@ class TermsGateController extends Notifier<TermsGate> {
     if (state is TermsGateFailed) state = const TermsGateChecking();
     final res = await ref.read(profileRepositoryProvider).termsStatus();
     if (!ref.mounted) return;
-    state = switch (res) {
-      Ok(value: final s) =>
-        s.mustAccept ? TermsGateBlocked(s.latest!) : const TermsGateOpen(),
-      Err(failure: final f) => switch (state) {
-          TermsGateOpen() || TermsGateBlocked() => state,
-          _ => TermsGateFailed(f),
-        },
-    };
+    final db = ref.read(databaseProvider);
+    switch (res) {
+      case Ok(value: final s):
+        state =
+            s.mustAccept ? TermsGateBlocked(s.latest!) : const TermsGateOpen();
+        await _remember(db, open: !s.mustAccept);
+      case Err(failure: final f):
+        if (state is TermsGateOpen || state is TermsGateBlocked) return;
+        // Offline at a cold start: a member this device last let in keeps
+        // working (the floor must run through an outage); the next check
+        // online decides again.
+        final open = f.code == 'offline' && await _wasOpen(db);
+        if (!ref.mounted) return;
+        state = open ? const TermsGateOpen() : TermsGateFailed(f);
+    }
   }
 
+  Future<bool> _wasOpen(AppDatabase db) async =>
+      (await (db.select(db.syncMeta)..where((t) => t.key.equals(_okKey)))
+              .getSingleOrNull())
+          ?.value ==
+      '1';
+
+  Future<void> _remember(AppDatabase db, {required bool open}) => db
+      .into(db.syncMeta)
+      .insertOnConflictUpdate(SyncMetaRow(key: _okKey, value: open ? '1' : '0'));
+
   /// The server recorded the acceptance of the version shown.
-  void accepted() => state = const TermsGateOpen();
+  void accepted() {
+    state = const TermsGateOpen();
+    unawaited(_remember(ref.read(databaseProvider), open: true));
+  }
 }
 
 final termsGateProvider =

@@ -17,7 +17,6 @@ export function asPeriod(value: string | undefined): Period {
 }
 
 const IST_OFFSET_MS = 330 * 60_000;
-const DAY_MS = 86_400_000;
 
 /** IST calendar parts of an instant. */
 function ist(at: Date) {

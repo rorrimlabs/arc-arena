@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from '@angular/core';
+import { Component, computed, effect, inject, input, linkedSignal, resource } from '@angular/core';
 import { MatButton } from '@angular/material/button';
 import { MatFormField, MatPrefix } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';

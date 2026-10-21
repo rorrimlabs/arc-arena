@@ -151,6 +151,7 @@ export class AdjustmentDialog {
       );
       this.ref.close(true);
     } catch (e) {
+      this.attempt.settle(e);
       this.error.set(toAppError(e).message);
     } finally {
       this.busy.set(false);

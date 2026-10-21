@@ -45,8 +45,7 @@ create table "public"."attendance_entries" (
   constraint "attendance_entries_replaces_id_fkey" foreign key (replaces_id) references public.attendance_entries(id),
   constraint "attendance_entries_review_check" check ((review = ANY (ARRAY['none'::text, 'pending'::text, 'accepted'::text, 'corrected'::text]))),
   constraint "attendance_entries_source_check" check ((source = ANY (ARRAY['punch'::text, 'manual'::text]))),
-  constraint "attendance_entries_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
-    on delete cascade,
+  constraint "attendance_entries_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "attendance_entries_status_check" check ((status = ANY (ARRAY['active'::text, 'superseded'::text, 'voided'::text])))
 );
 

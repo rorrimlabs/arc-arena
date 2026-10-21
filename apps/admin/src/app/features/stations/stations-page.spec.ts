@@ -63,7 +63,7 @@ describe('Stations', () => {
       'Hours · 30 days 3h',
       'Takings · 30 days ₹420',
     ]);
-    expect(t.text(detail())).toContain('Now playing');
+    expect(t.text(detail())).toContain('In use');
     expect(t.text(detail())).toContain('Time left 25 min');
     const bills = [...detail()!.querySelectorAll('app-line-row a')] as HTMLAnchorElement[];
     expect(bills.map((a) => t.text(a))).toEqual([

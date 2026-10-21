@@ -60,7 +60,7 @@ cp ~/Documents/arena_ops-backups/<chosen>.sqlite "<app Documents>/arena_ops.sqli
 
 ## 2. Migrations
 
-`schemaVersion` is **15**. `onUpgrade` walks one step per version boundary
+`schemaVersion` is **18**. `onUpgrade` walks one step per version boundary
 (`_steps[n]` takes v`n` → v`n+1`) and steps must be additive — add a table, a
 column or an index, never drop or rewrite user rows.
 

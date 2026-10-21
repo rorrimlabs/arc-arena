@@ -96,6 +96,7 @@ export class ReverseDialog {
       await this.store.reverse(this.data.runId, this.data.adjustment.id, this.note(), this.attempt);
       this.ref.close(true);
     } catch (e) {
+      this.attempt.settle(e);
       this.error.set(toAppError(e).message);
     } finally {
       this.busy.set(false);

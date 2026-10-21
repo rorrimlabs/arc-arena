@@ -99,7 +99,7 @@ create trigger t_discounts_updated
 create policy "p_sel_discounts" on "public"."discounts"
   for select
   to authenticated
-  using ((arena_id in ( select private.app_arena_ids() as app_arena_ids)));
+  using ((arena_id in ( select private.app_arena_ids_with(ARRAY['discount'::text, 'settings'::text, 'money'::text, 'reports'::text]) as app_arena_ids_with)));
 
 grant delete, insert, maintain, references, select, trigger, truncate, update
   on table "public"."discounts"

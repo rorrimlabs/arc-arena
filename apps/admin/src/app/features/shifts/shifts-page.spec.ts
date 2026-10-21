@@ -1,7 +1,10 @@
 import { NAV_ITEMS } from '../../core/layout/nav';
 import { PageTest, startPage } from '../../testing/page-test';
 
-describe('Staff › Shifts & holidays', () => {
+/** Shifts, the roster and staff holidays moved to Settings › Staff › Schedule (app.routes). */
+const SCHEDULE = '/settings/staff/schedule';
+
+describe('Settings › Staff › Schedule (shifts & holidays)', () => {
   let t: PageTest;
 
   afterEach(() => t?.cleanup());
@@ -12,31 +15,38 @@ describe('Staff › Shifts & holidays', () => {
     [...t.doc().querySelectorAll('ul[aria-label="Shifts"] app-list-row a')] as HTMLElement[];
   const detail = () => t.doc().querySelector('app-shift-detail') as HTMLElement;
   const holidays = () => t.doc().querySelector('app-staff-holidays') as HTMLElement;
-  const addShift = () =>
-    t.doc().querySelector('app-list-pane-header button') as HTMLButtonElement;
-  const dialogInput = (selector: string) =>
-    t.dialog()!.querySelector(selector) as HTMLInputElement;
+  const schedule = () => t.doc().querySelector('app-schedule-tab') as HTMLElement;
+  /** The "+ Shift" button above the shifts list (shown when no shift is open). */
+  const addShift = () => schedule().querySelector('button') as HTMLButtonElement;
+  const dialogInput = (selector: string) => t.dialog()!.querySelector(selector) as HTMLInputElement;
   function set(input: HTMLInputElement, value: string) {
     input.value = value;
     input.dispatchEvent(new Event('input'));
   }
 
-  it('is in the Staff group for everyone; lists shifts with times and days', async () => {
+  it('is in Settings › Staff for everyone; lists shifts with times and days', async () => {
     t = await startPage('/staff/shifts');
-    expect(NAV_ITEMS.find((i) => i.path === 'staff/shifts')?.perm).toBeUndefined();
-    expect(navLabels()).toContain('Shifts & holidays');
+    // The old Staff › Shifts link lands on the Schedule tab.
+    expect(t.url()).toBe(SCHEDULE);
+    expect(NAV_ITEMS.find((i) => i.path === 'settings')?.perm).toBeUndefined();
+    expect(navLabels()).toContain('Settings');
+    const tabs = [...t.doc().querySelectorAll('nav[aria-label="Staff settings"] a')];
+    expect(tabs.map((a) => t.text(a))).toContain('Schedule');
+    expect(schedule()).not.toBeNull();
     expect(shiftRows().map(t.rowText)).toEqual([
       ['Morning', '9:00 AM – 6:00 PM · Mon–Sat'],
       ['Night', '6:00 PM → 2:00 AM next day · Fri–Sun'],
       ['Old split', '10:00 AM – 2:00 PM · Mon, Tue', 'Not in use'],
     ]);
-    // Wide, nothing picked: the weekly roster.
+    // Nothing picked: the weekly roster and the staff holidays under the list.
     expect(t.doc().querySelector('app-roster-view')).not.toBeNull();
+    expect(holidays()).not.toBeNull();
   });
 
   it('a shift shows its length after the break and who works it', async () => {
-    t = await startPage('/staff/shifts?id=sh2');
-    expect(t.text(detail().querySelector('h2'))).toBe('Night');
+    t = await startPage(`${SCHEDULE}/sh2`);
+    // Embedded in the Staff settings pane, the shift's heading is an h3.
+    expect(t.text(detail().querySelector('h3'))).toBe('Night');
     const text = t.text(detail())!;
     expect(text).toContain('6:00 PM → 2:00 AM next day');
     expect(text).toContain('Ends next day 2:00 AM');
@@ -46,11 +56,13 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('adds a shift that crosses midnight (client uuid, contract payload)', async () => {
-    t = await startPage('/staff/shifts');
+    t = await startPage(SCHEDULE);
     addShift().click();
     await t.settle();
     t.type('Name', 'Late', t.dialog()!);
-    const [start, end] = [...t.dialog()!.querySelectorAll('input[type="time"]')] as HTMLInputElement[];
+    const [start, end] = [
+      ...t.dialog()!.querySelectorAll('input[type="time"]'),
+    ] as HTMLInputElement[];
     set(start, '20:00');
     set(end, '03:30');
     t.type('Unpaid break', '30', t.dialog()!);
@@ -73,11 +85,11 @@ describe('Staff › Shifts & holidays', () => {
       active: true,
     });
     expect(t.snack()).toBe('Late added');
-    expect(t.url()).toBe(`/staff/shifts?id=${op.payload['id']}`);
+    expect(t.url()).toBe(`${SCHEDULE}/${op.payload['id']}`);
   });
 
   it('a taken shift name is refused in the dialog', async () => {
-    t = await startPage('/staff/shifts?id=sh2');
+    t = await startPage(`${SCHEDULE}/sh2`);
     t.button('Edit', detail())!.click();
     await t.settle();
     t.type('Name', 'MORNING', t.dialog()!);
@@ -89,7 +101,7 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('assigns staff with dates (open-ended → null) and changes the dates by the same id', async () => {
-    t = await startPage('/staff/shifts?id=sh2');
+    t = await startPage(`${SCHEDULE}/sh2`);
     t.button('Assign staff', detail())!.click();
     await t.settle();
     (t.dialog()!.querySelector('mat-select') as HTMLElement).click();
@@ -116,7 +128,9 @@ describe('Staff › Shifts & holidays', () => {
     expect(t.snack()).toBe('Kavya Iyer assigned to Night');
     expect(t.text(detail())).toContain('Kavya Iyer From 16 Oct 2026 · no end date');
 
-    (detail().querySelector('button[aria-label="Change dates for Rohan Das"]') as HTMLElement).click();
+    (
+      detail().querySelector('button[aria-label="Change dates for Rohan Das"]') as HTMLElement
+    ).click();
     await t.settle();
     const [, to] = [...t.dialog()!.querySelectorAll('input[type="date"]')] as HTMLInputElement[];
     set(to, '2026-11-30');
@@ -136,7 +150,7 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('an overlapping assignment of the same shift is explained in words', async () => {
-    t = await startPage('/staff/shifts?id=sh1');
+    t = await startPage(`${SCHEDULE}/sh1`);
     t.button('Assign staff', detail())!.click();
     await t.settle();
     (t.dialog()!.querySelector('mat-select') as HTMLElement).click();
@@ -159,7 +173,7 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('the server refusing an overlap is worded the same way', async () => {
-    t = await startPage('/staff/shifts?id=sh1');
+    t = await startPage(`${SCHEDULE}/sh1`);
     await expect(
       t.shifts.push('a1', [
         {
@@ -178,18 +192,22 @@ describe('Staff › Shifts & holidays', () => {
     );
   });
 
-  it('removes an assignment after confirming', async () => {
-    t = await startPage('/staff/shifts?id=sh1');
-    (detail().querySelector('button[aria-label="Remove Priya Nair from Morning"]') as HTMLElement).click();
+  it('ends an assignment after confirming', async () => {
+    t = await startPage(`${SCHEDULE}/sh1`);
+    (
+      detail().querySelector('button[aria-label="End Priya Nair on Morning"]') as HTMLElement
+    ).click();
     await t.settle();
-    t.button('Remove', t.dialog()!)!.click();
+    expect(t.text(t.dialog()!)).toContain('End Priya Nair on Morning?');
+    t.button('End assignment', t.dialog()!)!.click();
     await t.settle();
     expect(t.shifts.ops).toEqual([{ kind: 'shift.unassign', payload: { id: 'as1' } }]);
+    expect(t.snack()).toBe('Priya Nair taken off Morning from today');
     expect(t.text(detail())).not.toContain('Priya Nair');
   });
 
   it('the weekly roster shows each day’s shifts and week offs', async () => {
-    t = await startPage('/staff/shifts?id=roster&week=2026-10-15');
+    t = await startPage(`${SCHEDULE}?week=2026-10-15`);
     const roster = t.doc().querySelector('app-roster-view') as HTMLElement;
     const heads = [...roster.querySelectorAll('thead th')].map((th) => t.text(th));
     expect(heads[1]).toBe('Mon, 12 Oct');
@@ -212,7 +230,7 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('staff holidays: add (paid by default), and copy only the arena holidays missing', async () => {
-    t = await startPage('/staff/shifts?id=holidays');
+    t = await startPage(SCHEDULE);
     expect(t.text(holidays())).toContain('Diwali 20 Oct 2026 Paid');
     t.button('Copy from arena holidays', holidays())!.click();
     await t.settle();
@@ -227,7 +245,10 @@ describe('Staff › Shifts & holidays', () => {
           kind: 'staff_holiday.upsert',
           payload: { day: '2026-11-05', name: 'Guru Nanak Jayanti', paid: true },
         },
-        { kind: 'staff_holiday.upsert', payload: { day: '2026-12-25', name: 'Christmas', paid: true } },
+        {
+          kind: 'staff_holiday.upsert',
+          payload: { day: '2026-12-25', name: 'Christmas', paid: true },
+        },
       ],
     ]);
     expect(t.snack()).toBe('2 staff holidays added');
@@ -240,7 +261,7 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('staff holidays: edit moves the day (upsert + delete in one call); delete confirms', async () => {
-    t = await startPage('/staff/shifts?id=holidays');
+    t = await startPage(SCHEDULE);
     (holidays().querySelector('button[aria-label="Edit Diwali"]') as HTMLElement).click();
     await t.settle();
     set(dialogInput('input[type="date"]'), '2026-10-21');
@@ -263,22 +284,40 @@ describe('Staff › Shifts & holidays', () => {
   });
 
   it('read-only without the Settings permission', async () => {
-    t = await startPage('/staff/shifts?id=sh1', 1440, ({ arena }) => {
+    t = await startPage(`${SCHEDULE}/sh1`, 1440, ({ arena }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,
         perms: ['money', 'reports'],
       }));
     });
-    expect(t.url()).toBe('/staff/shifts?id=sh1');
-    expect(navLabels()).toContain('Shifts & holidays');
-    expect(t.text(detail())).toContain('Viewing only: changing shifts needs the Settings permission.');
+    expect(t.url()).toBe(`${SCHEDULE}/sh1`);
+    expect(navLabels()).toContain('Settings');
+    expect(t.text(detail())).toContain(
+      'Viewing only: changing shifts needs the Settings permission.',
+    );
     expect(t.button('Edit', detail())!.disabled).toBe(true);
     expect(t.button('Assign staff', detail())!.disabled).toBe(true);
     expect(
-      (detail().querySelector('button[aria-label="Remove Priya Nair from Morning"]') as HTMLButtonElement)
-        .disabled,
+      (
+        detail().querySelector(
+          'button[aria-label="End Priya Nair on Morning"]',
+        ) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
+    expect(
+      (
+        detail().querySelector(
+          'button[aria-label="Change dates for Priya Nair"]',
+        ) as HTMLButtonElement
+      ).disabled,
+    ).toBe(true);
+
+    // The shifts list: adding a shift is off too.
+    await t.harness.navigateByUrl(SCHEDULE);
+    await t.settle();
+    expect(t.text(schedule())).toContain('Viewing only: changes need the Settings permission.');
+    expect(t.text(addShift())).toContain('Shift');
     expect(addShift().disabled).toBe(true);
   });
 });

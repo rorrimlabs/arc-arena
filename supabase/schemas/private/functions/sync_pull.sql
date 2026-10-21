@@ -40,6 +40,8 @@ begin
     raise exception 'forbidden' using errcode = '42501';
   end if;
   if p_limit is null or p_limit < 1 then p_limit := 2000; end if;
+  -- One page is bounded whatever the caller asks for.
+  p_limit := least(p_limit, 5000);
   -- Customers, money and coupons only for those who may read them (as RLS does).
   v_hidden := _sync_hidden(p_arena);
   -- Upper bound is the snapshot's xmin, taken once: every transaction below it
