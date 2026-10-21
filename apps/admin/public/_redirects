@@ -1,0 +1,2 @@
+# SPA fallback: deep links (/accept-invite, /reset-password, /register…) load the app.
+/*    /index.html   200

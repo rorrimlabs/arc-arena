@@ -1,0 +1,6 @@
+{
+  "AO_BACKEND": "supabase",
+  "AO_SUPABASE_URL": "http://10.0.2.2:54431",
+  "AO_SUPABASE_ANON_KEY": "sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH",
+  "AO_ENVIRONMENT": "development"
+}

@@ -1,0 +1,394 @@
+/* 404 Arena · ArenaOS admin — design tokens for Tailwind v4.
+   Theme: data-theme="dark" (default) or data-theme="light" on <html> or any ancestor.
+   Every colour, font, radius, shadow and motion value used in the app comes from here;
+   components use the generated utilities (bg-surface, text-muted, rounded-card, …). */
+
+/* ── Raw palette: black, white, lime; amber + red for alerts only ──
+   Tailwind's default palette is removed so only design colours exist. */
+@theme {
+  --color-*: initial;
+
+  --color-ink-1000: #000000;
+  --color-ink-950: #0a0a0a;
+  --color-ink-900: #111111;
+  --color-ink-850: #171717;
+  --color-ink-800: #1f1f1f;
+  --color-ink-700: #2b2b2b;
+  --color-ink-600: #3b3b3b;
+  --color-ink-500: #575757;
+  --color-ink-400: #7c7c7c;
+  --color-ink-300: #a6a6a6;
+  --color-ink-200: #d0d0d0;
+  --color-ink-100: #e9e9e9;
+  --color-ink-50: #f5f5f5;
+  --color-ink-0: #ffffff;
+
+  --color-lime-300: #c4f296;
+  --color-lime-400: #aeed70;
+  --color-lime-500: #98e748;
+  --color-lime-600: #5e9e1e;
+  --color-lime-700: #3d6e0c;
+
+  --color-amber-300: #ffd889;
+  --color-amber-400: #ffb22e;
+  --color-amber-600: #a15c00;
+  --color-amber-700: #7f4800;
+
+  --color-red-300: #ff9a9a;
+  --color-red-400: #ff5a5a;
+  --color-red-600: #cc1f1f;
+  --color-red-700: #a31414;
+}
+
+/* ── Semantic colours, per theme ── */
+:root,
+[data-theme='dark'] {
+  color-scheme: dark;
+  --arena-bg: var(--color-ink-1000);
+  --arena-surface: var(--color-ink-900);
+  --arena-surface-raised: var(--color-ink-800);
+  --arena-surface-sunken: var(--color-ink-950);
+  --arena-overlay: rgb(0 0 0 / 0.75);
+  --arena-text: var(--color-ink-0);
+  --arena-text-muted: var(--color-ink-300);
+  --arena-text-subtle: var(--color-ink-400);
+  --arena-text-inverse: var(--color-ink-1000);
+  --arena-border: var(--color-ink-800);
+  --arena-border-strong: var(--color-ink-600);
+  --arena-primary: var(--color-lime-500);
+  --arena-primary-hi: var(--color-lime-400);
+  --arena-on-primary: #000000;
+  --arena-primary-soft: rgb(152 231 72 / 0.12);
+  --arena-primary-text: var(--color-lime-500);
+  --arena-success: var(--color-lime-500);
+  --arena-success-soft: rgb(152 231 72 / 0.12);
+  --arena-warning: var(--color-amber-400);
+  --arena-warning-soft: rgb(255 178 46 / 0.13);
+  --arena-danger: var(--color-red-400);
+  --arena-danger-soft: rgb(255 90 90 / 0.14);
+  --arena-on-danger: #000000;
+  --arena-info: var(--color-ink-100);
+  --arena-info-soft: rgb(255 255 255 / 0.08);
+  --arena-elev-2: 0 8px 24px rgb(0 0 0 / 0.6);
+  --arena-elev-3: 0 -12px 40px rgb(0 0 0 / 0.7);
+  /* station status */
+  --arena-st-free: var(--color-ink-300);
+  --arena-st-free-bg: var(--color-ink-900);
+  --arena-st-playing: var(--color-lime-500);
+  --arena-st-playing-bg: var(--color-ink-900);
+  --arena-st-ending: var(--color-amber-400);
+  --arena-st-ending-bg: var(--color-ink-900);
+  --arena-st-overtime: var(--color-red-400);
+  --arena-st-overtime-bg: rgb(255 90 90 / 0.08);
+  --arena-st-paused: var(--color-ink-100);
+  --arena-st-paused-bg: var(--color-ink-900);
+  --arena-st-oos: var(--color-ink-500);
+  --arena-st-oos-bg: var(--color-ink-950);
+  /* session timer */
+  --arena-tm-safe: var(--color-lime-500);
+  --arena-tm-mid: var(--color-lime-300);
+  --arena-tm-low: var(--color-amber-400);
+  --arena-tm-critical: var(--color-red-400);
+  --arena-tm-over: var(--color-red-400);
+  --arena-tm-over-dim: rgb(255 90 90 / 0.2);
+  --arena-tm-track: var(--color-ink-800);
+  /* age badges */
+  --arena-bd-u18: var(--color-amber-400);
+  --arena-bd-u18-bg: rgb(255 178 46 / 0.13);
+  --arena-bd-16: var(--color-amber-400);
+  --arena-bd-16-bg: rgb(255 178 46 / 0.13);
+  --arena-bd-18: var(--color-red-400);
+  --arena-bd-18-bg: rgb(255 90 90 / 0.14);
+}
+
+[data-theme='light'] {
+  color-scheme: light;
+  --arena-bg: var(--color-ink-0);
+  --arena-surface: var(--color-ink-50);
+  --arena-surface-raised: var(--color-ink-0);
+  --arena-surface-sunken: var(--color-ink-100);
+  --arena-overlay: rgb(0 0 0 / 0.45);
+  --arena-text: var(--color-ink-1000);
+  --arena-text-muted: #555555;
+  --arena-text-subtle: var(--color-ink-400);
+  --arena-text-inverse: var(--color-ink-0);
+  --arena-border: var(--color-ink-100);
+  --arena-border-strong: var(--color-ink-200);
+  --arena-primary: var(--color-lime-500);
+  --arena-primary-hi: var(--color-lime-400);
+  --arena-on-primary: #000000;
+  --arena-primary-soft: rgb(152 231 72 / 0.22);
+  --arena-primary-text: var(--color-lime-700);
+  --arena-success: var(--color-lime-700);
+  --arena-success-soft: rgb(152 231 72 / 0.22);
+  --arena-warning: var(--color-amber-600);
+  --arena-warning-soft: rgb(255 178 46 / 0.16);
+  --arena-danger: var(--color-red-600);
+  --arena-danger-soft: rgb(204 31 31 / 0.09);
+  --arena-on-danger: #ffffff;
+  --arena-info: var(--color-ink-1000);
+  --arena-info-soft: rgb(0 0 0 / 0.06);
+  --arena-elev-2: 0 6px 20px rgb(0 0 0 / 0.1);
+  --arena-elev-3: 0 -10px 36px rgb(0 0 0 / 0.16);
+  --arena-st-free: #555555;
+  --arena-st-free-bg: var(--color-ink-50);
+  --arena-st-playing: var(--color-lime-600);
+  --arena-st-playing-bg: var(--color-ink-50);
+  --arena-st-ending: var(--color-amber-600);
+  --arena-st-ending-bg: var(--color-ink-50);
+  --arena-st-overtime: var(--color-red-600);
+  --arena-st-overtime-bg: rgb(204 31 31 / 0.06);
+  --arena-st-paused: var(--color-ink-1000);
+  --arena-st-paused-bg: var(--color-ink-50);
+  --arena-st-oos: var(--color-ink-400);
+  --arena-st-oos-bg: var(--color-ink-100);
+  --arena-tm-safe: var(--color-lime-500);
+  --arena-tm-mid: var(--color-lime-400);
+  --arena-tm-low: var(--color-amber-400);
+  --arena-tm-critical: var(--color-red-600);
+  --arena-tm-over: var(--color-red-600);
+  --arena-tm-over-dim: rgb(204 31 31 / 0.15);
+  --arena-tm-track: var(--color-ink-100);
+  --arena-bd-u18: var(--color-amber-700);
+  --arena-bd-u18-bg: rgb(255 178 46 / 0.22);
+  --arena-bd-16: var(--color-amber-700);
+  --arena-bd-16-bg: rgb(255 178 46 / 0.22);
+  --arena-bd-18: var(--color-red-700);
+  --arena-bd-18-bg: rgb(204 31 31 / 0.1);
+}
+
+/* ── Semantic → Tailwind utilities (bg-surface, text-muted, border-border-strong, …) ── */
+@theme inline {
+  --color-bg: var(--arena-bg);
+  --color-surface: var(--arena-surface);
+  --color-surface-raised: var(--arena-surface-raised);
+  --color-surface-sunken: var(--arena-surface-sunken);
+  --color-overlay: var(--arena-overlay);
+  --color-fg: var(--arena-text);
+  --color-muted: var(--arena-text-muted);
+  --color-subtle: var(--arena-text-subtle);
+  --color-inverse: var(--arena-text-inverse);
+  --color-border: var(--arena-border);
+  --color-border-strong: var(--arena-border-strong);
+  --color-primary: var(--arena-primary);
+  --color-primary-hi: var(--arena-primary-hi);
+  --color-on-primary: var(--arena-on-primary);
+  --color-primary-soft: var(--arena-primary-soft);
+  --color-primary-text: var(--arena-primary-text);
+  --color-success: var(--arena-success);
+  --color-success-soft: var(--arena-success-soft);
+  --color-warning: var(--arena-warning);
+  --color-warning-soft: var(--arena-warning-soft);
+  --color-danger: var(--arena-danger);
+  --color-danger-soft: var(--arena-danger-soft);
+  --color-on-danger: var(--arena-on-danger);
+  --color-info: var(--arena-info);
+  --color-info-soft: var(--arena-info-soft);
+
+  --color-st-free: var(--arena-st-free);
+  --color-st-free-bg: var(--arena-st-free-bg);
+  --color-st-playing: var(--arena-st-playing);
+  --color-st-playing-bg: var(--arena-st-playing-bg);
+  --color-st-ending: var(--arena-st-ending);
+  --color-st-ending-bg: var(--arena-st-ending-bg);
+  --color-st-overtime: var(--arena-st-overtime);
+  --color-st-overtime-bg: var(--arena-st-overtime-bg);
+  --color-st-paused: var(--arena-st-paused);
+  --color-st-paused-bg: var(--arena-st-paused-bg);
+  --color-st-oos: var(--arena-st-oos);
+  --color-st-oos-bg: var(--arena-st-oos-bg);
+
+  --color-tm-safe: var(--arena-tm-safe);
+  --color-tm-mid: var(--arena-tm-mid);
+  --color-tm-low: var(--arena-tm-low);
+  --color-tm-critical: var(--arena-tm-critical);
+  --color-tm-over: var(--arena-tm-over);
+  --color-tm-over-dim: var(--arena-tm-over-dim);
+  --color-tm-track: var(--arena-tm-track);
+
+  --color-bd-u18: var(--arena-bd-u18);
+  --color-bd-u18-bg: var(--arena-bd-u18-bg);
+  --color-bd-16: var(--arena-bd-16);
+  --color-bd-16-bg: var(--arena-bd-16-bg);
+  --color-bd-18: var(--arena-bd-18);
+  --color-bd-18-bg: var(--arena-bd-18-bg);
+
+  --shadow-raised: var(--arena-elev-2);
+  --shadow-sheet: var(--arena-elev-3);
+}
+
+/* ── Type, radius, layout, motion ── */
+@theme {
+  --font-display: 'Saira Semi Condensed', 'Arial Narrow', sans-serif; /* brand, KPI numbers */
+  --font-sans: 'IBM Plex Sans', system-ui, sans-serif; /* everything else */
+  --font-mono: 'IBM Plex Mono', ui-monospace, monospace; /* invoices, phone numbers */
+
+  /* Design type scale (Tailwind's text-xs … text-xl stay available for the admin's 12–20px). */
+  --text-timer: 64px;
+  --text-timer--line-height: 1;
+  --text-timer--font-weight: 700;
+  --text-display: 40px;
+  --text-display--line-height: 1.05;
+  --text-display--font-weight: 700;
+  --text-h1: 28px;
+  --text-h1--line-height: 1.15;
+  --text-h1--font-weight: 700;
+  --text-h2: 22px;
+  --text-h2--line-height: 1.2;
+  --text-h2--font-weight: 700;
+  --text-h3: 18px;
+  --text-h3--line-height: 1.3;
+  --text-h3--font-weight: 600;
+  --text-body: 16px;
+  --text-body--line-height: 1.45;
+  --text-body--font-weight: 400;
+  --text-label: 14px;
+  --text-label--line-height: 1.3;
+  --text-label--font-weight: 600;
+  --text-caption: 13px;
+  --text-caption--line-height: 1.35;
+  --text-caption--font-weight: 500;
+  --text-micro: 11px;
+  --text-micro--line-height: 1.2;
+  --text-micro--font-weight: 700;
+
+  /* Admin radii (Tailwind's 4-based scale is kept alongside). */
+  --radius-menu: 4px; /* menus, inputs */
+  --radius-chip: 8px; /* chips, status pills */
+  --radius-card: 12px; /* cards, nav tiles, arena switcher */
+  --radius-panel: 16px; /* rail items, large tiles */
+  --radius-dialog: 28px;
+  --radius-pill: 999px;
+
+  /* Layout (spacing is 4-based, as in the design: p-4 = 16px). */
+  --spacing-nav: 264px; /* full side nav */
+  --spacing-rail: 88px; /* icon rail */
+  --spacing-topbar: 64px; /* page header height */
+  --spacing-tap: 48px; /* minimum touch target */
+
+  /* Motion */
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-spring: cubic-bezier(0.3, 1.3, 0.5, 1);
+  --default-transition-duration: 140ms;
+  --default-transition-timing-function: cubic-bezier(0.2, 0, 0, 1);
+
+  --animate-fade: arena-fade 220ms var(--ease-standard);
+  --animate-sheet: arena-sheet 300ms var(--ease-standard);
+  --animate-toast: arena-toast 220ms var(--ease-standard);
+  --animate-shake: arena-shake 320ms var(--ease-standard);
+  --animate-pulse: arena-pulse 1.6s ease-in-out infinite;
+  --animate-overtime: arena-over 1s steps(1) infinite;
+  --animate-drain: arena-drain 6000ms linear forwards;
+
+  @keyframes arena-over {
+    0%,
+    100% {
+      background: var(--arena-tm-over);
+    }
+    50% {
+      background: var(--arena-tm-over-dim);
+    }
+  }
+  @keyframes arena-sheet {
+    from {
+      transform: translateY(100%);
+    }
+    to {
+      transform: translateY(0);
+    }
+  }
+  @keyframes arena-fade {
+    from {
+      opacity: 0;
+    }
+    to {
+      opacity: 1;
+    }
+  }
+  @keyframes arena-toast {
+    from {
+      transform: translateY(16px);
+      opacity: 0;
+    }
+    to {
+      transform: translateY(0);
+      opacity: 1;
+    }
+  }
+  @keyframes arena-shake {
+    0%,
+    100% {
+      transform: translateX(0);
+    }
+    20% {
+      transform: translateX(-10px);
+    }
+    40% {
+      transform: translateX(9px);
+    }
+    60% {
+      transform: translateX(-6px);
+    }
+    80% {
+      transform: translateX(4px);
+    }
+  }
+  @keyframes arena-pulse {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0.35;
+    }
+  }
+  @keyframes arena-drain {
+    from {
+      transform: scaleX(1);
+    }
+    to {
+      transform: scaleX(0);
+    }
+  }
+}
+
+/* Material Symbols Outlined (loaded in index.html): <span class="icon" aria-hidden="true">menu</span> */
+@utility icon {
+  font-family: 'Material Symbols Outlined';
+  font-weight: normal;
+  font-style: normal;
+  line-height: 1;
+  letter-spacing: normal;
+  text-transform: none;
+  white-space: nowrap;
+  direction: ltr;
+  font-feature-settings: 'liga';
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+/* Filled icon variant (active nav item). */
+@utility icon-filled {
+  font-variation-settings: 'FILL' 1;
+}
+
+@layer base {
+  html {
+    background-color: var(--arena-bg);
+    color: var(--arena-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+  }
+  a {
+    color: var(--arena-primary-text);
+  }
+  a:hover {
+    color: var(--arena-primary-hi);
+  }
+  /* Visible keyboard focus everywhere (WCAG 2.4.7). */
+  :focus-visible {
+    outline: 2px solid var(--arena-primary);
+    outline-offset: 2px;
+  }
+}

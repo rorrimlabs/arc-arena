@@ -1,0 +1,207 @@
+@if (layout.compact() && layout.navOpen()) {
+  <div
+    class="fixed inset-0 z-40 animate-fade bg-overlay"
+    aria-hidden="true"
+    (click)="layout.closeNav()"
+  ></div>
+}
+
+@if (navShown()) {
+  <aside
+    id="app-nav"
+    class="z-50 flex h-dvh flex-none flex-col border-r border-border bg-surface-sunken px-3"
+    [class.w-rail]="rail()"
+    [class.w-nav]="!rail()"
+    [class.fixed]="layout.compact()"
+    [class.inset-y-0]="layout.compact()"
+    [class.left-0]="layout.compact()"
+    [class.shadow-raised]="layout.compact()"
+    [class.relative]="!layout.compact()"
+    [attr.role]="layout.compact() ? 'dialog' : null"
+    [attr.aria-modal]="layout.compact() ? 'true' : null"
+    aria-label="Navigation"
+    [cdkTrapFocus]="layout.compact()"
+    [cdkTrapFocusAutoCapture]="layout.compact()"
+    (keydown.escape)="layout.closeNav()"
+  >
+    <!-- Brand -->
+    <div
+      class="flex h-topbar flex-none items-center gap-3"
+      [class.justify-center]="rail()"
+      [class.px-3]="!rail()"
+    >
+      <div
+        class="grid size-10 flex-none place-items-center rounded-card bg-primary font-display text-[15px] leading-none font-extrabold text-on-primary"
+        aria-hidden="true"
+      >
+        404
+      </div>
+      @if (rail()) {
+        <span class="sr-only">ArenaOS</span>
+      } @else {
+        <div class="flex min-w-0 flex-col gap-0.75">
+          <span class="font-display text-[17px] leading-none font-bold">ArenaOS</span>
+          <span class="text-xs leading-none font-medium text-muted">Owner dashboard</span>
+        </div>
+      }
+    </div>
+
+    <!-- Arena switcher -->
+    <div class="flex-none pt-1 pb-2">
+      <button
+        type="button"
+        class="flex h-13 w-full items-center gap-3 rounded-card border border-border-strong text-left hover:bg-info-soft"
+        [class.justify-center]="rail()"
+        [class.pl-4]="!rail()"
+        [class.pr-3]="!rail()"
+        [cdkMenuTriggerFor]="arenaMenu"
+        [title]="arenaContext.current().name"
+        [attr.aria-label]="'Arena: ' + arenaContext.current().name + '. Switch arena'"
+      >
+        <span class="icon text-xl leading-none text-primary-text" aria-hidden="true"
+          >storefront</span
+        >
+        @if (!rail()) {
+          <span class="flex min-w-0 flex-1 flex-col gap-0.75">
+            <span class="text-xs leading-none font-medium text-muted">Arena</span>
+            <span class="truncate text-sm leading-[1.1] font-semibold">{{
+              arenaContext.current().name
+            }}</span>
+          </span>
+          <span class="icon text-xl leading-none text-muted" aria-hidden="true">unfold_more</span>
+        }
+      </button>
+    </div>
+
+    <ng-template #arenaMenu>
+      <div cdkMenu class="min-w-60 rounded-menu bg-surface-raised py-2 text-fg shadow-raised">
+        @for (arena of arenaContext.arenas(); track arena.id) {
+          <button
+            type="button"
+            cdkMenuItemRadio
+            [cdkMenuItemChecked]="arena.id === arenaContext.current().id"
+            (cdkMenuItemTriggered)="arenaContext.select(arena.id)"
+            class="flex h-13 w-full items-center gap-3 px-4 text-left outline-none hover:bg-info-soft focus-visible:bg-info-soft"
+          >
+            <span
+              class="icon text-xl leading-none text-primary-text"
+              [class.opacity-0]="arena.id !== arenaContext.current().id"
+              aria-hidden="true"
+              >check</span
+            >
+            <span class="text-sm leading-none font-medium">{{ arena.name }}</span>
+          </button>
+        }
+      </div>
+    </ng-template>
+
+    <!-- Destinations -->
+    <nav
+      class="flex min-h-0 flex-1 flex-col overflow-y-auto pt-1 pb-4 [scrollbar-width:none]"
+      [class.gap-1]="rail()"
+      [class.gap-3]="!rail()"
+      aria-label="Main"
+    >
+      @for (group of navGroups(); track group.heading) {
+        <div class="flex flex-col gap-1">
+          @if (!rail()) {
+            <h2 class="px-4 pt-2 pb-1.5 text-xs leading-none font-semibold text-subtle">
+              {{ group.heading }}
+            </h2>
+          }
+          <ul class="flex flex-col gap-1" [attr.aria-label]="group.heading">
+            @for (item of group.items; track item.path) {
+              <li>
+                <a
+                  [routerLink]="item.path"
+                  routerLinkActive
+                  #rla="routerLinkActive"
+                  ariaCurrentWhenActive="page"
+                  [title]="item.label"
+                  (click)="layout.closeNav()"
+                  class="flex w-full flex-none items-center no-underline"
+                  [class.h-11]="!rail()"
+                  [class.gap-3]="!rail()"
+                  [class.px-4]="!rail()"
+                  [class.rounded-pill]="!rail()"
+                  [class.h-13]="rail()"
+                  [class.flex-col]="rail()"
+                  [class.justify-center]="rail()"
+                  [class.gap-1]="rail()"
+                  [class.rounded-panel]="rail()"
+                  [class.bg-primary-soft]="rla.isActive"
+                  [class.text-primary-text]="rla.isActive"
+                  [class.font-semibold]="rla.isActive"
+                  [class.text-muted]="!rla.isActive"
+                  [class.font-medium]="!rla.isActive"
+                >
+                  <span
+                    class="icon grid size-6 flex-none place-items-center text-[22px] leading-none"
+                    [class.icon-filled]="rla.isActive"
+                    aria-hidden="true"
+                    >{{ item.icon }}</span
+                  >
+                  @if (rail()) {
+                    <span class="text-[11px] leading-none">{{ item.label }}</span>
+                  } @else {
+                    <span class="text-sm leading-none" [class.text-fg]="!rla.isActive">{{
+                      item.label
+                    }}</span>
+                  }
+                </a>
+              </li>
+            }
+          </ul>
+        </div>
+      }
+    </nav>
+
+    <!-- Signed-in owner. As in the design, the initials avatar also signs out. -->
+    <div
+      class="flex flex-none items-center gap-3 border-t border-border py-3"
+      [class.justify-center]="rail()"
+      [class.px-3]="!rail()"
+    >
+      <button
+        type="button"
+        class="grid size-10 flex-none place-items-center rounded-full bg-primary-soft text-caption leading-none font-semibold text-primary-text"
+        title="Sign out"
+        [attr.aria-label]="'Sign out ' + ownerName()"
+        (click)="session.signOut()"
+      >
+        {{ ownerInitials() }}
+      </button>
+      @if (!rail()) {
+        <div class="flex min-w-0 flex-1 flex-col gap-0.75">
+          <span class="truncate text-sm leading-[1.2] font-semibold">{{ ownerName() }}</span>
+          <span class="truncate text-xs leading-[1.2] text-muted">{{ session.user()?.email }}</span>
+        </div>
+        <button
+          type="button"
+          class="grid size-10 flex-none place-items-center rounded-full text-muted hover:bg-info-soft"
+          title="Sign out"
+          aria-label="Sign out"
+          (click)="session.signOut()"
+        >
+          <span class="icon text-xl leading-none" aria-hidden="true">logout</span>
+        </button>
+      }
+    </div>
+  </aside>
+}
+
+<main class="flex h-dvh min-w-0 flex-1 flex-col overflow-y-auto">
+  @if (arenaContext.current().id && !arenaContext.canEdit()) {
+    <p
+      role="note"
+      class="flex items-start gap-2 bg-warning-soft px-4 py-2.5 text-[13px] leading-[1.4] font-medium text-warning"
+    >
+      <span class="icon text-[18px] leading-none" aria-hidden="true">visibility</span>
+      <span>
+        View only. Changing games, stations, prices, staff or settings needs the Settings
+        permission: ask the owner.
+      </span>
+    </p>
+  }
+  <router-outlet />
+</main>

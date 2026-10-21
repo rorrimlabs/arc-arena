@@ -1,0 +1,8 @@
+targets:
+  $default:
+    builders:
+      drift_dev:
+        options:
+          # Store timestamps as ISO-8601 UTC text, never local-epoch ints, so a
+          # device timezone change can never corrupt stored session times.
+          store_date_time_values_as_text: true

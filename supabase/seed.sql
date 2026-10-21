@@ -1,0 +1,6 @@
+-- Local development seed: intentionally empty.
+--
+-- Arenas start with no catalog. Sign up on the admin dashboard (or create a
+-- login in Studio and run `select bootstrap_owner('you@arena.test', 'Arena', 'Your Name');`),
+-- then add station types and prices, stations, controllers, games and users
+-- there. The pgTAP suites build their own fixtures (_seed_arena_catalog).

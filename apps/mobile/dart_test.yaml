@@ -1,0 +1,3 @@
+tags:
+  # Needs the local Supabase dev stack (tool/sync_it.sh); skipped otherwise.
+  integration:

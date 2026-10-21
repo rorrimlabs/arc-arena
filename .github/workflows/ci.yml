@@ -1,0 +1,59 @@
+# Gates every PR and push to main/develop: the same focused checks CLAUDE.md asks for, plus the
+# suites that guard money and the device database (pgTAP, Drift migrations). Local stack only:
+# no secrets, nothing hosted is touched.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mobile:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/mobile
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.7
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      - name: Drift migrations (the device database is the only copy of the day's takings)
+        run: flutter test test/data/local/migration_test.dart test/data/local/db_safety_test.dart
+
+  admin:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: apps/admin
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: apps/admin/package-lock.json
+      - run: npm ci
+      - run: npm run build
+
+  database:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: supabase/setup-cli@v1
+        with:
+          version: 2.117.0
+      - run: supabase start
+      - name: Schema files and migrations agree
+        run: supabase db schema declarative sync --name ci_check --no-apply | tee sync.log && grep -q "No schema changes found" sync.log
+      - run: supabase db advisors --local --type all
+      - run: supabase test db
