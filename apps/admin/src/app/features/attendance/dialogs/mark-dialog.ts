@@ -309,6 +309,7 @@ export class MarkDialog {
         this.ref.close({ snack: `${paid ? 'Paid' : 'Unpaid'} leave recorded for ${name}` });
       }
     } catch (e) {
+      this.attempt.settle(e);
       this.error.set(toAppError(e).message);
     } finally {
       this.busy.set(false);

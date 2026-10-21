@@ -6,7 +6,8 @@
 -- Checks / errors: forbidden; not_found (hint staff / shift); invalid_payload (hint names the
 --   field); assignment_overlap (the person already has this shift on some of those days).
 --   shift_inactive (a new assignment to a shift that is not in use); period_finalised (a new
---   assignment, or the days an edit moves, falls in a finalised salary period).
+--   assignment, or the days an edit moves, falls in a finalised salary period); own_record
+--   (a non-owner assigning themselves, or editing their own assignment).
 -- Writes: staff_shifts. Returns: {}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_shift_assign (
@@ -39,6 +40,9 @@ begin
     raise exception 'not_found' using hint = 'shift';
   end if;
   select * into v_old from staff_shifts where id = v_id and arena_id = p_arena for update;
+  -- A schedule decides absences and late marks (pay): nobody changes their own.
+  perform _own_record(p_arena, v_staff);
+  if v_old.id is not null then perform _own_record(p_arena, v_old.staff_id); end if;
   if v_old.id is null and not exists (select 1 from shifts where id = v_shift and active) then
     raise exception 'shift_inactive' using hint = 'turn the shift back on before assigning it';
   end if;

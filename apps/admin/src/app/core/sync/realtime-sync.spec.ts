@@ -287,7 +287,7 @@ describe('RealtimeSync', () => {
   });
 
   it('reloads games when game table changes occur', async () => {
-    router.url = '/games';
+    router.url = '/settings/games';
     await sync.setupArena('arena-123', true);
 
     const onGames = postgresHandlers.get('games')!;
@@ -331,16 +331,16 @@ describe('RealtimeSync', () => {
       vi.advanceTimersByTime(AFTER);
     };
 
-    fire('game_resources', '/games');
+    fire('game_resources', '/settings/games');
     expect(mockFloor.refresh).toHaveBeenCalledWith(['gameResources']);
     expect(mockFloor.refresh).not.toHaveBeenCalledWith(['games']);
 
-    fire('game_controls', '/games');
+    fire('game_controls', '/settings/games');
     expect(mockFloor.refresh).toHaveBeenCalledWith(['games']);
-    fire('game_categories', '/games');
+    fire('game_categories', '/settings/games');
     expect(mockFloor.refresh).toHaveBeenCalledWith(['games']);
 
-    fire('staff_profiles', '/users');
+    fire('staff_profiles', '/staff/team');
     expect(mockUsers.refresh).toHaveBeenCalledTimes(1);
     // It may be the signed-in login's own row: its access is read again too.
     expect(mockArenaContext.load).toHaveBeenCalledWith(true);
@@ -410,7 +410,7 @@ describe('RealtimeSync', () => {
   });
 
   it('routes a committed push by its applied kinds', async () => {
-    router.url = '/games';
+    router.url = '/settings/games';
     await sync.setupArena('arena-123', true);
     broadcast({
       arena_id: 'arena-123',
@@ -446,7 +446,7 @@ describe('RealtimeSync', () => {
   });
 
   it('a staff change pushed elsewhere re-reads the login’s own access (deactivation arrives only so)', async () => {
-    router.url = '/users';
+    router.url = '/staff/team';
     await sync.setupArena('arena-123', true);
     broadcast({
       arena_id: 'arena-123',
@@ -530,13 +530,21 @@ describe('RealtimeSync', () => {
     expect(targetsForKind('shift.upsert')).toEqual(['shifts']);
     expect(targetsForKind('shift.assign')).toEqual(['shifts']);
     expect(targetsForKind('staff_holiday.delete')).toEqual(['shifts']);
-    router.url = '/staff/shifts?id=sh1';
+    router.url = '/staff/attendance?view=calendar';
     await sync.setupArena('arena-123', true);
     broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['shift.assign'] });
     vi.advanceTimersByTime(AFTER);
     expect(mockShifts.refresh).toHaveBeenCalledTimes(1);
     expect(mockCalendar.refresh).toHaveBeenCalledTimes(1);
     expect(mockAttendance.refresh).not.toHaveBeenCalled();
+
+    // The schedule itself (Settings › Staff › Schedule) shows the shifts, not the calendar.
+    vi.clearAllMocks();
+    router.url = '/settings/staff/schedule/sh1';
+    broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['shift.upsert'] });
+    vi.advanceTimersByTime(AFTER);
+    expect(mockShifts.refresh).toHaveBeenCalledTimes(1);
+    expect(mockCalendar.stale).toHaveBeenCalledTimes(1);
 
     vi.clearAllMocks();
     router.url = '/sales';
@@ -548,7 +556,7 @@ describe('RealtimeSync', () => {
   });
 
   it('corrections reload the log and the calendar; a saved setting the working hours', async () => {
-    router.url = '/staff/calendar?month=2026-10';
+    router.url = '/staff/attendance?view=calendar&month=2026-10';
     await sync.setupArena('arena-123', true);
     broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['attendance.correct'] });
     vi.advanceTimersByTime(AFTER);
@@ -570,7 +578,7 @@ describe('RealtimeSync', () => {
     expect(targetsForKind('pay_policy.add')).toEqual(['pay']);
     expect(targetsForKind('salary_run.finalise')).toEqual(['pay']);
     expect(targetsForKind('salary_adjustment.add')).toEqual(['pay']);
-    router.url = '/staff/leave?id=lr1';
+    router.url = '/staff/attendance/leave?id=lr1';
     await sync.setupArena('arena-123', true);
     broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['leave.decide'] });
     vi.advanceTimersByTime(AFTER);
@@ -585,16 +593,26 @@ describe('RealtimeSync', () => {
     expect(mockPaySetup.stale).toHaveBeenCalledTimes(1);
     expect(mockLeave.refresh).not.toHaveBeenCalled();
 
+    // Pay setup and leave balances live on Team (/staff/pay-setup redirects there).
     vi.clearAllMocks();
-    router.url = '/staff/pay-setup?id=st1';
+    router.url = '/staff/team?id=st1';
     broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['hr_profile.save'] });
     vi.advanceTimersByTime(AFTER);
     expect(mockPaySetup.refresh).toHaveBeenCalledTimes(1);
+    expect(mockLeave.refresh).toHaveBeenCalledTimes(1);
     expect(mockPayroll.stale).toHaveBeenCalledTimes(1);
-    expect(mockLeave.stale).toHaveBeenCalledTimes(1);
 
     vi.clearAllMocks();
-    router.url = '/settings?id=leave';
+    router.url = '/staff/payroll?id=r1';
+    broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['hr_profile.save'] });
+    vi.advanceTimersByTime(AFTER);
+    expect(mockPayroll.refresh).toHaveBeenCalledTimes(1);
+    expect(mockPaySetup.stale).toHaveBeenCalledTimes(1);
+    expect(mockLeave.stale).toHaveBeenCalledTimes(1);
+    expect(mockLeave.refresh).not.toHaveBeenCalled();
+
+    vi.clearAllMocks();
+    router.url = '/settings/staff/leave';
     broadcast({ arena_id: 'arena-123', kind: 'push', kinds: ['settings.save'] });
     vi.advanceTimersByTime(AFTER);
     expect(mockLeaveRules.refresh).toHaveBeenCalledTimes(1);
@@ -699,7 +717,7 @@ describe('RealtimeSync', () => {
   });
 
   it('catches up once subscribed', async () => {
-    router.url = '/games';
+    router.url = '/settings/games';
     await sync.setupArena('arena-123', true);
     channelSubscribeCallback!('SUBSCRIBED');
     vi.advanceTimersByTime(AFTER);

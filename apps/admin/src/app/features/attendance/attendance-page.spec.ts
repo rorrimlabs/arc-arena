@@ -18,7 +18,7 @@ describe('Staff › Attendance', () => {
   const summary = () => t.text(t.doc().querySelector('p[aria-live="polite"]'));
 
   it('the owner sees it under Staff; the last 7 days are listed, newest first', async () => {
-    t = await startPage('/staff/attendance');
+    t = await startPage('/staff/attendance/records');
     expect(NAV_ITEMS.find((i) => i.path === 'staff/attendance')?.perm).toBe('attendance_review');
     expect(navLabels()).toContain('Attendance');
     expect(t.attendance.loads).toEqual([['2026-10-07', '2026-10-13']]);
@@ -40,31 +40,31 @@ describe('Staff › Attendance', () => {
   });
 
   it('filters by location, staff, review and who is on the clock (all in the URL)', async () => {
-    t = await startPage('/staff/attendance?where=outside');
+    t = await startPage('/staff/attendance/records?where=outside');
     expect(names()).toEqual(['Rohan Das']);
-    await t.harness.navigateByUrl('/staff/attendance?where=unknown');
+    await t.harness.navigateByUrl('/staff/attendance/records?where=unknown');
     await t.settle();
     expect(names()).toEqual(['Kavya Iyer']);
-    await t.harness.navigateByUrl('/staff/attendance?staff=s3&review=1');
+    await t.harness.navigateByUrl('/staff/attendance/records?staff=s3&review=1');
     await t.settle();
     expect(names()).toEqual(['Kavya Iyer', 'Kavya Iyer']);
-    await t.harness.navigateByUrl('/staff/attendance?open=1');
+    await t.harness.navigateByUrl('/staff/attendance/records?open=1');
     await t.settle();
     expect(names()).toEqual(['Priya Nair']);
-    await t.harness.navigateByUrl('/staff/attendance?range=30d');
+    await t.harness.navigateByUrl('/staff/attendance/records?range=30d');
     await t.settle();
     expect(names()).toHaveLength(6);
-    await t.harness.navigateByUrl('/staff/attendance?range=today&where=inside');
+    await t.harness.navigateByUrl('/staff/attendance/records?range=today&where=inside');
     await t.settle();
     expect(names()).toEqual(['Rohan Das', 'Priya Nair']);
   });
 
   it('an entry shows both punches side by side and their pins on the map', async () => {
-    t = await startPage('/staff/attendance?id=e2');
+    t = await startPage('/staff/attendance/records?id=e2');
     const detail = t.doc().querySelector('app-entry-detail') as HTMLElement;
     expect(t.text(detail.querySelector('h2'))).toBe('Rohan Das');
-    const [inSide, outSide] = [...detail.querySelectorAll('section[aria-label]')].map((s) =>
-      t.text(s),
+    const [inSide, outSide] = ['Clock-in', 'Clock-out'].map((side) =>
+      t.text(detail.querySelector(`section[aria-label="${side}"]`)),
     );
     expect(inSide).toContain('Clock-in');
     expect(inSide).toContain('Server time 13 Oct, 10:00 am');
@@ -86,7 +86,7 @@ describe('Staff › Attendance', () => {
   });
 
   it('a punch without a position says so; the map shows the other pin only', async () => {
-    t = await startPage('/staff/attendance?id=e3');
+    t = await startPage('/staff/attendance/records?id=e3');
     const detail = t.doc().querySelector('app-entry-detail') as HTMLElement;
     const inSide = t.text(detail.querySelector('section[aria-label="Clock-in"]'));
     expect(inSide).toContain('Location Location permission off');
@@ -97,7 +97,7 @@ describe('Staff › Attendance', () => {
   });
 
   it('the Map view puts every listed punch on one map with the current geofence', async () => {
-    t = await startPage('/staff/attendance?view=map', 1440, ({ attendanceRules }) => {
+    t = await startPage('/staff/attendance/records?view=map', 1440, ({ attendanceRules }) => {
       attendanceRules.saved = {
         ...DEFAULT_ATTENDANCE_RULES,
         geofence: { lat: 12.9, lng: 77.6, radiusM: 250 },
@@ -112,14 +112,14 @@ describe('Staff › Attendance', () => {
   });
 
   it('exports the filtered entries as CSV', async () => {
-    t = await startPage('/staff/attendance?review=1');
+    t = await startPage('/staff/attendance/records?review=1');
     t.button('Export CSV')!.click();
     await t.settle();
     expect(t.snack()).toBe('4 entries exported');
   });
 
   it('a live reload picks up a new clock-in', async () => {
-    t = await startPage('/staff/attendance');
+    t = await startPage('/staff/attendance/records');
     t.attendance.data.entries.push({
       ...t.attendance.data.entries[0],
       id: 'e9',

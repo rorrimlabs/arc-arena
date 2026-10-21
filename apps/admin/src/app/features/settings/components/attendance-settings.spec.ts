@@ -15,8 +15,8 @@ describe('Settings › Attendance', () => {
   const map = () => t.leaflet.maps[t.leaflet.maps.length - 1];
 
   it('starts on the defaults: no location, flag, 50 m, block mock, 14 hours', async () => {
-    t = await startPage('/settings?id=attendance');
-    expect(t.text(pane().querySelector('h2'))).toBe('Attendance');
+    t = await startPage('/settings/staff/clock-in');
+    expect(t.text(pane().querySelector('h3'))).toBe('Clock-in and location rules');
     expect(t.text(pane())).toContain('No location set');
     const inputs = [...pane().querySelectorAll('input[matinput]')] as HTMLInputElement[];
     expect(inputs.map((i) => i.value)).toEqual(['', '', '100', '50', '14']);
@@ -26,7 +26,7 @@ describe('Settings › Attendance', () => {
   });
 
   it('a click on the map sets the centre; saving sends the five keys', async () => {
-    t = await startPage('/settings?id=attendance');
+    t = await startPage('/settings/staff/clock-in');
     map().click(12.93521234, 77.62459876);
     await t.settle();
     expect(map().layers.map((l) => l.type)).toEqual(['circle', 'marker']);
@@ -50,7 +50,7 @@ describe('Settings › Attendance', () => {
   });
 
   it('dragging the pin moves the centre', async () => {
-    t = await startPage('/settings?id=attendance', 1440, ({ attendanceRules }) => {
+    t = await startPage('/settings/staff/clock-in', 1440, ({ attendanceRules }) => {
       attendanceRules.saved = {
         ...DEFAULT_ATTENDANCE_RULES,
         geofence: { lat: 12.9352, lng: 77.6245, radiusM: 100 },
@@ -67,7 +67,7 @@ describe('Settings › Attendance', () => {
   });
 
   it('Block without a location says so at once and is not saved', async () => {
-    t = await startPage('/settings?id=attendance');
+    t = await startPage('/settings/staff/clock-in');
     radios('block')[0].click();
     await t.settle();
     expect(t.text(pane())).toContain(
@@ -80,7 +80,7 @@ describe('Settings › Attendance', () => {
   });
 
   it('out-of-range values show after a save attempt; Clear location removes the geofence', async () => {
-    t = await startPage('/settings?id=attendance', 1440, ({ attendanceRules }) => {
+    t = await startPage('/settings/staff/clock-in', 1440, ({ attendanceRules }) => {
       attendanceRules.saved = {
         ...DEFAULT_ATTENDANCE_RULES,
         geofence: { lat: 12.9352, lng: 77.6245, radiusM: 100 },
@@ -104,7 +104,7 @@ describe('Settings › Attendance', () => {
   });
 
   it('read-only without the Settings permission', async () => {
-    t = await startPage('/settings?id=attendance', 1440, ({ arena }) => {
+    t = await startPage('/settings/staff/clock-in', 1440, ({ arena }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,

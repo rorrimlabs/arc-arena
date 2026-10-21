@@ -228,6 +228,8 @@ void main() {
     expect(after!.name, 'EA SPORTS FC 26', reason: 'the save ran');
     expect(after.aliases, game.aliases);
     expect(after.lastPlayedAt, game.lastPlayedAt);
+    // Let the "saved" toast time out before the tree goes.
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   });

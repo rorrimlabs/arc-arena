@@ -124,6 +124,7 @@ export class LeaveAdjustDialog {
       await this.store.adjust(this.data.balance.staffId, days, this.reason(), this.attempt);
       this.ref.close(true);
     } catch (e) {
+      this.attempt.settle(e);
       this.error.set(toAppError(e).message);
     } finally {
       this.busy.set(false);

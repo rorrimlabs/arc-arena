@@ -8,9 +8,7 @@ import {
   AgeRating,
   BillKind,
   BillStatus,
-  Charge,
   CompatStatus,
-  Customer,
   Game,
   GameCompat,
   GameFan,
@@ -24,7 +22,6 @@ import {
   StationFigures,
   StationInput,
   StationStatus,
-  Visit,
 } from './floor.models';
 
 /**

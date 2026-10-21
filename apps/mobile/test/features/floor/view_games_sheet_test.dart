@@ -95,6 +95,9 @@ void main() {
     expect(find.textContaining('disc scratched'), findsOneWidget);
 
     final row = find.ancestor(of: find.text(first.name), matching: find.byType(ListTile));
+    // Bring the whole row (not just its note) clear of the Start button.
+    await tester.ensureVisible(row);
+    await settle(tester);
     await tester.tap(find.descendant(
         of: row, matching: find.byTooltip('Set status on HEX')));
     await settle(tester);

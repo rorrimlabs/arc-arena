@@ -240,6 +240,7 @@ export class CorrectDialog {
         snack: entry ? `${name}'s entry corrected` : `Entry added for ${name ?? 'them'}`,
       });
     } catch (e) {
+      this.attempt.settle(e);
       this.error.set(toAppError(e).message);
     } finally {
       this.busy.set(false);

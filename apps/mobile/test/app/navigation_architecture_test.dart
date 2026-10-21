@@ -268,7 +268,8 @@ void main() {
       await tester.tap(find.text('More'));
       await settle(tester);
 
-      await tester.drag(find.byType(ListView), const Offset(0, -200));
+      // Far enough that the row clears the bottom navigation bar.
+      await tester.drag(find.byType(ListView), const Offset(0, -300));
       await settle(tester);
       await tester.tap(find.text('Controller board'));
       await settle(tester);

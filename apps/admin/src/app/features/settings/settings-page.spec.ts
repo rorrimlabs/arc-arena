@@ -8,14 +8,15 @@ describe('Settings', () => {
   it('lists the groups and opens Arena on a wide screen', async () => {
     t = await startPage('/settings');
     expect(t.rows().map(t.rowText)).toEqual([
-      ['Arena', 'Name, area, hours'],
-      ['Station types', 'Game Station, VR, Pool Table…'],
+      ['Arena', 'Name, area, hours, what you rent out'],
+      ['Station types', 'What you sell: consoles, tables, grounds…'],
       ['Accessory types', 'Controller, VR headset, wheel…'],
+      ['Games', 'Library, platforms, where each is playable'],
       ['Billing', 'Payment methods, discount limits'],
       ['Billing rules', 'Rounding, grace, minimum charge'],
       ['Sessions', 'Time options and warnings'],
-      ['Attendance', 'Arena location, clock-in rules'],
-      ['Working hours', 'Late grace, half days, extra hours'],
+      ['Owners & access', 'Who owns the venue, inviting an owner'],
+      ['Staff', 'Schedule, clock-in, attendance, leave, payroll rules'],
     ]);
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     expect(t.text(arena.querySelector('h2'))).toBe('Arena');
@@ -30,7 +31,7 @@ describe('Settings', () => {
   });
 
   it('saves the arena name, area and phone; the switcher picks up the new name', async () => {
-    t = await startPage('/settings?id=arena');
+    t = await startPage('/settings/arena');
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     t.type('Arena name', '404 Arena HSR', arena);
     t.type('Area', 'HSR Layout', arena);
@@ -44,7 +45,7 @@ describe('Settings', () => {
   });
 
   it('refuses a phone with letters', async () => {
-    t = await startPage('/settings?id=arena');
+    t = await startPage('/settings/arena');
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     t.type('Phone', 'call me', arena);
     await t.settle();
@@ -56,7 +57,7 @@ describe('Settings', () => {
   });
 
   it('saves opening hours only (business_hours carries no happy-hour windows)', async () => {
-    t = await startPage('/settings?id=arena');
+    t = await startPage('/settings/arena');
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     const monday = arena.querySelector('mat-slide-toggle button') as HTMLButtonElement;
     expect(monday.getAttribute('aria-checked')).toBe('false');
@@ -73,7 +74,7 @@ describe('Settings', () => {
   });
 
   it('refuses a closing time before the opening time', async () => {
-    t = await startPage('/settings?id=arena');
+    t = await startPage('/settings/arena');
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     t.type('Closes at', '13:00', arena);
     await t.settle();
@@ -85,7 +86,7 @@ describe('Settings', () => {
   });
 
   it('billing: payment switches save the floor options; the last method stays on', async () => {
-    t = await startPage('/settings?id=billing');
+    t = await startPage('/settings/billing');
     const billing = t.doc().querySelector('app-billing-settings') as HTMLElement;
     const rows = () => [...billing.querySelectorAll('app-toggle-row')];
     const labels = rows().map((r) => t.text(r.querySelector('span span')));
@@ -122,7 +123,7 @@ describe('Settings', () => {
   });
 
   it('sessions: time options and the warning save the floor options', async () => {
-    t = await startPage('/settings?id=sessions');
+    t = await startPage('/settings/sessions');
     const sessions = t.doc().querySelector('app-session-settings') as HTMLElement;
     const chip = (label: string) =>
       [...sessions.querySelectorAll('mat-chip-option')].find((c) => t.text(c) === label)!;
@@ -165,7 +166,7 @@ describe('Settings', () => {
     }
 
     it('shows the arena’s rules (the defaults until it saves its own)', async () => {
-      t = await startPage('/settings?id=rules');
+      t = await startPage('/settings/rules');
       expect(t.text(rules().querySelector('h2'))).toBe('Billing rules');
       expect(t.text(rules().querySelector('h2 + div'))).toBe(
         'Per minute (exact) · bills rounded to nearest ₹1',
@@ -186,7 +187,7 @@ describe('Settings', () => {
     });
 
     it('saves the whole policy with policy.save; block rounding shows for blocks only', async () => {
-      t = await startPage('/settings?id=rules');
+      t = await startPage('/settings/rules');
       await pick('Charge partial time', 'In 15-minute blocks');
       expect(values()[1]).toBe('Block rounding: Always round up');
       await pick('Block rounding', 'Round to nearest');
@@ -227,7 +228,7 @@ describe('Settings', () => {
     });
 
     it('keeps rules the editor does not offer, and shows a saved value outside the choices', async () => {
-      t = await startPage('/settings?id=rules', 1440, (apis) => {
+      t = await startPage('/settings/rules', 1440, (apis) => {
         apis.pricing.policy = {
           ...apis.pricing.policy,
           lateArrival: 'planned',
@@ -249,7 +250,7 @@ describe('Settings', () => {
     });
 
     it('discard puts the saved rules back; a refusal keeps the draft', async () => {
-      t = await startPage('/settings?id=rules');
+      t = await startPage('/settings/rules');
       await pick('If they leave early', 'Bill the full booked duration');
       t.pricing.failNext = 'forbidden';
       t.button('Save', bar()!)!.click();
@@ -282,7 +283,7 @@ describe('Settings', () => {
       [...types().querySelectorAll('li')].find((li) => li.textContent?.includes(name))!;
 
     it('lists every type, on or off, with how it is billed', async () => {
-      t = await startPage('/settings?id=types');
+      t = await startPage('/settings/types');
       const names = [...types().querySelectorAll('li span.font-medium')].map((e) => t.text(e));
       expect(names).toEqual(['PlayStation 5', 'VR', 'Pool']);
       expect(t.text(rowOf('PlayStation 5'))).toContain(
@@ -291,15 +292,17 @@ describe('Settings', () => {
     });
 
     it('a new arena has none and says what to add', async () => {
-      t = await startPage('/settings?id=types', 1440, (apis) => {
+      t = await startPage('/settings/types', 1440, (apis) => {
         apis.pricing.types = [];
       });
-      expect(t.text(types())).toContain('No station types yet. Add one, e.g. Game Station');
+      expect(t.text(types())).toContain(
+        'No station types yet. Pick one from the catalog (PlayStation, Pool table, Football turf…) or add your own.',
+      );
     });
 
     it('adds a type with a code that follows its name', async () => {
-      t = await startPage('/settings?id=types');
-      t.button('Type', types())!.click();
+      t = await startPage('/settings/types');
+      t.button('Custom', types())!.click();
       await t.settle();
       // Happy hours are pricing rules now: the type has no happy-hour switch.
       expect(t.text(t.dialog())).not.toMatch(/happy/i);
@@ -316,8 +319,8 @@ describe('Settings', () => {
     });
 
     it('a taken code is refused in the dialog', async () => {
-      t = await startPage('/settings?id=types');
-      t.button('Type', types())!.click();
+      t = await startPage('/settings/types');
+      t.button('Custom', types())!.click();
       await t.settle();
       fill('Name', 'Another');
       fill('Code', 'PS5');
@@ -329,19 +332,27 @@ describe('Settings', () => {
     });
 
     it('a type with stations cannot be turned off or removed', async () => {
-      t = await startPage('/settings?id=types');
-      (rowOf('PlayStation 5').querySelector('mat-slide-toggle button') as HTMLButtonElement).click();
+      t = await startPage('/settings/types');
+      (
+        rowOf('PlayStation 5').querySelector('mat-slide-toggle button') as HTMLButtonElement
+      ).click();
       await t.settle();
       expect(t.snack()).toBe('Remove PlayStation 5 from its 4 stations first');
       expect(t.pricing.types.find((x) => x.id === 't-ps5')?.active).toBe(true);
-      (rowOf('PlayStation 5').querySelector('button[aria-label="Remove PlayStation 5"]') as HTMLButtonElement).click();
+      (
+        rowOf('PlayStation 5').querySelector(
+          'button[aria-label="Remove PlayStation 5"]',
+        ) as HTMLButtonElement
+      ).click();
       await t.settle();
       expect(t.text(t.dialog())).toContain('4 stations offer it');
     });
 
     it('removes a type no station offers: never used → deleted', async () => {
-      t = await startPage('/settings?id=types');
-      (rowOf('Pool').querySelector('button[aria-label="Remove Pool"]') as HTMLButtonElement).click();
+      t = await startPage('/settings/types');
+      (
+        rowOf('Pool').querySelector('button[aria-label="Remove Pool"]') as HTMLButtonElement
+      ).click();
       await t.settle();
       t.button('Remove', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
       await t.settle();
@@ -354,15 +365,15 @@ describe('Settings', () => {
     const kinds = () => t.doc().querySelector('app-accessory-types') as HTMLElement;
 
     it('lists kinds with whether they count as a controller', async () => {
-      t = await startPage('/settings?id=accessories');
+      t = await startPage('/settings/accessories');
       const lines = [...kinds().querySelectorAll('li')].map((li) => t.text(li));
       expect(lines[0]).toContain('Controller Counts as a controller · 2 on stations');
       expect(lines[1]).toContain('VR headset Tracked only · 1 on stations');
     });
 
     it('adds a kind that is tracked only', async () => {
-      t = await startPage('/settings?id=accessories');
-      t.button('Type', kinds())!.click();
+      t = await startPage('/settings/accessories');
+      t.button('Custom', kinds())!.click();
       await t.settle();
       t.type('Name', 'Steering wheel', t.dialog()!);
       t.button('Add type', t.dialog()!)!.click();
@@ -376,8 +387,10 @@ describe('Settings', () => {
     });
 
     it('a kind still on accessories is turned off, not deleted', async () => {
-      t = await startPage('/settings?id=accessories');
-      (kinds().querySelector('button[aria-label="Remove VR headset"]') as HTMLButtonElement).click();
+      t = await startPage('/settings/accessories');
+      (
+        kinds().querySelector('button[aria-label="Remove VR headset"]') as HTMLButtonElement
+      ).click();
       await t.settle();
       t.button('Remove', t.dialog()!.querySelector('mat-dialog-actions')!)!.click();
       await t.settle();
@@ -388,7 +401,7 @@ describe('Settings', () => {
   });
 
   it('billing: manual discount limits save as discount_options', async () => {
-    t = await startPage('/settings?id=billing');
+    t = await startPage('/settings/billing');
     const billing = t.doc().querySelector('app-billing-settings') as HTMLElement;
     t.type('Max staff discount', '15', billing);
     await t.settle();

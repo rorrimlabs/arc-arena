@@ -42,6 +42,8 @@ void main() {
   }
 
   Future<void> disposeApp(WidgetTester tester) async {
+    // Let any toast (3 s, or 6 s for an error) time out first.
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   }

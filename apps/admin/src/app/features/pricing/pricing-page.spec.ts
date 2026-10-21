@@ -174,7 +174,7 @@ describe('Pricing', () => {
     expect(section('pricing-types')?.textContent).toContain('No station types yet.');
     expect(section('pricing-rules')?.textContent).toContain('None yet.');
     const link = section('pricing-types')?.querySelector('a') as HTMLAnchorElement;
-    expect(link.getAttribute('href')).toBe('/settings?id=types');
+    expect(link.getAttribute('href')).toBe('/settings/types');
   });
 
   it('one price per row: no happy-hour column', async () => {

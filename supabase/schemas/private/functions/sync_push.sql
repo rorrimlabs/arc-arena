@@ -11,7 +11,7 @@
 -- (lock / serialization 40xxx, 55P03, connection 08xxx, resources 53xxx,
 -- internal XXxxx) yields status 'retry', is not recorded, and stops the batch so
 -- order is kept: a resend can still apply it. An op whose op_id is not a uuid
--- (invalid_op_id) or belongs to another arena (op_id_reused) is refused on its
+-- (invalid_op_id) or belongs to another arena or op kind (op_id_reused) is refused on its
 -- own, unrecorded, without aborting the rest. At most 200 ops per call
 -- (batch_too_large, 54000). A statement timeout still aborts the whole call
 -- (PL/pgSQL cannot catch it safely): devices halve their batch and resend.
@@ -54,7 +54,7 @@ begin
     perform pg_advisory_xact_lock(hashtextextended(v_id::text, 0));
     select * into v_prev from sync_ops where op_id = v_id;
     if found then
-      if v_prev.arena_id <> p_arena then
+      if v_prev.arena_id <> p_arena or v_prev.kind <> coalesce(v_kind, '?') then
         v_out := v_out || jsonb_build_array(jsonb_build_object('op_id', v_id,
           'status', 'rejected', 'error', 'op_id_reused', 'replayed', false));
         continue;

@@ -20,7 +20,7 @@ staff member only ever sees the arenas they are an active member of.
 | `migrations/` | **Generated** by `supabase db schema declarative sync` — never edit. `20261015054055_declarative_sync` is the squashed baseline (the old `0001`–`0016` history is gone; see `docs/DEPLOY_SUPABASE.md` §4a). |
 | `tests/` | pgTAP (`supabase test db --local`) |
 | `seed.sql` | Intentionally empty: arenas start with no catalog (owners build it on the dashboard). |
-| `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station; `run.sh` (station race), `run_pads.sh` (pad races), `fixture.sh` (their own arena, removed on exit). Use `docker exec psql` on the local container (`tool/verify_all.sh --with-psql`). |
+| `concurrency_tests/` | `race_A.sql` / `race_B.sql`: two halves of a two-device race on one station; `run.sh` (station race), `run_pads.sh` (pad races), `fixture.sh` (their own arena, removed on exit). Use `docker exec psql` on the local container. |
 | `audit/security_audit.sql` | Read-only report of the API surface (grants, SECURITY DEFINER, RLS). Its allowlist of client functions predates the invitation/sales/pricing RPCs (it still names `add_staff_by_email`), so it reports the newer client API as `FAIL`; test 13 is the current assertion. |
 | `templates/confirmation.html` | Sign-up confirmation link. An owner signing up (user metadata `signup`, redirect to `/register`) gets the confirmation wording; an invited NEW address (redirect to `/accept-invite`) gets the invitation wording |
 | `templates/magic_link.html` | Sign-in link, used only for invitations to an address that already has a confirmed login |
@@ -85,7 +85,7 @@ missing revoke shows up as a generated `grant … to anon` — reject that migra
   `_create_arena_with_owner`, which creates the arena **empty**: no station types, accessory
   types, prices, stations, games or accessories. The owner adds them on the dashboard through
   `sync_push` (`activity.upsert`, `accessory_kind.upsert`, `rate.upsert`, `resource.upsert`,
-  `controller.upsert`, `game.upsert`, `game.set_compat`). `_seed_arena_catalog` is a test fixture only (pgTAP, `tool/sync_it.sh`). A
+  `controller.upsert`, `game.upsert`, `game.set_compat`). `_seed_arena_catalog` is a test fixture only (pgTAP). A
   sign-up belongs to no arena until then. Staff and co-owners join **only by accepting an
   invitation**: dashboard Users → Invite (name, e-mail, role, permissions) → `invite_member` as
   the caller (staff invites need `settings`; granting
