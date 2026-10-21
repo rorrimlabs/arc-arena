@@ -289,7 +289,8 @@ void main() {
       final j = currentSnapshot().toJson();
       expect(j.containsKey('rules'), isFalse);
       expect((j['hours'] as Map).keys, ['open']);
-      expect((j['activities'] as List).first, {'code': 'PS5', 'duration_model': 'hourly'});
+      expect((j['activities'] as List).first,
+          {'code': 'PS5', 'duration_model': 'hourly', 'overtime_grace_minutes': 0});
       expect({for (final r in j['rates'] as List) r['band']}, {'standard'});
     });
 

@@ -44,7 +44,7 @@ empty.
 | Fresh-project compatibility | The baseline creates every schema object on an empty project (verified by `supabase db reset --local` on the same Postgres 17 image). Extensions: `pgcrypto` (already present on hosted — `if not exists` is a no-op), `btree_gist` in `extensions`. The migrations add the `realtime.messages` policies and tables to the `supabase_realtime` publication; none inserts users or needs superuser beyond what `postgres` has on hosted. **It cannot be pushed onto a project that already has the old history** (§4a). |
 | `seed.sql` | Intentionally empty (arenas start with no catalog). `db push` does not run it unless `--include-seed` is passed — don't. The real arena is created by the owner's sign-up or once by `bootstrap_owner` (step 7). |
 | Client write path | No table or view is writable by `anon`/`authenticated`; every change goes through `sync_push` (permission + rule checks per op). |
-| RLS | Enabled on every public table; every policy is scoped to arena membership. Payment and charge rows also need `bill`, `money` or `reports`; customers `start`, `members`, `money` or `reports`; `audit_log` owner level; `staff_invites` has no client access. Views are not client-readable (views bypass RLS). The device feed (`sync_pull`) is unchanged: every active member's device still receives the arena's rows, payments and customers included (an open product decision). |
+| RLS | Enabled on every public table; every policy is scoped to arena membership. Payment and charge rows also need `bill`, `money` or `reports`; customers `start`, `members`, `money` or `reports`; `audit_log` owner level; `staff_invites` has no client access. Views are not client-readable (views bypass RLS). The device feed (`sync_pull`) applies the same rules (`_sync_hidden`): customers, money rows and coupons reach only devices whose login may read them; coupons (`discounts`) need `discount`, `settings`, `money` or `reports`. |
 | Client API | Signed-in users can execute exactly: `sync_push`, `sync_pull`, `sync_fetch_entity`, `my_arenas`, `create_my_arena` (sign-up: confirmed logins, one arena each), `invite_member` / `accept_invite` / `revoke_invite` / `arena_invites` (invitations), `arena_staff` (owner's staff list with e-mails), `arena_sales` / `arena_sale` (owner's Sales screen), `arena_pricing` (owner's Pricing screen), `app_is_owner` (asserted by pgTAP test 13). `anon` can call nothing. `bootstrap_owner` is database-only; `create_arena`, `add_staff_by_email` and `add_member_by_email` are dropped. Found and fixed in 0014: trigger functions still had Postgres' default EXECUTE grant (unreachable, but removed). |
 | SECURITY DEFINER | All pin `search_path`. None in an exposed schema is executable by `anon` or `authenticated` (lints 0028/0029): the client API's definer bodies live in schema `private` (not exposed by the Data API) and `public` holds `security invoker` wrappers. Server-only definer functions (`op_*`, `_pr_*`, `bootstrap_owner`, …) stay in `public` without client EXECUTE. |
 | Realtime | One private channel per arena (`arena:<arena uuid>`); `realtime.messages` policies admit only active members of that arena. Postgres Changes on 29 published tables (INSERT/UPDATE, RLS-filtered); a `sync` broadcast after committed ops. No business data in Realtime — events only trigger authorized pulls/refetches (SYNC.md "Read path"). |
@@ -123,8 +123,8 @@ Local and Remote columns must both show the same list.
 
 Rules while linked:
 * **Never** run `supabase db reset --linked` or `supabase test db --linked` (the pgTAP files insert users and fixtures).
-* Every repo script (`tool/verify_all.sh`, `tool/sync_it.sh`, `tool/pricing_parity.sh`, the race scripts) targets the local Docker container only and refuses anything else; keep using them locally.
-* Future schema changes: edit `supabase/schemas/` and generate the migration (CLAUDE.md, "Supabase — declarative schemas only"; never write one by hand), run `bash tool/verify_all.sh --with-it --with-psql` locally, then `supabase db push --dry-run` / `db push`.
+* The race scripts (`supabase/concurrency_tests/`) target the local Docker container only and refuses anything else; keep using them locally.
+* Future schema changes: edit `supabase/schemas/` and generate the migration (CLAUDE.md, "Supabase — declarative schemas only"; never write one by hand), run `supabase db reset --local` and `supabase test db` locally, then `supabase db push --dry-run` / `db push`.
 
 ## 4a. The existing hosted dev project (old history)
 
@@ -254,10 +254,11 @@ of the app. Serve it at the https URL you set as Site URL (step 3.4).
   forged or wrong timestamps. Audit evidence: server receipt time and sender of
   every op (`sync_ops.created_at`, `user_id`). See SYNC.md.
 * A Dart pricing change needs a matching migration and a green
-  `tool/pricing_parity.sh` (SYNC.md "Changing pricing").
+  Dart-vs-SQL parity check (SYNC.md "Changing pricing").
 * No backups/PITR policy has been chosen for the hosted project (plan-dependent).
 * Realtime only nudges: a missed event is caught by the floor app's 10 s poll
   and by the catch-up pull on reconnect (the dashboard refetches on reconnect).
-* Every active member's device receives the arena's rows through `sync_pull`,
-  payments and customers included, even where direct reads are narrower.
-  Whether floor devices should hold less is an open product decision.
+* `sync_pull` hides customers, money rows and coupons from logins that may not
+  read them, but rows already on a device stay there when a member's
+  permissions are narrowed. Bookings (party name, phone) and bill totals still
+  reach every active member: an open product decision.

@@ -37,7 +37,9 @@ void main() {
   const owner = AppUser(
     id: 'owner',
     name: 'Arjun Mehra',
-    perms: {Permission.start, Permission.bill, Permission.discount},
+    // Owner level (money): below it a waive is capped at the manual-discount
+    // limit (waive_over_limit), which is not what these tests are about.
+    perms: {Permission.start, Permission.bill, Permission.discount, Permission.money},
   );
 
   setUp(() async {

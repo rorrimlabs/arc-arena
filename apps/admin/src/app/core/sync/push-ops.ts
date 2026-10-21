@@ -27,6 +27,17 @@ export class Attempt {
     }
     return id;
   }
+
+  /**
+   * After a failed Save. A refusal with nothing applied recorded no money or record, so the
+   * next Save (with corrected values) gets new ids instead of replaying that refusal. A lost
+   * answer, a `retry` or a partly applied batch keeps them.
+   */
+  settle(error: unknown): void {
+    if (error instanceof PushRefusal && error.code !== 'retry' && !error.applied.length) {
+      this.ids.clear();
+    }
+  }
 }
 
 /** The arena's private Realtime channel (Realtime Authorization admits only its members). */
@@ -124,7 +135,7 @@ export async function pushOps(
   return results.map((r) => r.result ?? {});
 }
 
-type PushResult = { status: string; error?: string; result?: Record<string, unknown> };
+interface PushResult { status: string; error?: string; result?: Record<string, unknown> }
 
 /** Waits before resending a batch the server answered `retry` (then it is refused). */
 const RETRY_DELAYS_MS = [250, 750];

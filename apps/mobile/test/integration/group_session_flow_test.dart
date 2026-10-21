@@ -194,8 +194,25 @@ void main() {
     expect((await groups.activeGroups()), hasLength(1),
         reason: 'the group keeps running');
 
-    final waived =
+    // Below owner level a waive is capped at the manual-discount limit, so
+    // staff cannot write the whole bill off; an owner can.
+    final capped =
         await actions.end(active, markWaived: true, waiveReason: 'Tournament prize');
+    expect(capped.failureOrNull?.code, 'waive_over_limit');
+    final owner = GroupSessionActions(
+      groups: groups,
+      sessions: LocalSessionRepository(db, clock),
+      catalog: LocalCatalogRepository(db),
+      bookings: LocalBookingRepository(db, clock),
+      clock: clock,
+      guard: const PermissionGuard(AppUser(
+        id: 'u1',
+        name: 'Arjun Mehra',
+        perms: {Permission.start, Permission.bill, Permission.discount, Permission.money},
+      )),
+    );
+    final waived =
+        await owner.end(active, markWaived: true, waiveReason: 'Tournament prize');
     expect(waived.isOk, isTrue, reason: waived.failureOrNull?.display);
     expect(waived.valueOrNull!.paymentStatus, PaymentStatus.waived);
   });

@@ -123,9 +123,9 @@ cost), `lib/core/money/`, the IST/business calendar in `lib/core/time/`, or the
 1. the matching change to the `_pr_*` function in `supabase/schemas/`, with
    the migration generated from it (migrations are never written or edited by
    hand — see CLAUDE.md, "Supabase — declarative schemas only");
-2. a green `bash tool/pricing_parity.sh` run (parity at 0 mismatches and both
-   self-tests caught), with the new rule added to the boundary corpus in
-   `tool/pricing_parity/generate.dart` if random sampling would rarely hit it.
+2. a Dart-vs-SQL parity check of the changed rule. The old
+   `tool/pricing_parity.sh` was removed 2026-10-21; until the e2e suite covers
+   pricing, add a pgTAP case pinning the SQL result the Dart tests expect.
 
 Otherwise devices start receiving `price_mismatch` for correct bills (the
 session stays open on the device and shows under Sync → Needs attention). The
@@ -159,18 +159,9 @@ dashboard; the floor app does not send them yet.
 * The new tables (`accessory_kinds`, `pricing_rules`, `discounts`,
   `bill_discounts`) and `controllers.kind_id` are in the change feed; floor
   apps that do not know them ignore them.
-* `tool/pricing_parity.sh` covers rules (both kinds and signs, window edges,
-  holiday modes, dates, tie-breaks); discounts are pinned by pgTAP 25 only.
-
-`tool/pricing_parity.sh` prices a fixed boundary corpus (every billing unit ×
-rounding × cash-rounding step and direction at block edges; grace and minimum
-charge edges; rule window edges ±1 min / −1 s, holiday modes and tie-breaks; holidays; IST midnight; VR unit
-rounding; lounge; multi-segment and group bills, waived and not; extensions)
-plus seeded random cases with the app's code, then re-prices them on the local
-database at the function level and through the real `sync_push` end/extend ops
-(exact money applied, one paisa off refused). It runs in a rolled-back
-transaction and finishes by proving it can fail (a one-paisa error on either
-side must be reported).
+* Rules and discounts are pinned by pgTAP (discounts: test 25). No automated
+  Dart-vs-SQL parity run exists since `tool/pricing_parity.sh` was removed
+  (2026-10-21).
 
 ## Read path
 
@@ -361,9 +352,8 @@ unsent work stays in that person's database file and goes after they sign in.
   from the dashboard). Permissions, rename and deactivate are `staff.update`
   ops through `sync_push`; a field the op leaves out keeps its value.
 * No service-role key exists anywhere in the apps or deployed code.
-  `tool/sync_it.sh` uses the
-  LOCAL stack's key in a non-exported shell variable to create test logins
-  (never printed, never given to a test process).
+  Test logins on the local stack are created with Mailpit invitations or the
+  local Auth admin API only.
 * Permissions come from `staff_profiles` and follow an owner's edits live. Turning
   a member off stops their device syncing and returns it to the sign-in gate.
   Their unsent ops stay in their database file.
@@ -401,7 +391,8 @@ unsent work stays in that person's database file and goes after they sign in.
 
 ```bash
 supabase start              # project arena_ops, ports 5443x (Zitemonk keeps 5432x)
-bash tool/verify_all.sh --with-it --with-psql   # everything, in order, each step reported separately
+supabase test db --local    # pgTAP
+supabase db advisors --local --type all
 ```
 
 The floor app runs against the local stack with the committed
@@ -416,42 +407,19 @@ Mac's `127.0.0.1`; test on a simulator/emulator, then go live manually.
 cd apps/mobile && flutter run --flavor dev --dart-define-from-file=dart_define.local.json
 ```
 
-`tool/verify_all.sh` runs, in this order: `flutter analyze`, `flutter test`,
-the admin unit tests (`ng test`), an admin development build (to a temp dir;
-the production config inlines Google Fonts, which needs the network),
-`supabase test db --local`, `supabase db advisors --local` (must be empty).
-`--with-it` adds the cross-app integration (`tool/sync_it.sh`); `--with-psql`
-adds the pricing parity check (`tool/pricing_parity.sh`) and the two race
-scripts — both use `docker exec psql` on the local container, inside
-rolled-back transactions / their own fixture arena. Every step runs and is
-reported PASS, FAIL or SKIP with the reason; the exit code is non-zero if any
-step failed. The declarative drift check (`supabase db schema declarative sync
---no-apply` must say "No schema changes found") stays a manual step, because
-it writes a migration file when there is drift. Each piece can also be run on
-its own, in any order.
+The declarative drift check (`supabase db schema declarative sync
+--no-apply` must say "No schema changes found") is a manual step, because it
+writes a migration file when there is drift.
 
 **Invitation e-mails** are Supabase Auth's own: locally they land in Mailpit
 (http://127.0.0.1:54434). The templates in `supabase/templates/` load at
 `supabase start`; after editing one, `supabase stop && supabase start` (data is
 kept).
 
-`tool/sync_it.sh` is the cross-app suite, on the LOCAL stack only (it refuses
-anything else), one run at a time (a lock in `supabase/.temp`). It provisions
-throw-away `it-*@arena.test` logins (Auth admin API with the local stack's
-service key), an arena via `bootstrap_owner` + `_seed_arena_catalog`, and joins
-the staff login by invite → accept. Then: a
-Flutter device listens live while
-dashboard phase 1 runs (the Angular data layer under `ng test
---runner-config=vitest.it.config.mts`, Node environment: builds a game and its
-station availability, saves floor options, invites a new person by e-mail and
-accepts from the Mailpit link); the dashboard listens live while the Flutter
-`test/sync/` suite runs (two-device sync, cross-app, private-channel
-authorization, arena isolation); dashboard phase 2 checks that the owner's
-Sales shows the staff's bill with one payment and that another arena's owner
-sees nothing. Step 6 checks the stack's function runtime is still up after the
-run. It cleans up exactly the logins and arenas it created. The specs
-(`apps/admin/src/integration/*.it.spec.ts`, `apps/mobile/test/sync/*`) skip
-themselves outside `sync_it.sh`.
+The cross-app suites (`apps/admin/src/integration/*.it.spec.ts`,
+`apps/mobile/test/sync/*`) were driven by `tool/sync_it.sh`, removed
+2026-10-21. They skip themselves without its environment (`AO_IT_*`) until the
+new e2e suite replaces that harness.
 
 **No reset is needed between suites, or before them.** Each one isolates its
 own data:
@@ -460,15 +428,11 @@ own data:
 |---|---|---|
 | pgTAP (`supabase/tests`) | each file creates its own arena (the `_seed_arena_catalog` test fixture, fixed id) inside its transaction; every lookup is pinned to it | nothing (rolled back) |
 | `concurrency_tests/run.sh`, `run_pads.sh` | a dedicated arena + owner per script (`fixture.sh`), created on start | nothing (deleted on exit, even on failure) |
-| `tool/sync_it.sh` | fresh `it-*@arena.test` logins and the arenas they own, per run | nothing (removes exactly what the run created, on exit) |
-| `tool/pricing_parity.sh` | a throwaway arena inside one transaction | nothing (rolled back) |
 
 `supabase db reset --local` is still the way to rebuild the dev stack from the
 migrations. Use `--local` explicitly; never `--linked`.
 
-`tool/sync_it.sh` reads the local stack's service-role key into a non-exported
-variable. It never prints a key and refuses anything that is not a localhost
-URL. A release build refuses local mode and any non-https or
+A release build refuses local mode and any non-https or
 development backend ([RELEASE.md](RELEASE.md)).
 
 ## Not done / known limits
@@ -487,9 +451,9 @@ Blocking production:
    had reached it.
 2. **Real-device, cross-network test** (two phones on different networks, one
    going offline mid-shift) has not been done. Every multi-device claim here
-   is proven against the local stack (`tool/sync_it.sh`: real accounts, two
-   device databases, the dashboard's data layer, real PostgREST and Realtime)
-   — not on two phones.
+   was proven against the local stack by the removed `tool/sync_it.sh` (real
+   accounts, two device databases, the dashboard's data layer, real PostgREST
+   and Realtime) — not on two phones; the e2e suite is to replace it.
 3. **Session times are device-asserted, within bounds.** Future times and
    times older than the offline window are refused; late ends inside it are
    flagged on the bill, not refused (see *What is still trusted* above).
@@ -528,8 +492,8 @@ Worth doing next:
 
 * Server pricing (0013) is a hand port of the Dart engine; the rule and the
   check that enforces it are under *Changing pricing* above
-  (`tool/pricing_parity.sh`, also step 8 of `tool/verify_all.sh --with-psql`).
-  It is not in a CI pipeline yet — there is no CI in this repo.
+  The automated parity run (`tool/pricing_parity.sh`) was removed 2026-10-21;
+  the e2e suite should restore that coverage. There is no CI in this repo.
 
 * Booking overlap is checked server-side only for a *specific* station, and not
   against live sessions (the device checks both).

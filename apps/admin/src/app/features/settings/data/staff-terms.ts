@@ -4,7 +4,7 @@ import { toAppError } from '../../../core/auth/auth-api';
 import { LoginScope } from '../../../core/auth/login-scope';
 import { dbError } from '../../../core/supabase/db-error';
 import { Supabase } from '../../../core/supabase/supabase';
-import { pushOps } from '../../../core/sync/push-ops';
+import { Attempt, pushOps } from '../../../core/sync/push-ops';
 
 /**
  * The venue's staff terms (docs/STAFF_API.md): append-only versions in `staff_terms`, the
@@ -98,7 +98,7 @@ export function termsProblems(d: TermsDraft): TermsProblems {
 export abstract class TermsApi {
   abstract load(arenaId: string): Promise<TermsData>;
   /** Resolves with the new version number. */
-  abstract publish(arenaId: string, draft: TermsDraft): Promise<number>;
+  abstract publish(arenaId: string, draft: TermsDraft, attempt: Attempt): Promise<number>;
 }
 
 type Row = Record<string, unknown>;
@@ -159,14 +159,15 @@ class SupabaseTermsApi extends TermsApi {
     };
   }
 
-  async publish(arenaId: string, draft: TermsDraft): Promise<number> {
+  async publish(arenaId: string, draft: TermsDraft, attempt: Attempt): Promise<number> {
     const [result] = await pushOps(
       await this.supabase.client(),
       arenaId,
       [
         {
           kind: 'terms.publish',
-          payload: { id: crypto.randomUUID(), title: draft.title.trim(), body: draft.body.trim() },
+          opId: attempt.id('op'),
+          payload: { id: attempt.id('terms'), title: draft.title.trim(), body: draft.body.trim() },
         },
       ],
       TERMS_MESSAGES,
@@ -229,8 +230,8 @@ export class TermsStore {
     }
   }
 
-  async publish(draft: TermsDraft): Promise<number> {
-    const version = await this.api.publish(this.arena.current().id, draft);
+  async publish(draft: TermsDraft, attempt = new Attempt()): Promise<number> {
+    const version = await this.api.publish(this.arena.current().id, draft, attempt);
     await this.load(true);
     return version;
   }

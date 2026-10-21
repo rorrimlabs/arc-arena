@@ -8,6 +8,7 @@ import { MatSnackBar } from '@angular/material/snack-bar';
 import { isOwnerLevel } from '../../../core/arena/arena-api';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
+import { Attempt } from '../../../core/sync/push-ops';
 import { ConfirmDialog, ConfirmDialogData } from '../../../shared/confirm/confirm-dialog';
 import { DetailPane } from '../../../shared/list-detail/detail-pane';
 import { DetailSection } from '../../../shared/list-detail/detail-section';
@@ -286,6 +287,9 @@ export class TermsSettings {
     this.error.set('');
   }
 
+  /** One publish's ids: a resend after a lost answer replays instead of adding a version. */
+  private attempt = new Attempt();
+
   protected publish(): void {
     this.tried.set(true);
     if (this.invalid() || this.unchanged()) return;
@@ -306,12 +310,14 @@ export class TermsSettings {
         this.busy.set(true);
         this.error.set('');
         try {
-          const published = await this.store.publish(this.draft());
+          const published = await this.store.publish(this.draft(), this.attempt);
+          this.attempt = new Attempt();
           this.tried.set(false);
           this.snack.open(`Version ${published || version} published`, undefined, {
             duration: 3200,
           });
         } catch (e) {
+          this.attempt.settle(e);
           this.error.set(toAppError(e).message);
         } finally {
           this.busy.set(false);

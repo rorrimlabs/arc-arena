@@ -7,6 +7,8 @@
 }
 
 @if (navShown()) {
+  <!-- Escape bubbles up from the focused links inside the trap; the aside itself never takes focus. -->
+  <!-- eslint-disable-next-line @angular-eslint/template/interactive-supports-focus -->
   <aside
     id="app-nav"
     class="z-50 flex h-dvh flex-none flex-col border-r border-border bg-surface-sunken px-3"

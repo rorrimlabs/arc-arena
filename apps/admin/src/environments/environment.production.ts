@@ -14,8 +14,8 @@
  */
 export const environment = {
   production: true,
-  supabaseUrl: '',
-  supabaseKey: '',
+ supabaseUrl: 'https://oilylxydibubupuqghbw.supabase.co',
+  supabaseKey: 'sb_publishable_BygnaOYTm5r9D_XAudHq8A_nFqMW42_',
   /** Cloudflare Turnstile site key (public). Empty = no CAPTCHA (the local stack has none). */
   turnstileSiteKey: '',
 };
