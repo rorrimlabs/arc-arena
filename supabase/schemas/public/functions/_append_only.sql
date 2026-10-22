@@ -5,8 +5,10 @@
 -- attendance_punches and controller_moves. Corrections are new rows (refunds, reversals,
 -- superseding entries), so no op changes these; the trigger makes that hold against a
 -- dashboard / SQL-editor delete, a cascade from a deleted session, group or arena, a script or a
--- future op bug. Raises append_only. An operator who must really remove an arena does it as an
--- explicit procedure with `set session_replication_role = replica` (docs/DEPLOY_SUPABASE.md).
+-- future op bug. Raises append_only. An operator who must really remove test data uses
+-- supabase/audit/prod_prerelease_reset.sql, which disables these triggers inside its own
+-- transaction with foreign keys still enforced (docs/DEPLOY_SUPABASE.md, Backups). Never
+-- `session_replication_role = replica`: it also skips every foreign-key cascade and check.
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._append_only()
   returns trigger
