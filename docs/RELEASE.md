@@ -108,9 +108,11 @@ release) and shows a configuration error instead of starting when:
 * a prod build is a debug build;
 * a staging / prod build is not cloud mode, misses its URL or key, uses a
   development or non-https host, or a host not listed for its environment in
-  `AppConfig.hostedSupabaseHosts`. Both lists are empty until the projects
-  exist, so those flavors refuse to start until then — that list is what stops
-  a production build from ever pointing at staging;
+  `AppConfig.hostedSupabaseHosts` (staging: `sqznpjqktvsabjxvpzjh.supabase.co`;
+  production: `oilylxydibubupuqghbw.supabase.co`). The match is exact and the
+  two lists never share a host — that list is what stops a production build
+  from ever pointing at staging. An environment with an empty list refuses to
+  start;
 * the key is a secret (`sb_secret_…`) or `service_role` key, or a legacy anon
   key of a different project than the URL.
 

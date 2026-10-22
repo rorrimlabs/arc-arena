@@ -8,6 +8,7 @@ import 'package:arena_ops/app/sync/cloud_root.dart';
 import 'package:arena_ops/app/sync/secure_session_storage.dart';
 import 'package:arena_ops/core/config/app_config.dart';
 import 'package:arena_ops/core/monitoring/sentry_setup.dart';
+import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
 import 'package:arena_ops/data/local/seed_data.dart';
@@ -48,22 +49,35 @@ Future<void> main() async {
             ),
           );
         }
-        runApp(SentryWidget(child: _ConfigProblemApp(problem)));
+        runApp(SentryWidget(child: ConfigProblemApp(problem)));
         return;
       }
       if (config.isSupabase) {
         // Cloud mode: each person signs in with their own account; the arena's
         // data lives in its own database file (the local-only file is untouched).
-        await Supabase.initialize(
-          url: config.supabaseUrl!,
-          publishableKey: config.supabaseAnonKey!,
-          authOptions: FlutterAuthClientOptions(
-            localStorage: SecureSessionStorage(backendUrl: config.supabaseUrl!),
-          ),
-        );
-        final documents = await getApplicationDocumentsDirectory();
-        runApp(SentryWidget(child: CloudRoot(documentsPath: documents.path)));
-        return;
+        try {
+          await Supabase.initialize(
+            url: config.supabaseUrl!,
+            publishableKey: config.supabaseAnonKey!,
+            authOptions: FlutterAuthClientOptions(
+              localStorage: SecureSessionStorage(
+                backendUrl: config.supabaseUrl!,
+              ),
+            ),
+          );
+          final documents = await getApplicationDocumentsDirectory();
+          runApp(SentryWidget(child: CloudRoot(documentsPath: documents.path)));
+          return;
+        } catch (e, stack) {
+          // No network is needed here (the saved sign-in is read from the
+          // keystore and refreshed later), so this is an error on the device.
+          debugPrint('Supabase initialization failed: $e\n$stack');
+          if (config.isSentryEnabled) {
+            unawaited(Sentry.captureException(e, stackTrace: stack));
+          }
+          runApp(SentryWidget(child: ConfigProblemApp.startupFailed('$e')));
+          return;
+        }
       }
 
       // The counter device holds the only copy of the day's takings, and Drift
@@ -136,21 +150,135 @@ Future<void> main() async {
   );
 }
 
-/// Shown instead of the app when the build's configuration is unusable.
-class _ConfigProblemApp extends StatelessWidget {
-  const _ConfigProblemApp(this.problem);
+/// Shown instead of the app when it cannot start.
+class ConfigProblemApp extends StatelessWidget {
+  /// The build's configuration is unusable: only a corrected build fixes it.
+  const ConfigProblemApp(this.problem, {super.key}) : startupFailed = false;
+
+  /// Cloud mode failed to set up on this device; [problem] is the error.
+  const ConfigProblemApp.startupFailed(this.problem, {super.key})
+    : startupFailed = true;
+
   final String problem;
+  final bool startupFailed;
 
   @override
   Widget build(BuildContext context) => MaterialApp(
+    title: 'arena_ops',
     debugShowCheckedModeBanner: false,
-    home: Scaffold(
+    theme: AppTheme.dark(),
+    darkTheme: AppTheme.dark(),
+    themeMode: ThemeMode.dark,
+    home: ConfigProblemScreen(problem: problem, startupFailed: startupFailed),
+  );
+}
+
+class ConfigProblemScreen extends StatelessWidget {
+  const ConfigProblemScreen({
+    required this.problem,
+    this.startupFailed = false,
+    super.key,
+  });
+  final String problem;
+  final bool startupFailed;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
       body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Center(child: Text(problem, textAlign: TextAlign.center)),
+        child: Center(
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(AppSpacing.xl),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 520),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(
+                    Icons.warning_amber_rounded,
+                    size: 44,
+                    color: colorScheme.error,
+                  ),
+                  const SizedBox(height: AppSpacing.lg),
+                  Text(
+                    startupFailed
+                        ? 'App could not start on this device'
+                        : 'Configuration problem — app not started',
+                    style: theme.textTheme.headlineSmall,
+                  ),
+                  const SizedBox(height: AppSpacing.md),
+                  Text(
+                    startupFailed
+                        ? 'Something on this device failed while the app was '
+                              'getting ready to sign in. No records were changed.'
+                        : 'The app was prevented from starting because the current '
+                              'build configuration or environment is invalid or incomplete.',
+                    style: theme.textTheme.bodyMedium,
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(AppSpacing.lg),
+                    decoration: BoxDecoration(
+                      color: colorScheme.surfaceContainerHighest.withValues(
+                        alpha: 0.3,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color: colorScheme.outlineVariant.withValues(
+                          alpha: 0.5,
+                        ),
+                      ),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          startupFailed ? 'Error details' : 'Why it stopped',
+                          style: theme.textTheme.labelMedium?.copyWith(
+                            color: colorScheme.error,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        const SizedBox(height: AppSpacing.xs),
+                        Text(
+                          problem,
+                          style: theme.textTheme.bodyMedium?.copyWith(
+                            height: 1.4,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  const SizedBox(height: AppSpacing.xl),
+                  Text('What to do', style: theme.textTheme.titleMedium),
+                  const SizedBox(height: AppSpacing.sm),
+                  Text(
+                    startupFailed
+                        ? '• Close the app completely and open it again.\n'
+                              '• If it happens again, restart the device.\n'
+                              '• Still stuck: tell the owner and show them the error details above.\n'
+                              '• Do not uninstall the app or clear its data: records not yet '
+                              'sent would be lost.'
+                        : '• Local development: build with --flavor dev\n'
+                              '• Staging: build with --flavor staging --dart-define-from-file=dart_define.staging.json\n'
+                              '• Production: build with --flavor prod --dart-define-from-file=dart_define.prod.json '
+                              'in profile or release mode (debug is refused).',
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      color: colorScheme.onSurfaceVariant,
+                      height: 1.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
         ),
       ),
-    ),
-  );
+    );
+  }
 }
