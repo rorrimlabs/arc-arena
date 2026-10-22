@@ -100,7 +100,11 @@ describe('Owner auth flow', () => {
     expect(url()).toBe('/overview');
   });
 
-  it('register: password rules, then the code, then create the arena', async () => {
+  /** What Supabase Auth appends to the confirmation link's redirect (implicit flow). */
+  const confirmation = (access: string) =>
+    `#access_token=${access}&expires_at=1792000000&expires_in=3600&refresh_token=rt-1&token_type=bearer&type=signup`;
+
+  it('register: password rules, then the link, then create the arena', async () => {
     await start('/register', false, false);
     expect(heading()).toBe('Create your account');
     type('Email', 'new@arena.in');
@@ -119,22 +123,31 @@ describe('Owner auth flow', () => {
     expect(heading()).toBe('Check your email');
     expect(body().textContent).toContain('new@arena.in');
 
-    type('Code', '000000');
-    await press('Confirm');
-    expect(alert()).toContain('wrong or has expired');
+    await press('Resend link');
+    expect(status()).toBe('Sent a new link to new@arena.in.');
+    expect(auth.calls).toEqual(['signUp:new@arena.in', 'resend:new@arena.in']);
 
-    await press('Resend code');
-    expect(body().querySelector('[role="status"]')?.textContent).toContain('Sent a new code');
+    // A used or expired link confirms nothing.
+    await follow('Back to sign in');
+    await harness.navigateByUrl('/register#error=access_denied&error_code=otp_expired');
+    await settled();
+    expect(heading()).toBe('Confirmation link');
+    expect(alert()).toContain('has expired or was already used');
+    expect(auth.account).toBeNull();
 
-    type('Code', SampleAuthApi.CODE);
-    await press('Confirm');
+    // The link from the e-mail signs the new login in and goes on to create the arena.
+    auth.linkTokens.set('at-new', 'new@arena.in');
+    await follow('Go to sign in');
+    await harness.navigateByUrl('/register' + confirmation('at-new'));
+    await settled();
     expect(url()).toBe('/create-arena');
     expect(heading()).toBe('Create your arena');
 
     type('Arena name', 'Game Zone');
     type('Your name', 'Sam Rao');
     await press('Create arena');
-    expect(url()).toBe('/users');
+    await settled();
+    expect(url()).toBe('/setup');
     expect(arenas.memberships.map((m) => m.arenaName)).toEqual(['Game Zone']);
   });
 

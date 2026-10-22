@@ -28,10 +28,15 @@ describe('Settings › Leave rules', () => {
   });
 
   it('shows the defaults with the leave-year help, and saves the whole setting', async () => {
-    t = await startPage('/settings?id=leave');
-    const rows = t.rows().map((r) => t.text(r));
-    expect(rows.some((r) => r?.includes('Leave rules'))).toBe(true);
-    expect(t.text(pane().querySelector('h2'))).toBe('Leave rules');
+    t = await startPage('/settings/staff/leave');
+    expect(t.rows().map(t.rowText)).toContainEqual([
+      'Staff',
+      'Schedule, clock-in, attendance, leave, payroll rules',
+    ]);
+    expect(
+      t.text(t.doc().querySelector('app-staff-settings a[mat-tab-link][aria-selected="true"]')),
+    ).toBe('Leave');
+    expect(t.text(pane().querySelector('h3'))).toBe('Leave rules');
     expect(t.text(pane())).toContain(
       "The leave year starts on each person's joining date. Unused days don't carry over.",
     );
@@ -54,7 +59,7 @@ describe('Settings › Leave rules', () => {
   });
 
   it('read-only without the Settings permission', async () => {
-    t = await startPage('/settings?id=leave', 1440, ({ arena }) => {
+    t = await startPage('/settings/staff/leave', 1440, ({ arena }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,

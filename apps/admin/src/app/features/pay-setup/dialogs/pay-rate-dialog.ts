@@ -237,6 +237,7 @@ export class PayRateDialog {
       await this.store.addRate(this.data.staffId, this.draft(), this.attempt);
       this.ref.close(true);
     } catch (e) {
+      this.attempt.settle(e);
       this.error.set(toAppError(e).message);
     } finally {
       this.busy.set(false);

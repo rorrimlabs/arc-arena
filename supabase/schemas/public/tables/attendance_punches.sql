@@ -40,8 +40,7 @@ create table "public"."attendance_punches" (
   -- 'ok' is exactly the case where a position was captured.
   constraint "attendance_punches_ok_has_fix_check" check (((location_status = 'ok'::text) = (lat IS NOT NULL))),
   constraint "attendance_punches_pkey" primary key (id),
-  constraint "attendance_punches_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id)
-    on delete cascade,
+  constraint "attendance_punches_staff_id_fkey" foreign key (staff_id) references public.staff_profiles(id),
   constraint "attendance_punches_via_check" check ((via = 'own_device'::text))
 );
 

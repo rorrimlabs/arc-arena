@@ -47,11 +47,10 @@ flutter analyze
 flutter test
 ```
 
-`bash tool/verify_all.sh` runs every automated check — Flutter analyze and
-tests, the admin unit tests and build, pgTAP and the advisors on the local
-Supabase stack — and reports each step PASS/FAIL/SKIP. `--with-it` adds the
-cross-app sync integration (`tool/sync_it.sh`), `--with-psql` the pricing
-parity check and the concurrency races (docs/SYNC.md).
+Automated checks: `flutter analyze` / `flutter test` (apps/mobile), `npm test` /
+`npm run build` (apps/admin), `supabase test db` and `supabase db advisors
+--local` on the local stack. A cross-app e2e suite is to be rebuilt (the old
+`tool/` scripts were removed 2026-10-21).
 The pricing engine, session/segment rules, availability, booking
 conflicts and the reporting engine are pure Dart and tested directly; the floor,
 payment queue and walk-in flow are covered by widget tests at phone and desktop

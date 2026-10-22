@@ -36,6 +36,9 @@
       "Read(~/.ssh/**)",
       "Read(~/.aws/**)",
       "Read(.env.production)",
+      "Read(apps/admin/src/environments/environment.ts)",
+      "Read(apps/admin/src/environments/environment.production.ts)",
+      "Read(apps/admin/src/environments/environment.staging.ts)",
       "Edit(~/.zshrc)",
       "Edit(~/.bashrc)",
       "Edit(~/.ssh/**)"

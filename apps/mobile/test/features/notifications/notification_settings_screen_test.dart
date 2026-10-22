@@ -121,8 +121,18 @@ void main() {
   }
 
   Future<void> close(WidgetTester tester) async {
+    // Let any toast (3 s, or 6 s for an error) time out first.
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
+  }
+
+  /// More lists the Shift and Floor tools groups first; on a phone the
+  /// Notifications row (group "You") is further down the list.
+  Future<void> toNotificationsRow(WidgetTester tester) async {
+    await tester.scrollUntilVisible(find.text('Notifications'), 200,
+        scrollable: find.byType(Scrollable).first);
+    await settle(tester);
   }
 
   Future<void> tap(WidgetTester tester, String text) async {
@@ -285,6 +295,7 @@ void main() {
         size: size,
         auth: TestStaffAuth.new,
       );
+      await toNotificationsRow(tester);
 
       expect(find.text('Notifications'), findsOneWidget);
       expect(
@@ -313,6 +324,7 @@ void main() {
       size: phoneSize,
       auth: TestStaffAuth.new,
     );
+    await toNotificationsRow(tester);
     expect(find.text('Blocked by the phone'), findsOneWidget);
     await close(tester);
 
@@ -325,6 +337,7 @@ void main() {
       size: phoneSize,
       auth: TestStaffAuth.new,
     );
+    await toNotificationsRow(tester);
     expect(find.text('Timer alerts off'), findsOneWidget);
     await close(tester);
   });

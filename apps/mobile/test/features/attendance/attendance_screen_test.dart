@@ -56,7 +56,9 @@ void main() {
   }
 
   // The live timer ticks every second: unmount so no timer outlives the test.
+  // A punch's toast closes after 3 s (6 s for an error): let it go first.
   Future<void> dispose(WidgetTester tester) async {
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(seconds: 1));
   }
@@ -96,6 +98,10 @@ void main() {
       expect(find.text('2:05:00'), findsOneWidget, reason: 'timer from the stored in time');
 
       await tester.tap(find.text('Clock out'));
+      await settle(tester);
+      // Clocking out asks first.
+      expect(find.text('Clock out now?'), findsOneWidget);
+      await tester.tap(find.text('Clock out').last);
       await settle(tester);
       expect(repo.sent.last.kind, PunchKind.clockOut);
       expect(find.text('CLOCKED OUT'), findsOneWidget);

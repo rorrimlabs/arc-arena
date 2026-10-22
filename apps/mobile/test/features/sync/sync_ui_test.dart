@@ -133,6 +133,11 @@ void main() {
     );
     await tester.tap(find.text('Seen').first);
     await tester.pump();
+    await tester.pump(const Duration(milliseconds: 300));
+    // Dismissing asks first: it leaves the list for good.
+    expect(find.text('Dismiss this refused change?'), findsOneWidget);
+    await tester.tap(find.text('Dismiss'));
+    await tester.pump();
     await tester.runAsync(
       () => Future<void>.delayed(const Duration(milliseconds: 50)),
     );

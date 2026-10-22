@@ -21,10 +21,12 @@ describe('Staff › Leave', () => {
     await t.settle();
   }
 
-  it('is in the Staff nav for leave approvers; Requests lists what waits, cancellations first', async () => {
+  it('is under Attendance for leave approvers; Requests lists what waits, cancellations first', async () => {
+    // The old /staff/leave link lands on Attendance › Leave (its own nav entry is gone).
     t = await startPage('/staff/leave');
-    expect(NAV_ITEMS.find((i) => i.path === 'staff/leave')?.perm).toBe('leave_approve');
-    expect(navLabels()).toEqual(expect.arrayContaining(['Leave', 'Pay setup', 'Payroll']));
+    expect(t.url()).toBe('/staff/attendance/leave');
+    expect(NAV_ITEMS.some((i) => i.path === 'staff/leave')).toBe(false);
+    expect(navLabels()).toEqual(expect.arrayContaining(['Team', 'Attendance', 'Payroll']));
     expect(summary()).toBe('4 waiting for a decision');
     expect(titles()).toEqual(['Priya Nair', 'Priya Nair', 'Ravi Kumar', 'Arjun Mehra']);
     expect(t.text(t.rows()[0])).toContain('Cancel requested');
@@ -32,7 +34,7 @@ describe('Staff › Leave', () => {
   });
 
   it('a request shows the days, the balance, its history and who else is off then', async () => {
-    t = await startPage('/staff/leave?id=lr1');
+    t = await startPage('/staff/attendance/leave?id=lr1');
     const d = detail();
     expect(t.text(d.querySelector('h2'))).toBe('Ravi Kumar');
     expect(t.text(d)).toContain('Working days counted 2 days');
@@ -46,7 +48,7 @@ describe('Staff › Leave', () => {
   });
 
   it('approve: pre-filled with what the balance covers, LOP shown live, paid_days sent', async () => {
-    t = await startPage('/staff/leave?id=lr1');
+    t = await startPage('/staff/attendance/leave?id=lr1');
     await click('Approve…', detail());
     const dialog = t.dialog()!;
     const input = dialog.querySelector('input[type="number"]') as HTMLInputElement;
@@ -76,7 +78,7 @@ describe('Staff › Leave', () => {
   });
 
   it('reject with a note', async () => {
-    t = await startPage('/staff/leave?id=lr2');
+    t = await startPage('/staff/attendance/leave?id=lr2');
     await click('Reject…', detail());
     const dialog = t.dialog()!;
     const note = dialog.querySelector('textarea') as HTMLTextAreaElement;
@@ -91,7 +93,7 @@ describe('Staff › Leave', () => {
   });
 
   it('a cancellation request: approve it or keep the leave', async () => {
-    t = await startPage('/staff/leave?id=lr3');
+    t = await startPage('/staff/attendance/leave?id=lr3');
     expect(t.text(section('Cancellation requested'))).toContain('Keep the leave');
     await click('Approve cancellation', detail());
     expect(t.text(t.dialog())).toContain('Their reason: “Trip called off”');
@@ -101,7 +103,7 @@ describe('Staff › Leave', () => {
   });
 
   it('a refusal stays in the dialog in plain words', async () => {
-    t = await startPage('/staff/leave?id=lr1', 1440, ({ leave }) => {
+    t = await startPage('/staff/attendance/leave?id=lr1', 1440, ({ leave }) => {
       leave.refuse = 'period_finalised';
     });
     await click('Approve…', detail());
@@ -112,12 +114,26 @@ describe('Staff › Leave', () => {
     expect(t.leave.ops).toEqual([]);
   });
 
-  it('own requests: only the owner decides them', async () => {
-    t = await startPage('/staff/leave?id=lr4', 1440, ({ arena }) => {
+  // KNOWN BUG: the Attendance parent route needs attendance_review, so leave_approve alone (with
+  // owner level) cannot open leave requests, although docs/STAFF.md gives leave_approve "see all
+  // leave; approve, reject or cancel". `it.fails` passes while the bug exists; drop `.fails` once the app is fixed.
+  it.fails('a leave approver without attendance_review opens the leave requests', async () => {
+    t = await startPage('/staff/attendance/leave', 1440, ({ arena }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,
         perms: ['reports', 'leave_approve'],
+      }));
+    });
+    expect(t.url()).toBe('/staff/attendance/leave');
+  });
+
+  it('own requests: only the owner decides them', async () => {
+    t = await startPage('/staff/attendance/leave?id=lr4', 1440, ({ arena }) => {
+      arena.memberships = arena.memberships.map((m) => ({
+        ...m,
+        role: 'staff' as const,
+        perms: ['reports', 'leave_approve', 'attendance_review'],
       }));
     });
     expect(t.button('Approve…', detail())).toBeUndefined();
@@ -125,30 +141,30 @@ describe('Staff › Leave', () => {
       'This is your own request: another approver (or the owner) decides it.',
     );
     // Someone else's request: the approver decides it.
-    await t.harness.navigateByUrl('/staff/leave?id=lr1');
+    await t.harness.navigateByUrl('/staff/attendance/leave?id=lr1');
     await t.settle();
     expect(t.button('Approve…', detail())).toBeDefined();
   });
 
   it('the owner may decide their own request', async () => {
-    t = await startPage('/staff/leave?id=lr4');
+    t = await startPage('/staff/attendance/leave?id=lr4');
     expect(t.button('Approve…', detail())).toBeDefined();
   });
 
   it('All requests filters by staff and status (in the URL)', async () => {
-    t = await startPage('/staff/leave?tab=all');
+    t = await startPage('/staff/attendance/leave?tab=all');
     expect(titles()).toHaveLength(8);
     expect(summary()).toBe('8 requests · 4 waiting for a decision');
-    await t.harness.navigateByUrl('/staff/leave?tab=all&staff=st3');
+    await t.harness.navigateByUrl('/staff/attendance/leave?tab=all&staff=st3');
     await t.settle();
     expect(titles()).toEqual(['Arjun Rao', 'Arjun Rao']);
-    await t.harness.navigateByUrl('/staff/leave?tab=all&status=rejected');
+    await t.harness.navigateByUrl('/staff/attendance/leave?tab=all&status=rejected');
     await t.settle();
     expect(titles()).toEqual(['Ravi Kumar']);
   });
 
   it('Balances: everyone’s leave year, and an adjustment with a reason', async () => {
-    t = await startPage('/staff/leave?tab=balances');
+    t = await startPage('/staff/attendance/leave?tab=balances');
     const table = t.doc().querySelector('app-leave-balances-table table') as HTMLElement;
     const head = [...table.querySelectorAll('thead th')].map((th) => t.text(th));
     expect(head.slice(0, 8)).toEqual([
@@ -178,14 +194,19 @@ describe('Staff › Leave', () => {
     t.type('Reason', 'Worked on Diwali', dialog);
     await click('Adjust balance', dialog.querySelector('mat-dialog-actions')!);
     expect(t.leave.ops).toEqual([
-      { kind: 'leave.adjust', payload: { staff_id: 'st1', days: 1, reason: 'Worked on Diwali' } },
+      {
+        kind: 'leave.adjust',
+        // The dialog's op id: a resend after a lost answer replays instead of adjusting twice.
+        opId: expect.any(String),
+        payload: { staff_id: 'st1', days: 1, reason: 'Worked on Diwali' },
+      },
     ]);
     expect(t.snack()).toBe('Ravi Kumar’s balance adjusted');
     expect(t.text(ravi)).toContain('12 +1 11 2 2');
   });
 
   it('a person’s balance lists their adjustments and requests this leave year', async () => {
-    t = await startPage('/staff/leave?tab=balances&person=st2');
+    t = await startPage('/staff/attendance/leave?tab=balances&person=st2');
     const d = t.doc().querySelector('app-leave-balance-detail') as HTMLElement;
     expect(t.text(d.querySelector('h2'))).toBe('Priya Nair');
     expect(t.text(section('Adjustments'))).toContain('Worked on Holi');
@@ -194,7 +215,7 @@ describe('Staff › Leave', () => {
   });
 
   it('without leave_approve the screen and its nav entry are gone', async () => {
-    t = await startPage('/staff/leave', 1440, ({ arena }) => {
+    t = await startPage('/staff/attendance/leave', 1440, ({ arena }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,

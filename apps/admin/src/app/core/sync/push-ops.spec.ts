@@ -3,7 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { AppError } from '../auth/auth-api';
 import { PushRefusal, partlyApplied, pushOps, writeThenReload } from './push-ops';
 
-type Result = { status: string; error?: string; result?: Record<string, unknown> };
+interface Result { status: string; error?: string; result?: Record<string, unknown> }
 
 describe('pushOps', () => {
   const order: string[] = [];

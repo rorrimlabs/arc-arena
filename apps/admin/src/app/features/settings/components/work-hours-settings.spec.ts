@@ -15,12 +15,15 @@ describe('Settings › Working hours', () => {
     pane().querySelector(`mat-radio-button input[value="${value}"]`) as HTMLInputElement;
 
   it('is listed in Settings and starts on the server defaults', async () => {
-    t = await startPage('/settings?id=workhours');
+    t = await startPage('/settings/staff/attendance');
     expect(t.rows().map(t.rowText)).toContainEqual([
-      'Working hours',
-      'Late grace, half days, extra hours',
+      'Staff',
+      'Schedule, clock-in, attendance, leave, payroll rules',
     ]);
-    expect(t.text(pane().querySelector('h2'))).toBe('Working hours');
+    expect(
+      t.text(t.doc().querySelector('app-staff-settings a[mat-tab-link][aria-selected="true"]')),
+    ).toBe('Attendance');
+    expect(t.text(pane().querySelector('h3'))).toBe('Attendance calculation rules');
     expect(t.text(pane())).toContain('8h standard day · 10 min late grace');
     // Late, early, break after, full %, half %, hours, minutes, auto clock-out.
     expect(inputs().map((i) => i.value)).toEqual(['10', '15', '300', '75', '40', '8', '0', '120']);
@@ -30,7 +33,7 @@ describe('Settings › Working hours', () => {
   });
 
   it('saves the whole work_hours object', async () => {
-    t = await startPage('/settings?id=workhours');
+    t = await startPage('/settings/staff/attendance');
     t.type('Late grace', '5', pane());
     t.type('Minutes', '30', pane());
     radio('nearest_15').click();
@@ -58,7 +61,7 @@ describe('Settings › Working hours', () => {
   });
 
   it('half day at or above full day is flagged at once; other problems after a save attempt', async () => {
-    t = await startPage('/settings?id=workhours');
+    t = await startPage('/settings/staff/attendance');
     t.type('Half day from', '80', pane());
     await t.settle();
     expect(t.text(pane())).toContain('Half day must be less than full day');
@@ -76,15 +79,19 @@ describe('Settings › Working hours', () => {
   });
 
   it('shows what the arena saved', async () => {
-    t = await startPage('/settings?id=workhours', 1440, ({ workHours }) => {
+    t = await startPage('/settings/staff/attendance', 1440, ({ workHours }) => {
       workHours.saved = { ...DEFAULT_WORK_HOURS, standardDayMin: 570, weekStart: 7 };
     });
-    expect(inputs().slice(5, 7).map((i) => i.value)).toEqual(['9', '30']);
+    expect(
+      inputs()
+        .slice(5, 7)
+        .map((i) => i.value),
+    ).toEqual(['9', '30']);
     expect(t.text(pane().querySelector('mat-select'))).toContain('Sunday');
   });
 
   it('read-only without the Settings permission', async () => {
-    t = await startPage('/settings?id=workhours', 1440, ({ arena }) => {
+    t = await startPage('/settings/staff/attendance', 1440, ({ arena }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,

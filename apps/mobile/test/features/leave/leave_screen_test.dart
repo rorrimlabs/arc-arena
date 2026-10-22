@@ -39,6 +39,10 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
   }
 
+  // A toast closes after 3 s (6 s for an error): let it go before the end.
+  Future<void> toastsGone(WidgetTester tester) =>
+      tester.pump(const Duration(seconds: 6));
+
   void phone(WidgetTester tester) {
     tester.view.physicalSize = const Size(1170, 2532);
     tester.view.devicePixelRatio = 3.0;
@@ -81,9 +85,14 @@ void main() {
       expect(find.text('enjoy'), findsOneWidget);
       await tester.tap(find.text('Ask to cancel this leave'));
       await settle(tester);
+      // It asks first; the leave stays until the cancellation is approved.
+      expect(find.text('Ask to cancel this leave?'), findsOneWidget);
+      await tester.tap(find.text('Ask to cancel'));
+      await settle(tester);
       expect(repo.cancelled, ['r-approved']);
       expect(find.textContaining('Cancellation sent'), findsOneWidget);
       expect(find.text('Cancel requested'), findsOneWidget);
+      await toastsGone(tester);
     });
   }
 
@@ -106,6 +115,7 @@ void main() {
         [LeaveKind.unplanned, HalfDay.secondHalf, 'Doctor visit']);
     expect(find.textContaining('Leave requested: 0.5 working days'), findsOneWidget);
     expect(find.text('Waiting'), findsOneWidget);
+    await toastsGone(tester);
   });
 
   testWidgets('a refusal shows the server words; offline offers Try again with the same id',
@@ -128,6 +138,7 @@ void main() {
     expect(repo.sent, hasLength(3));
     expect(repo.sent[2].id, repo.sent[1].id);
     expect(find.text('Waiting'), findsOneWidget);
+    await toastsGone(tester);
   });
 
   testWidgets('without the online arena it says so', (tester) async {

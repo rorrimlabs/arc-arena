@@ -1,4 +1,6 @@
+import { TestBed } from '@angular/core/testing';
 import { NAV_ITEMS } from '../../core/layout/nav';
+import { Clock } from '../../core/time/clock';
 import { PageTest, startPage } from '../../testing/page-test';
 
 describe('Staff › Payroll', () => {
@@ -28,6 +30,34 @@ describe('Staff › Payroll', () => {
     [...t.doc().querySelectorAll('app-deduction-row')].find((d) =>
       t.text(d)?.startsWith(label),
     ) as HTMLElement;
+  /** A person's net pay (the breakdown's last row). */
+  const netPay = () => rowValue(run(), 'Calculated pay');
+  /** A person's day-by-day timesheet (folded under "Day by day and rates"). */
+  const dayRows = () =>
+    [
+      ...[...run().querySelectorAll('table')]
+        .find((tb) => t.text(tb.querySelector('caption'))?.startsWith('Day by day'))!
+        .querySelectorAll('tbody tr'),
+    ] as HTMLElement[];
+
+  /**
+   * Opens `url` once October is over (the run pane is re-created to read the new day): a period
+   * still running can't be finalised (the server refuses with period_not_over; the screen
+   * disables Finalise…).
+   */
+  async function openAfterOctober(url: string) {
+    (TestBed.inject(Clock) as { now: () => Date }).now = () => new Date('2026-11-02T06:00:00Z');
+    for (const u of ['/staff/payroll', url]) {
+      await t.harness.navigateByUrl(u);
+      await t.settle();
+    }
+  }
+
+  /** The run's exports live in the Export menu. */
+  async function exportItem(label: string) {
+    await click('Export', run());
+    return t.button(label, t.doc().querySelector('.mat-mdc-menu-panel')!)!;
+  }
 
   async function click(label: string, scope?: ParentNode) {
     t.button(label, scope)!.click();
@@ -42,7 +72,8 @@ describe('Staff › Payroll', () => {
   it('lists the pay runs for payroll holders', async () => {
     t = await startPage('/staff/payroll');
     expect(NAV_ITEMS.find((i) => i.path === 'staff/payroll')?.perm).toBe('payroll');
-    expect(NAV_ITEMS.find((i) => i.path === 'staff/pay-setup')?.perm).toBe('payroll');
+    // Pay setup is no longer a screen: it is Team's Salary tab and Settings › Staff › Payroll,
+    // both payroll-only (pay-setup-page.spec.ts).
     expect(navLabels()).toContain('Payroll');
     const rows = t.rows().map((r) => t.text(r));
     expect(rows[0]).toContain('1–31 Oct 2026');
@@ -96,9 +127,11 @@ describe('Staff › Payroll', () => {
   it('Ravi’s breakdown: each suggested deduction with its formula (Example 1)', async () => {
     t = await startPage('/staff/payroll?id=r-oct&staff=st1');
     expect(t.text(run().querySelector('h2'))).toBe('Ravi Kumar');
-    const pay = section('Pay');
-    expect(rowValue(pay, 'Base pay')).toBe('₹18,000.00');
-    expect(rowValue(pay, 'Gross')).toBe('₹18,000.00');
+    const pay = section('Salary');
+    expect(rowValue(pay, 'Base salary')).toBe('₹18,000.00');
+    // No extra hours: gross is the base salary (the Gross row shows only with extra hours pay;
+    // the timesheet's Gross column is checked above).
+    expect(rowValue(pay, 'Gross')).toBeUndefined();
     expect(t.text(deduction('Absent'))).toContain('1 day × ₹580.65 = ₹580.65');
     expect(t.text(deduction('LOP leave'))).toContain('1 day × ₹580.65 = ₹580.65');
     expect(t.text(deduction('Half-day'))).toContain('0.5 day × ₹580.65 = ₹290.32');
@@ -106,9 +139,9 @@ describe('Staff › Payroll', () => {
     expect(t.text(section('Adjustments'))).toContain('Advance · Oct 10 advance');
     expect(t.text(section('Adjustments'))).toContain('−₹2,000.00');
     expect(t.text(section('Adjustments'))).toContain('+₹500.00');
-    expect(t.text(run())).toContain('Net pay ₹14,758.06');
+    expect(netPay()).toBe('₹14,758.06');
     // The day-by-day timesheet.
-    const days = [...section('Timesheet').querySelectorAll('tbody tr')].map((r) => t.text(r));
+    const days = dayRows().map((r) => t.text(r));
     expect(days).toHaveLength(31);
     expect(days[1]).toContain('Holiday');
     expect(days[1]).toContain('Gandhi Jayanti');
@@ -135,31 +168,30 @@ describe('Staff › Payroll', () => {
         },
       },
     ]);
-    expect(t.text(run())).toContain('Net pay ₹15,048.38');
+    expect(netPay()).toBe('₹15,048.38');
     // Keep it again.
     await click('Keep', deduction('Late'));
     expect(t.payroll.ops[1].payload).toMatchObject({ code: 'late', applied: true });
-    expect(t.text(run())).toContain('Net pay ₹14,758.06');
+    expect(netPay()).toBe('₹14,758.06');
   });
 
   it('Arjun’s breakdown: a mid-period raise, derived extra hours, LOP (Example 3)', async () => {
     t = await startPage('/staff/payroll?id=r-oct&staff=st3');
-    const pay = section('Pay');
-    expect(rowValue(pay, 'Rate · 1–15 Oct 2026')).toBe(
+    // The rates used sit with the day-by-day timesheet.
+    expect(rowValue(run(), 'Rate · 1–15 Oct 2026')).toBe(
       '₹20,000.00 / month · extra hours paid (derived rate)',
     );
-    expect(rowValue(pay, 'Rate · 16–31 Oct 2026')).toBe(
+    expect(rowValue(run(), 'Rate · 16–31 Oct 2026')).toBe(
       '₹22,000.00 / month · extra hours paid (derived rate)',
     );
-    expect(rowValue(pay, 'Base pay')).toBe('₹21,032.26');
-    expect(rowValue(pay, 'Extra hours pay · 24h 00m')).toBe('₹3,000.00');
+    const pay = section('Salary');
+    expect(rowValue(pay, 'Base salary')).toBe('₹21,032.26');
+    expect(rowValue(pay, 'Extra hours · 24h 00m')).toBe('+₹3,000.00');
     expect(rowValue(pay, 'Gross')).toBe('₹24,032.26');
     expect(t.text(deduction('LOP leave'))).toContain('1 day × ₹709.68 = ₹709.68');
     expect(t.text(section('Adjustments'))).toContain('Deduction · Cracked controller, 20 Oct');
-    expect(t.text(run())).toContain('Net pay ₹23,022.58');
-    const sunday = [...section('Timesheet').querySelectorAll('tbody tr')].find((r) =>
-      t.text(r.querySelector('th'))?.includes('4 Oct'),
-    )!;
+    expect(netPay()).toBe('₹23,022.58');
+    const sunday = dayRows().find((r) => t.text(r.querySelector('th'))?.includes('4 Oct'))!;
     expect(t.text(sunday)).toContain('Present 12h 00m 4h 00m');
   });
 
@@ -167,15 +199,15 @@ describe('Staff › Payroll', () => {
     t = await startPage('/staff/payroll?id=r-wk&staff=st2', 1440, ({ payroll }) =>
       payroll.useWeekly(),
     );
-    const pay = section('Pay');
-    expect(rowValue(pay, 'Rate · 5–11 Oct 2026')).toBe(
+    expect(rowValue(run(), 'Rate · 5–11 Oct 2026')).toBe(
       '₹120.00 / h · extra hours paid (derived rate)',
     );
-    expect(rowValue(pay, 'Base pay')).toBe('₹4,500.00');
-    expect(rowValue(pay, 'Extra hours pay · 1h 45m')).toBe('₹315.00');
+    const pay = section('Salary');
+    expect(rowValue(pay, 'Pay for hours worked')).toBe('₹4,500.00');
+    expect(rowValue(pay, 'Extra hours · 1h 45m')).toBe('+₹315.00');
     expect(t.text(section('Deductions'))).toContain('No deductions suggested.');
-    expect(t.text(run())).toContain('Net pay ₹4,815.00');
-    const days = [...section('Timesheet').querySelectorAll('tbody tr')].map((r) => t.text(r));
+    expect(netPay()).toBe('₹4,815.00');
+    const days = dayRows().map((r) => t.text(r));
     expect(days).toHaveLength(7);
     expect(days[2]).toContain('Week off');
     expect(days[4]).toContain('9h 45m 1h 45m');
@@ -210,7 +242,7 @@ describe('Staff › Payroll', () => {
     });
     expect(typeof op.payload['id']).toBe('string');
     expect(t.snack()).toBe('Adjustment added');
-    expect(t.text(run())).toContain('Net pay ₹13,757.56');
+    expect(netPay()).toBe('₹13,757.56');
   });
 
   it('reverses an adjustment with a note (append-only)', async () => {
@@ -227,13 +259,17 @@ describe('Staff › Payroll', () => {
       payload: { reverses_id: 'ad1', note: 'Paid back in cash' },
     });
     expect(t.text(section('Adjustments'))).toContain('reversed');
-    expect(t.text(run())).toContain('Net pay ₹16,758.06');
+    expect(netPay()).toBe('₹16,758.06');
   });
 
   it('recalculate, then finalise (confirmed): the run becomes read-only', async () => {
     t = await startPage('/staff/payroll?id=r-oct');
+    // On 13 Oct October is still running: pay never covers days to come.
+    expect(t.button('Finalise…', run())!.disabled).toBe(true);
+    expect(t.text(run())).toContain('This period ends 31 Oct');
     await click('Recalculate', run());
     expect(t.payroll.ops[0]).toEqual({ kind: 'salary_run.recalculate', payload: { id: 'r-oct' } });
+    await openAfterOctober('/staff/payroll?id=r-oct');
     await click('Finalise…', run());
     expect(t.text(t.dialog())).toContain(
       'Attendance and leave on these dates can no longer change',
@@ -260,6 +296,7 @@ describe('Staff › Payroll', () => {
         l.runId === 'r-oct' && l.staffId === 'st3' ? { ...l, netPaise: -5_000 } : l,
       );
     });
+    await openAfterOctober('/staff/payroll?id=r-oct');
     await click('Finalise…', run());
     await click('Finalise', t.dialog()!.querySelector('mat-dialog-actions')!);
     expect(t.text(run().querySelector('[role="alert"]'))).toBe(
@@ -278,7 +315,7 @@ describe('Staff › Payroll', () => {
 
   it('new draft: suggests the next period and refuses overlaps before the server', async () => {
     t = await startPage('/staff/payroll');
-    await click('New draft');
+    await click('Calculate pay');
     const dialog = t.dialog()!;
     const [first, last] = [...dialog.querySelectorAll('input[type="date"]')] as HTMLInputElement[];
     expect([first.value, last.value]).toEqual(['2026-11-01', '2026-11-30']);
@@ -288,10 +325,10 @@ describe('Staff › Payroll', () => {
     expect(t.text(dialog.querySelector('#new-run-problem'))).toBe(
       'Overlaps the draft run for 1–31 Oct 2026',
     );
-    expect(t.button('Create draft', dialog)!.disabled).toBe(true);
+    expect(t.button('Calculate', dialog.querySelector('mat-dialog-actions')!)!.disabled).toBe(true);
     setDate(first, '2026-11-01');
     await t.settle();
-    await click('Create draft', dialog);
+    await click('Calculate', dialog.querySelector('mat-dialog-actions')!);
     const op = t.payroll.ops[0];
     expect(op.kind).toBe('salary_run.create');
     expect(op.payload).toMatchObject({ period_start: '2026-11-01', period_end: '2026-11-30' });
@@ -301,7 +338,7 @@ describe('Staff › Payroll', () => {
 
   it('weekly pay rules suggest the next week from the week start', async () => {
     t = await startPage('/staff/payroll', 1440, ({ payroll }) => payroll.useWeekly());
-    await click('New draft');
+    await click('Calculate pay');
     const [first, last] = [
       ...t.dialog()!.querySelectorAll('input[type="date"]'),
     ] as HTMLInputElement[];
@@ -310,11 +347,13 @@ describe('Staff › Payroll', () => {
 
   it('exports the timesheet and summary CSV, and opens the print view', async () => {
     t = await startPage('/staff/payroll?id=r-oct');
-    await click('Timesheet CSV', run());
+    (await exportItem('Timesheet (CSV)')).click();
+    await t.settle();
     expect(t.snack()).toBe('Timesheet exported');
-    await click('Summary CSV', run());
+    (await exportItem('Pay summary (CSV)')).click();
+    await t.settle();
     expect(t.snack()).toBe('Summary exported');
-    const print = t.button('Print / Save as PDF', run()) as unknown as HTMLAnchorElement;
+    const print = (await exportItem('Print / Save as PDF')) as unknown as HTMLAnchorElement;
     expect(print.getAttribute('href')).toBe('/staff/payroll/print?id=r-oct&auto=1');
   });
 
@@ -355,6 +394,5 @@ describe('Staff › Payroll', () => {
     expect(t.url()).toBe('/overview');
     expect(navLabels()).not.toContain('Payroll');
     expect(navLabels()).not.toContain('Pay setup');
-    expect(navLabels()).toContain('Leave');
   });
 });

@@ -29,7 +29,7 @@ describe('Staff › Attendance: corrections', () => {
   }
 
   it('accepts a pending entry with an optional note', async () => {
-    t = await startPage('/staff/attendance?id=e2');
+    t = await startPage('/staff/attendance/records?id=e2');
     t.button('Accept', detail())!.click();
     await t.settle();
     set(reason(), 'Went out for stock');
@@ -44,7 +44,7 @@ describe('Staff › Attendance: corrections', () => {
   });
 
   it('corrects times in IST (reason required), then shows the new row and where it came from', async () => {
-    t = await startPage('/staff/attendance?id=e2');
+    t = await startPage('/staff/attendance/records?id=e2');
     t.button('Correct times', detail())!.click();
     await t.settle();
     expect(field('Clock-in date').value).toBe('2026-10-13');
@@ -74,7 +74,7 @@ describe('Staff › Attendance: corrections', () => {
       },
     ]);
     expect(t.snack()).toBe("Rohan Das's entry corrected");
-    expect(t.url()).toBe('/staff/attendance?id=c1');
+    expect(t.url()).toBe('/staff/attendance/records?id=c1');
     await t.settle();
     const text = t.text(detail())!;
     expect(text).toContain('Corrected');
@@ -86,7 +86,7 @@ describe('Staff › Attendance: corrections', () => {
   });
 
   it('an open entry can be corrected without a clock-out', async () => {
-    t = await startPage('/staff/attendance?id=e1');
+    t = await startPage('/staff/attendance/records?id=e1');
     t.button('Correct times', detail())!.click();
     await t.settle();
     expect(field('Clock-out time').value).toBe('');
@@ -105,7 +105,7 @@ describe('Staff › Attendance: corrections', () => {
   });
 
   it('times are checked first: out after in, not in the future', async () => {
-    t = await startPage('/staff/attendance?id=e2');
+    t = await startPage('/staff/attendance/records?id=e2');
     t.button('Correct times', detail())!.click();
     await t.settle();
     set(reason(), 'Fix');
@@ -123,7 +123,7 @@ describe('Staff › Attendance: corrections', () => {
   });
 
   it('voids with a reason after confirming; voided rows show only on request', async () => {
-    t = await startPage('/staff/attendance?id=e3');
+    t = await startPage('/staff/attendance/records?id=e3');
     t.button('Void', detail())!.click();
     await t.settle();
     t.button('Void entry', t.dialog()!)!.click();
@@ -139,10 +139,10 @@ describe('Staff › Attendance: corrections', () => {
       },
     ]);
     expect(t.snack()).toBe('Entry voided');
-    expect(t.url()).toBe('/staff/attendance');
+    expect(t.url()).toBe('/staff/attendance/records');
     expect(names()).toEqual(['Rohan Das', 'Priya Nair', 'Priya Nair', 'Kavya Iyer']);
 
-    await t.harness.navigateByUrl('/staff/attendance?all=1&id=e3');
+    await t.harness.navigateByUrl('/staff/attendance/records?all=1&id=e3');
     await t.settle();
     expect(t.attendance.inactiveLoads.at(-1)).toBe(true);
     expect(names()).toHaveLength(5);
@@ -152,7 +152,7 @@ describe('Staff › Attendance: corrections', () => {
   });
 
   it('adds a missing entry: staff, in, out and a reason', async () => {
-    t = await startPage('/staff/attendance');
+    t = await startPage('/staff/attendance/records');
     t.button('Add missing entry')!.click();
     await t.settle();
     await pick('Kavya');
@@ -181,12 +181,12 @@ describe('Staff › Attendance: corrections', () => {
       },
     ]);
     expect(t.snack()).toBe('Entry added for Kavya Iyer');
-    expect(t.url()).toBe('/staff/attendance?id=m1');
-    expect(t.text(detail())).toContain('Added by hand by Arjun Mehra · Forgot her phone');
+    expect(t.url()).toBe('/staff/attendance/records?id=m1');
+    expect(t.text(detail())).toContain('Added by hand by Arjun Mehra: Forgot her phone');
   });
 
   it('a refusal is put in words in the dialog', async () => {
-    t = await startPage('/staff/attendance?id=e4');
+    t = await startPage('/staff/attendance/records?id=e4');
     t.attendance.refuseNext = 'period_finalised';
     t.button('Correct times', detail())!.click();
     await t.settle();
@@ -201,7 +201,7 @@ describe('Staff › Attendance: corrections', () => {
   });
 
   it('a reviewer who is not the owner cannot change their own entries', async () => {
-    t = await startPage('/staff/attendance?id=e1', 1440, ({ arena, attendance }) => {
+    t = await startPage('/staff/attendance/records?id=e1', 1440, ({ arena, attendance }) => {
       arena.memberships = arena.memberships.map((m) => ({
         ...m,
         role: 'staff' as const,
@@ -225,13 +225,13 @@ describe('Staff › Attendance: corrections', () => {
     expect(options).not.toContain('Priya Nair');
     expect(options).toContain('Rohan Das');
     // Someone else's entry is theirs to review.
-    await t.harness.navigateByUrl('/staff/attendance?id=e2');
+    await t.harness.navigateByUrl('/staff/attendance/records?id=e2');
     await t.settle();
     expect(t.button('Accept', detail())).toBeDefined();
   });
 
   it('the owner may correct their own entries', async () => {
-    t = await startPage('/staff/attendance?id=e1', 1440, ({ attendance }) => {
+    t = await startPage('/staff/attendance/records?id=e1', 1440, ({ attendance }) => {
       attendance.staff = asReviewerFor(attendance.staff, 's1');
     });
     expect(t.button('Correct times', detail())).toBeDefined();

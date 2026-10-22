@@ -84,6 +84,8 @@ void main() {
         reason: 'only the balance was recorded at the end');
     expect(ended.paymentStatus, PaymentStatus.paid);
 
+    // Let any toast (3 s, or 6 s for an error) time out first.
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   });
@@ -144,6 +146,8 @@ void main() {
     expect(ended.paymentStatus, PaymentStatus.waived);
     expect(await sessions.paymentsFor(id), isEmpty);
 
+    // Let any toast (3 s, or 6 s for an error) time out first.
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   });
@@ -198,6 +202,8 @@ void main() {
     expect(payments.single.method, PaymentMethod.upi,
         reason: 'the default Cash pick is not offered, so UPI is used');
 
+    // Let any toast (3 s, or 6 s for an error) time out first.
+    await tester.pump(const Duration(seconds: 6));
     await tester.pumpWidget(const SizedBox());
     await tester.pump(const Duration(milliseconds: 100));
   });

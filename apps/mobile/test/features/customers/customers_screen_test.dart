@@ -31,7 +31,9 @@ void main() {
     // Customers live under the More tab as "Members" after the design re-skin.
     await tester.tap(find.text('More'));
     await settle(tester);
-    await tester.scrollUntilVisible(find.text('Members'), 100);
+    // Far enough that the row clears the bottom navigation bar.
+    await tester.drag(find.byType(ListView), const Offset(0, -300));
+    await settle(tester);
     await tester.tap(find.text('Members'));
     await settle(tester);
 
