@@ -195,7 +195,7 @@ describe('Shell: a login’s data and access', () => {
     await TestBed.inject(ArenaContext).load(true);
     await p.settle();
     expect(p.url()).toBe('/account');
-    expect(p.text(p.doc().body)).toContain('Use the 404 Arena staff app');
+    expect(p.text(p.doc().body)).toContain('Use the ARQ staff app');
     expect(p.doc().querySelector('input')).toBeNull();
   });
 

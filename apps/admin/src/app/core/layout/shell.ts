@@ -1,5 +1,6 @@
 import { A11yModule } from '@angular/cdk/a11y';
 import { CdkMenu, CdkMenuItemRadio, CdkMenuTrigger } from '@angular/cdk/menu';
+import { NgOptimizedImage } from '@angular/common';
 import { Component, computed, effect, inject } from '@angular/core';
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { ACCESS_HOME, ArenaContext } from '../arena/arena-context';
@@ -20,6 +21,7 @@ import { NAV_GROUPS } from './nav';
     CdkMenuTrigger,
     CdkMenu,
     CdkMenuItemRadio,
+    NgOptimizedImage,
   ],
   templateUrl: './shell.html',
   host: { class: 'flex h-dvh overflow-hidden bg-bg text-fg' },

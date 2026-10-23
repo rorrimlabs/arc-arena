@@ -37,7 +37,7 @@ import { AuthCard } from './auth-card';
         </app-auth-card>
       }
       @case ('staff') {
-        <app-auth-card heading="Use the 404 Arena staff app" [subtitle]="signedInAs()">
+        <app-auth-card heading="Use the ARQ staff app" [subtitle]="signedInAs()">
           <p role="status" class="text-sm leading-[1.45]">
             You are on the staff of {{ arenaNames() }}. Sign in on the staff app with
             {{ session.user()?.email }} and your password.

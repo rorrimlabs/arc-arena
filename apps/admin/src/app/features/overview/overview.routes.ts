@@ -5,7 +5,7 @@ export const OVERVIEW_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Overview · ArenaOS',
+    title: 'Overview · ARQ',
     loadComponent: () => import('./overview-page').then((m) => m.OverviewPage),
   },
 ];

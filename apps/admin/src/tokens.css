@@ -1,4 +1,4 @@
-/* 404 Arena · ArenaOS admin — design tokens for Tailwind v4.
+/* ARQ admin — design tokens for Tailwind v4.
    Theme: data-theme="dark" (default) or data-theme="light" on <html> or any ancestor.
    Every colour, font, radius, shadow and motion value used in the app comes from here;
    components use the generated utilities (bg-surface, text-muted, rounded-card, …). */

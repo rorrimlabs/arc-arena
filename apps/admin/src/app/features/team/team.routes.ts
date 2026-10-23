@@ -5,7 +5,7 @@ export const TEAM_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Team · ArenaOS',
+    title: 'Team · ARQ',
     loadComponent: () => import('./team-page').then((m) => m.TeamPage),
     // The selection, read by the page (childParams): /staff/team/<staff>/<tab>.
     children: [

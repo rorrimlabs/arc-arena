@@ -5,7 +5,7 @@ export const SETTINGS_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Settings · ArenaOS',
+    title: 'Settings · ARQ',
     loadComponent: () => import('./settings-page').then((m) => m.SettingsPage),
     // The selection, read by the page (childParams): /settings/staff/schedule/<shift>.
     children: [

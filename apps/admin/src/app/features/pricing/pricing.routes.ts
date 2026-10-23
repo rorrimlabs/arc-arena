@@ -5,7 +5,7 @@ export const PRICING_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Pricing · ArenaOS',
+    title: 'Pricing · ARQ',
     loadComponent: () => import('./pricing-page').then((m) => m.PricingPage),
   },
 ];
