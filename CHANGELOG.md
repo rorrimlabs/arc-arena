@@ -10,7 +10,35 @@ together.
 
 ## [Unreleased]
 
+### Changed
+- Floor app Extend (single and group): pick any number of minutes (− / + in 5-min steps, a
+  slider up to 4 h, or tap to type) instead of fixed +15/+30/+60. The confirmation shows the
+  bill so far, the extension's price and the new total, for staff to tell the customer. The
+  station card's "+30" button is now "Extend".
+- Overtime, single sessions and groups: past the booked end the clock keeps running but the
+  price stops at the booked time. At End, staff see how long it ran over and what that adds, and
+  choose "Charge overtime" (off by default: the booked time is billed). Extending still charges
+  up to the new end. End ops carry `charge_overtime`; server `_pr_session_bill`,
+  `_pr_group_bill` / `_pr_sweep` (migrations `20261023154403_no_overtime_charge`,
+  `20261023154904_overtime_choice`).
+
+### Added
+- Floor app End session: "Ended at" can be changed (e.g. the timer ran on) and the price
+  recalculates; the "Bill amount" can be lowered (sent as a manual discount; the manual-discount
+  limit applies below owner level).
+- Floor app: Sync button in the Floor screen header.
+- Admin Sales: "Edit" on a closed bill (Money permission) shows Start, End and the Price and
+  lets you set the amount. Collected is set to match (the difference recorded as paid or given
+  back), and History shows the change with any corrected times. Sync op `bill.adjust`
+  (migrations `20261023151719_bill_edit` onwards).
+- Local demo seed (`supabase/seed.sql`, loaded by `supabase db reset`): arena "404 Arena
+  (demo)" with owner and staff logins, catalog, customers, a week of bills, running sessions
+  and bookings. Logins and how to load it without a reset are in the README.
+
 ### Removed
+- Billing rules removed from admin Settings and the floor app's Settings, and the Overtime
+  grace field from admin Pricing. Bills use the simple defaults: per-minute, no grace period,
+  no minimum charge, rounded to the nearest ₹1. The pricing code is unchanged.
 - Sentry removed from the floor app for now (crash reports, breadcrumbs, Session Replay):
   `sentry_flutter` and `sentry_dart_plugin` dropped, `AO_SENTRY_*` defines are ignored. Timer
   anomalies and unexpected errors go to the debug log only. iOS builds no longer fetch

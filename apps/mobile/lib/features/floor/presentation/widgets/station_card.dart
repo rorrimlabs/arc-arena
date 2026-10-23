@@ -226,7 +226,7 @@ class StationCard extends ConsumerWidget {
         // Quick actions are always available, not only when ending/overtime.
         Row(
           children: [
-            Expanded(child: _quietButton(arena, '+30', onExtend)),
+            Expanded(child: _quietButton(arena, 'Extend', onExtend)),
             const SizedBox(width: AppSpacing.sm),
             Expanded(child: _primaryButton(arena, 'Bill', onBill)),
             if (onMore != null) ...[

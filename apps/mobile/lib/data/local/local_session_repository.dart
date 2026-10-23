@@ -627,8 +627,17 @@ class LocalSessionRepository implements SessionRepository {
           'ended_at': Wire.at(actualEnd),
           'billed_amount_paise': cmd.billedAmountPaise,
           'mark_waived': cmd.markWaived,
+          if (cmd.chargeOvertime) 'charge_overtime': true,
           if (cmd.markWaived && cmd.waiveReason != null)
             'waive_reason': cmd.waiveReason,
+          // A lowered bill: the server re-checks it as a manual discount.
+          if (cmd.discountPaise > 0)
+            'discount': {
+              'id': _uuid.v4(),
+              'manual': {'value_kind': 'flat', 'value': cmd.discountPaise},
+              'reason': 'Bill corrected',
+              'amount_paise': cmd.discountPaise,
+            },
           'expected_segment_ids': pricedFrom,
           'expected_scheduled_end_at': Wire.at(existing.scheduledEndAt),
           'charges': [for (final c in charges) chargeWire(c)],

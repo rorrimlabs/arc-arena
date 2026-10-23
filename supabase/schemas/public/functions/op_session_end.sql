@@ -2,6 +2,7 @@
 --
 -- Permission: bill; plus discount when mark_waived.
 -- Payload: session_id, ended_at, billed_amount_paise, mark_waived?, waive_reason?,
+--   charge_overtime? (default false: time past the booked end is not billed),
 --   expected_segment_ids[], expected_scheduled_end_at, charges[] (one row per priced piece),
 --   discount? ({id?, discount_id? | code? | manual: {value_kind, value}, reason?, amount_paise}:
 --   validated and recorded by _discount_apply; billed = cash-rounded subtotal − discount).
@@ -87,7 +88,7 @@ begin
   if exists (select 1 from session_segments where session_id = v_session and ended_at < started_at) then
     raise exception 'invalid_time' using hint = 'the end is before the current segment started';
   end if;
-  v_bill := _pr_session_bill(v_session, v_ended);
+  v_bill := _pr_session_bill(v_session, v_ended, coalesce((p->>'charge_overtime')::boolean, false));
   v_total := (v_bill->>'total')::bigint;
   -- A discount (preset, coupon or manual) comes off the subtotal before cash rounding.
   if jsonb_typeof(p->'discount') = 'object' then

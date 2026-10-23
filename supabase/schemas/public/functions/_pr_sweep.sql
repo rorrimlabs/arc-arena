@@ -1,17 +1,19 @@
--- _pr_sweep(v_snap, p_group, p_res, p_open_end, p_no_controllers) — bill one station's group assignments.
+-- _pr_sweep(v_snap, p_group, p_res, p_open_end, p_no_controllers, p_until?) — bill one station's group assignments.
 --
 -- Port of GroupBilling's sweepResource: splits the station's assignment windows (open ones end at
 -- p_open_end; empty ones dropped) at every start / end and quotes each covered stretch at the summed
 -- controller count (null when 0) with the activity of the first covering assignment in
 -- (player_number, idx) order. p_no_controllers sweeps only assignments without controllers
--- (shared_controller_pool mode). Unpriceable stretches are skipped. Returns {subtotal, keys}.
+-- (shared_controller_pool mode). p_until (the booked end when overtime is not charged) caps every
+-- window. Unpriceable stretches are skipped. Returns {subtotal, keys}.
 -- Server-only: not executable by anon/authenticated.
 create or replace function public._pr_sweep (
   v_snap           jsonb,
   p_group          uuid,
   p_res            uuid,
   p_open_end       timestamp with time zone,
-  p_no_controllers boolean
+  p_no_controllers boolean,
+  p_until          timestamp with time zone default null
 )
   returns jsonb
   language plpgsql
@@ -28,14 +30,15 @@ begin
   select started_at into v_started from group_sessions where id = p_group;
   -- Windows in the device's list order (player, then index); empty ones dropped.
   select coalesce(array_agg(started_at order by player_number, idx), '{}'),
-         coalesce(array_agg(coalesce(ended_at, p_open_end) order by player_number, idx), '{}'),
+         coalesce(array_agg(least(coalesce(ended_at, p_open_end), coalesce(p_until, 'infinity'))
+           order by player_number, idx), '{}'),
          coalesce(array_agg(controller_count order by player_number, idx), '{}'),
          coalesce(array_agg(activity_code order by player_number, idx), '{}')
     into ws, we, wc, wa
     from group_assignments
    where group_id = p_group and resource_id = p_res
      and (not p_no_controllers or controller_count is null)
-     and coalesce(ended_at, p_open_end) > started_at;
+     and least(coalesce(ended_at, p_open_end), coalesce(p_until, 'infinity')) > started_at;
   select array_agg(distinct x order by x) into v_pts
     from (select unnest(ws) as x union all select unnest(we)) t;
   for i in 1 .. coalesce(array_length(v_pts, 1), 0) - 1 loop
@@ -60,16 +63,16 @@ begin
 end;
 $function$;
 
-comment on function public._pr_sweep(jsonb, uuid, uuid, timestamp with time zone, boolean) is 'Pricing: sweeps one station''s group assignments into constant-controller stretches and quotes each; port of GroupBilling sweepResource.';
+comment on function public._pr_sweep(jsonb, uuid, uuid, timestamp with time zone, boolean, timestamp with time zone) is 'Pricing: sweeps one station''s group assignments into constant-controller stretches and quotes each; port of GroupBilling sweepResource.';
 
 grant execute
-  on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean)
+  on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean, timestamp with time zone)
   to "postgres", "service_role";
 
 revoke all
-  on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean)
+  on function "public"."_pr_sweep"(jsonb, uuid, uuid, timestamp with time zone, boolean, timestamp with time zone)
   from public;
 
-revoke all on function "public"._pr_sweep(v_snap jsonb, p_group uuid, p_res uuid, p_open_end timestamp with time zone, p_no_controllers boolean) from anon;
+revoke all on function "public"._pr_sweep(v_snap jsonb, p_group uuid, p_res uuid, p_open_end timestamp with time zone, p_no_controllers boolean, p_until timestamp with time zone) from anon;
 
-revoke all on function "public"._pr_sweep(v_snap jsonb, p_group uuid, p_res uuid, p_open_end timestamp with time zone, p_no_controllers boolean) from authenticated;
+revoke all on function "public"._pr_sweep(v_snap jsonb, p_group uuid, p_res uuid, p_open_end timestamp with time zone, p_no_controllers boolean, p_until timestamp with time zone) from authenticated;

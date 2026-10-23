@@ -37,6 +37,7 @@ begin
       when 'session.void'         then op_session_void(p_arena, p)
       when 'payment.record'       then op_payment(p_arena, p)
       when 'payment.correct'      then op_payment_correct(p_arena, p)
+      when 'bill.adjust'          then op_bill_adjust(p_arena, p)
       when 'group.create'         then op_group_create(p_arena, p)
       when 'group.add'            then op_group_add(p_arena, p)
       when 'group.switch'         then op_group_switch(p_arena, p)

@@ -2,6 +2,7 @@
 --
 -- Permission: bill; plus discount when mark_waived.
 -- Payload: group_id, ended_at, billed_amount_paise, mark_waived?, waive_reason?,
+--   charge_overtime? (default false: time past the booked end is not billed),
 --   expected_assignment_ids[],
 --   expected_scheduled_end_at; charges[] {id, assignment_id?, player_number?, charge_index,
 --   band_code, activity_code, resource_id?, controller_count?, segment_start, segment_end,
@@ -91,7 +92,9 @@ begin
   if exists (select 1 from group_assignments where group_id = v_group and ended_at < started_at) then
     raise exception 'invalid_time' using hint = 'the end is before a player''s current system started';
   end if;
-  v_bill := _pr_group_bill(v_group, v_ended);
+  -- Overtime is billed only when staff chose to (charge_overtime): else capped at the booked end.
+  v_bill := _pr_group_bill(v_group, v_ended,
+    case when coalesce((p->>'charge_overtime')::boolean, false) then null else v_end end);
   v_total := (v_bill->>'total')::bigint;
   -- A discount (preset, coupon or manual) comes off the subtotal before cash rounding.
   if jsonb_typeof(p->'discount') = 'object' then

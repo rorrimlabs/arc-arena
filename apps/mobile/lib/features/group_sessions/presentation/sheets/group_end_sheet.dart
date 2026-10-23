@@ -5,6 +5,7 @@ import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/controller.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_choice_field.dart';
+import 'package:arena_ops/features/floor/presentation/sheets/end_session_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -29,6 +30,9 @@ class _GroupEndSheet extends ConsumerStatefulWidget {
 
 class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
   bool _waive = false;
+
+  /// Staff's choice when played past the booked end: bill the overtime too.
+  bool _chargeOvertime = false;
   bool _busy = false;
   final _waiveReasonCtrl = TextEditingController();
 
@@ -47,7 +51,11 @@ class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
     final theme = Theme.of(context);
     final actions = ref.watch(groupSessionActionsProvider);
     final now = ref.watch(clockProvider).now();
-    final bill = actions.endSummary(widget.group, at: now);
+    final booked = actions.endSummary(widget.group, at: now);
+    final whole =
+        actions.endSummary(widget.group, at: now, chargeOvertime: true);
+    final bill = _chargeOvertime ? whole : booked;
+    final scheduledEnd = widget.group.group.scheduledEndAt;
 
     return Padding(
       padding: EdgeInsets.only(
@@ -75,6 +83,16 @@ class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
               '${widget.group.group.billingMode.label}',
               style: theme.textTheme.bodySmall),
           const SizedBox(height: AppSpacing.sm),
+          if (now.isAfter(scheduledEnd)) ...[
+            OvertimeChoice(
+              scheduledEnd: scheduledEnd,
+              over: now.difference(scheduledEnd),
+              extraPaise: whole.total.value - booked.total.value,
+              charge: _chargeOvertime,
+              onChanged: (v) => setState(() => _chargeOvertime = v),
+            ),
+            const SizedBox(height: AppSpacing.sm),
+          ],
           BorrowedPadsNotice(
             sessionRef: Controller.groupRef(widget.group.group.id),
             returning: _returning,
@@ -120,6 +138,7 @@ class _GroupEndSheetState extends ConsumerState<_GroupEndSheet> {
         .read(groupSessionActionsProvider)
         .end(widget.group,
             markWaived: _waive,
+            chargeOvertime: _chargeOvertime,
             waiveReason: _waive ? _waiveReasonCtrl.text : null);
     final notReturned = r.isOk && _returning.isNotEmpty
         ? _returning.length - await returnPadsHome(ref, _returning)

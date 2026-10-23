@@ -26,7 +26,6 @@ import 'package:arena_ops/features/games/presentation/games_screen.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_detail_screen.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_session_screen.dart';
 import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
-import 'package:arena_ops/features/more/presentation/billing_rules_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/holidays_screen.dart';
 import 'package:arena_ops/features/more/presentation/hours_screen.dart';
@@ -202,11 +201,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: StationsScreen.path,
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const StationsScreen(),
-      ),
-      GoRoute(
-        path: BillingRulesScreen.path,
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const BillingRulesScreen(),
       ),
       GoRoute(
         path: StaffScreen.path,

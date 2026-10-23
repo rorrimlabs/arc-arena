@@ -3,7 +3,6 @@ import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/features/games/presentation/games_screen.dart';
-import 'package:arena_ops/features/more/presentation/billing_rules_screen.dart';
 import 'package:arena_ops/features/more/presentation/holidays_screen.dart';
 import 'package:arena_ops/features/more/presentation/hours_screen.dart';
 import 'package:arena_ops/features/more/presentation/pricing_screen.dart';
@@ -50,12 +49,6 @@ class SettingsScreen extends ConsumerWidget {
                 title: 'Pricing & price bands',
                 subtitle: 'Rates and holidays',
                 onTap: () => _push(context, const PricingScreen()),
-              ),
-              ArenaListRow(
-                icon: Icons.rule_outlined,
-                title: 'Billing rules',
-                subtitle: 'Rounding, grace, minimums, group pricing',
-                onTap: () => _push(context, const BillingRulesScreen()),
               ),
               ArenaListRow(
                 icon: Icons.schedule_outlined,

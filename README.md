@@ -21,6 +21,27 @@ cd apps/mobile && flutter run --flavor dev --dart-define-from-file=dart_define.l
                  # Android emulator: dart_define.local-android.json
 ```
 
+### Demo data (local only)
+
+`supabase db reset` loads [`supabase/seed.sql`](supabase/seed.sql): one arena,
+**404 Arena (demo)**, with its catalog (PS5, VR, pool and lounge, 6 stations,
+rates, 16 games, controllers), 8 customers, about 30 paid bills over the last six
+days (cash / UPI / card, one split, one left unpaid), two sessions running now and
+three upcoming bookings. Times are relative to when you reset.
+
+| Login | Password | Role |
+|---|---|---|
+| `owner@arena.test` | `password123` | Owner (admin dashboard + floor app) |
+| `staff@arena.test` | `password123` | Floor staff (start, bill, discount, members) |
+
+To add it to a database without resetting it (it fails if these logins already exist):
+
+```bash
+docker exec -i supabase_db_arena_ops psql -U postgres -v ON_ERROR_STOP=1 -1 < supabase/seed.sql
+```
+
+Never run the seed against a hosted project.
+
 Both configs are committed (localhost URL + the local stack's publishable key),
 and VS Code's launch list has them as "arena_ops (local Supabase: …)". Plain
 `flutter run` in a debug build is an offline demo (Drift only, no server).

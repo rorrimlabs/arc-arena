@@ -185,6 +185,7 @@ class EndGroupCommand {
     required this.billedAmountPaise,
     this.markWaived = false,
     this.waiveReason,
+    this.chargeOvertime = false,
   });
 
   final String groupId;
@@ -196,6 +197,9 @@ class EndGroupCommand {
   /// Why it was waived (the action layer requires one); the server audits it
   /// with the amount written off.
   final String? waiveReason;
+
+  /// Staff chose to bill the time played past the booked end.
+  final bool chargeOvertime;
 }
 
 @immutable
