@@ -8,17 +8,32 @@ import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/data/device/geolocator_location_probe.dart';
 import 'package:arena_ops/data/remote/unavailable_attendance_repository.dart';
+import 'package:arena_ops/data/remote/unavailable_attendance_request_repository.dart';
 import 'package:arena_ops/domain/attendance/attendance_day.dart';
 import 'package:arena_ops/domain/attendance/attendance_entry.dart';
+import 'package:arena_ops/domain/attendance/attendance_request.dart';
 import 'package:arena_ops/domain/attendance/attendance_rules.dart';
 import 'package:arena_ops/domain/attendance/location_reading.dart';
 import 'package:arena_ops/domain/repositories/attendance_repository.dart';
+import 'package:arena_ops/domain/repositories/attendance_request_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 /// Overridden in cloud mode with the server-backed repository; local-only
 /// builds explain that attendance needs the online arena.
 final attendanceRepositoryProvider = Provider<AttendanceRepository>(
   (ref) => const UnavailableAttendanceRepository(),
+);
+
+/// Missed-punch requests; overridden in cloud mode like the repository above.
+final attendanceRequestRepositoryProvider =
+    Provider<AttendanceRequestRepository>(
+  (ref) => const UnavailableAttendanceRequestRepository(),
+);
+
+/// The signed-in person's own missed-punch requests, newest first.
+final myAttendanceRequestsProvider =
+    FutureProvider.autoDispose<Result<List<AttendanceRequest>>>(
+  (ref) => ref.watch(attendanceRequestRepositoryProvider).myRequests(),
 );
 
 final locationProbeProvider = Provider<LocationProbe>(

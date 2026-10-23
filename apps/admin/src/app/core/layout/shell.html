@@ -32,17 +32,19 @@
       [class.justify-center]="rail()"
       [class.px-3]="!rail()"
     >
-      <div
-        class="grid size-10 flex-none place-items-center rounded-card bg-primary font-display text-[15px] leading-none font-extrabold text-on-primary"
-        aria-hidden="true"
-      >
-        404
-      </div>
+      <img
+        ngSrc="icons/Icon-192.png"
+        alt=""
+        width="40"
+        height="40"
+        priority
+        class="size-10 flex-none rounded-card"
+      />
       @if (rail()) {
-        <span class="sr-only">ArenaOS</span>
+        <span class="sr-only">ARQ</span>
       } @else {
         <div class="flex min-w-0 flex-col gap-0.75">
-          <span class="font-display text-[17px] leading-none font-bold">ArenaOS</span>
+          <span class="font-display text-[17px] leading-none font-bold">ARQ</span>
           <span class="text-xs leading-none font-medium text-muted">Owner dashboard</span>
         </div>
       }

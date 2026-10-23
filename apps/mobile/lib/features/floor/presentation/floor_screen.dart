@@ -5,6 +5,7 @@ import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/connection_status.dart';
+import 'package:arena_ops/data/sync/sync_engine.dart';
 import 'package:arena_ops/domain/entities/activity.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
@@ -224,7 +225,10 @@ class FloorScreen extends ConsumerWidget {
               overline:
                   ref.watch(cloudBindingProvider)?.arenaName ?? demoArenaLabel,
               title: 'Floor',
-              trailing: const AttendanceChip(),
+              trailing: const Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [_SyncButton(), AttendanceChip()],
+              ),
               status: _FloorStatus(
                 playing: {...byResource.keys, ...groupByResource.keys}.length,
                 total: resources.length,
@@ -361,6 +365,32 @@ class _Masonry extends StatelessWidget {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// Sends and fetches everything now (as Sync › Sync now). Hidden in
+/// local-only mode, where there is no server.
+class _SyncButton extends ConsumerWidget {
+  const _SyncButton();
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final binding = ref.watch(cloudBindingProvider);
+    if (binding == null) return const SizedBox.shrink();
+    final syncing =
+        ref.watch(syncStatusProvider).value?.state == SyncState.syncing;
+    return IconButton(
+      key: const ValueKey('floor-sync'),
+      tooltip: 'Sync now',
+      onPressed: syncing ? null : binding.engine.start,
+      icon: syncing
+          ? const SizedBox(
+              width: 20,
+              height: 20,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.sync),
     );
   }
 }

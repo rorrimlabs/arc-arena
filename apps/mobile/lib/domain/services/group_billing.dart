@@ -67,6 +67,8 @@ class GroupBilling {
   /// [openEndAt] (now for a live amount, or the actual end at close). The pooled
   /// mode bills purchased controllers over `[groupStart, openEndAt]`.
   /// [groupStart] is also the pricing-rule instant for every stretch.
+  /// [billUntil] (the booked end when overtime is not charged) caps every
+  /// window and the pool. Port: `_pr_group_bill` / `_pr_sweep` (p_until).
   GroupBill bill({
     required PricingSnapshot snapshot,
     required List<GroupAssignment> assignments,
@@ -74,7 +76,10 @@ class GroupBilling {
     required int purchasedControllerCount,
     required DateTime groupStart,
     required DateTime openEndAt,
+    DateTime? billUntil,
   }) {
+    DateTime capped(DateTime t) =>
+        billUntil != null && t.isAfter(billUntil) ? billUntil : t;
     final groupId = assignments.isEmpty ? '' : assignments.first.groupId;
     final charges = <GroupCharge>[];
     final rules = <PricingRule>{};
@@ -118,7 +123,7 @@ class GroupBilling {
     void sweepResource(String resourceId, List<GroupAssignment> list) {
       final windows = <({GroupAssignment a, DateTime start, DateTime end})>[
         for (final a in list)
-          (a: a, start: a.startedAt, end: a.endedAt ?? openEndAt),
+          (a: a, start: a.startedAt, end: capped(a.endedAt ?? openEndAt)),
       ].where((w) => w.end.isAfter(w.start)).toList();
       if (windows.isEmpty) return;
 
@@ -177,14 +182,14 @@ class GroupBilling {
             assignments.where((a) => a.controllerCount != null).toList();
         if (purchasedControllerCount > 0 &&
             pooled.isNotEmpty &&
-            openEndAt.isAfter(groupStart)) {
+            capped(openEndAt).isAfter(groupStart)) {
           final activityCode = pooled.first.activityCode;
           final quoted = pricing.quote(
             snapshot: snapshot,
             activityCode: activityCode,
             controllerCount: purchasedControllerCount,
             start: groupStart,
-            end: openEndAt,
+            end: capped(openEndAt),
             ruleAt: groupStart,
           );
           final q = quoted.valueOrNull;

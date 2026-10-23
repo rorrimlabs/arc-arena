@@ -11,6 +11,7 @@ import {
 } from '@angular/core';
 import { MatButton, MatIconButton } from '@angular/material/button';
 import { MatChipListbox, MatChipListboxChange, MatChipOption } from '@angular/material/chips';
+import { MatDialog } from '@angular/material/dialog';
 import { MatFormField, MatLabel, MatPrefix } from '@angular/material/form-field';
 import { MatIcon } from '@angular/material/icon';
 import { MatInput } from '@angular/material/input';
@@ -31,11 +32,13 @@ import { formatDate, formatIsoDate, formatTime, istDayStartOf } from '../../shar
 import { BillDetail } from './components/bill-detail';
 import { ReportMeta, billsCsv, paymentsCsv } from './components/sales-csv';
 import { SalesStore } from './data/sales-store';
+import { MissedBillDialog } from './dialogs/missed-bill-dialog';
 import {
   Bill,
   METHOD_FILTERS,
   SALES_RANGES,
   asMethod,
+  billFlags,
   billState,
   matchesSearch,
   methodName,
@@ -186,6 +189,9 @@ const PAGE = 40;
               >
                 <mat-icon aria-hidden="true">refresh</mat-icon>
               </button>
+              <button mat-button type="button" (click)="addMissed()">
+                <mat-icon aria-hidden="true">add</mat-icon>Missed bill
+              </button>
               <button
                 mat-button
                 type="button"
@@ -242,11 +248,17 @@ const PAGE = 40;
                       b.voided ? '—' : rupees(b.billedPaise ?? 0)
                     }}</span>
                     @let state = stateOf(b);
-                    @if (state.tone) {
-                      <app-status-pill [tone]="state.tone">{{ state.label }}</app-status-pill>
-                    } @else {
-                      <span class="text-xs leading-none text-muted">{{ state.label }}</span>
-                    }
+                    <span class="flex items-center gap-1">
+                      <!-- The first change flag (added later, edited…) next to the state. -->
+                      @if (flagsOf(b)[0]; as flag) {
+                        <app-status-pill [tone]="flag.tone">{{ flag.label }}</app-status-pill>
+                      }
+                      @if (state.tone) {
+                        <app-status-pill [tone]="state.tone">{{ state.label }}</app-status-pill>
+                      } @else {
+                        <span class="text-xs leading-none text-muted">{{ state.label }}</span>
+                      }
+                    </span>
                   </app-list-row>
                 </li>
               }
@@ -285,6 +297,7 @@ export class SalesPage {
   private readonly clock = inject(Clock);
   private readonly router = inject(Router);
   private readonly snack = inject(MatSnackBar);
+  private readonly dialog = inject(MatDialog);
   private readonly document = inject(DOCUMENT);
 
   /** `?range=` — today | yesterday | 7d | 30d | custom (default today). */
@@ -302,6 +315,7 @@ export class SalesPage {
   protected readonly page = PAGE;
   protected readonly rupees = formatRupees;
   protected readonly stateOf = billState;
+  protected readonly flagsOf = (b: Bill) => billFlags(b);
 
   /** Today's IST date; changes at midnight IST, which moves "Today" (and 7/30 days) along. */
   private readonly now = injectNow(60_000);
@@ -418,6 +432,21 @@ export class SalesPage {
 
   protected close(): void {
     void this.router.navigate([], { queryParams: { id: null }, queryParamsHandling: 'merge' });
+  }
+
+  /** A bill played but never started on the floor: added already ended and paid. */
+  protected addMissed(): void {
+    this.dialog
+      .open<MissedBillDialog, void, boolean>(MissedBillDialog, {
+        width: '560px',
+        maxWidth: 'calc(100vw - 32px)',
+      })
+      .afterClosed()
+      .subscribe((added) => {
+        if (!added) return;
+        this.snack.open('Missed bill added', undefined, { duration: 3200 });
+        void this.store.refresh();
+      });
   }
 
   protected refresh(): void {

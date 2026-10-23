@@ -244,7 +244,7 @@ const LINK_UNUSABLE = 'This link can no longer be used. Ask for a new invitation
               Sign in on the staff app with {{ email() }} and your password.
             </p>
             <p class="text-sm leading-[1.45] text-muted">
-              Staff run the floor in the 404 Arena staff app; this dashboard is for owners and
+              Staff run the floor in the ARQ staff app; this dashboard is for owners and
               managers.
             </p>
             <button mat-flat-button type="button" class="arena-cta" (click)="done()">Done</button>

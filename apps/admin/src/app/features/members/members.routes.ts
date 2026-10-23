@@ -5,7 +5,7 @@ export const MEMBERS_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Members · ArenaOS',
+    title: 'Members · ARQ',
     loadComponent: () => import('./members-page').then((m) => m.MembersPage),
   },
 ];

@@ -256,7 +256,7 @@ void main() {
         openEndAt: end,
         sessionStart: start,
         billUntil: overtimeBillUntil(
-            lastEnd: end, scheduledEnd: end, graceMinutes: 0),
+            lastEnd: end, scheduledEnd: end),
       );
       final rows = bill.charges.fold<int>(0, (a, c) => a + c.amountPaise);
 
@@ -323,7 +323,7 @@ void main() {
         openEndAt: actual,
         sessionStart: evening,
         billUntil: overtimeBillUntil(
-            lastEnd: actual, scheduledEnd: booked, graceMinutes: 5),
+            lastEnd: actual, scheduledEnd: booked),
       );
       expect(bill.total, const Paise(30000));
     });

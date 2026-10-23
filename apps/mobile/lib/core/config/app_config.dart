@@ -62,8 +62,8 @@ class AppConfig {
   static const hostedSupabaseHosts = <String, Set<String>>{
     // arena-ops-staging, the personal QA project (Mumbai).
     'staging': <String>{'sqznpjqktvsabjxvpzjh.supabase.co'},
-    // The company's production project: added once it exists.
-    'production': <String>{},
+    // The company's production project.
+    'production': <String>{'oilylxydibubupuqghbw.supabase.co'},
   };
 
   static const _defineFiles = {

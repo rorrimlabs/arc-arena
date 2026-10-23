@@ -58,6 +58,6 @@ jobs:
           version: 2.117.0
       - run: supabase start
       - name: Schema files and migrations agree
-        run: supabase db schema declarative sync --name ci_check --no-apply | tee sync.log && grep -q "No schema changes found" sync.log
+        run: supabase db schema declarative sync --name ci_check --no-apply 2>&1 | tee sync.log && grep -q "No schema changes found" sync.log
       - run: supabase db advisors --local --type all
       - run: supabase test db

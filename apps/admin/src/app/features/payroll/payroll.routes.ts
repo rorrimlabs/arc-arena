@@ -5,14 +5,14 @@ export const PAYROLL_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Payroll · ArenaOS',
+    title: 'Payroll · ARQ',
     loadComponent: () => import('./payroll-page').then((m) => m.PayrollPage),
   },
   {
     // A run's printable summary (Print → Save as PDF).
     path: 'print',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Pay summary · ArenaOS',
+    title: 'Pay summary · ARQ',
     loadComponent: () => import('./print/payroll-print').then((m) => m.PayrollPrint),
   },
 ];

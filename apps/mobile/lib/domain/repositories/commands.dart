@@ -118,10 +118,19 @@ class EndSessionCommand {
     required this.billedAmountPaise,
     this.markWaived = false,
     this.waiveReason,
+    this.discountPaise = 0,
+    this.chargeOvertime = false,
+    this.endMovedFrom,
+    this.endReason,
   });
 
   final String sessionId;
   final DateTime actualEndedAt;
+
+  /// Staff set [actualEndedAt] earlier than this, the time they ended it; the
+  /// server requires [endReason] and audits the move with both bills.
+  final DateTime? endMovedFrom;
+  final String? endReason;
 
   /// Immutable final segments (built from all session segments at end).
   final List<SessionCharge> charges;
@@ -133,6 +142,13 @@ class EndSessionCommand {
   /// Why it was waived (the action layer requires one); the server audits it
   /// with the amount written off.
   final String? waiveReason;
+
+  /// Staff lowered the bill: a manual flat discount off the subtotal, already
+  /// in [billedAmountPaise]. 0 = none.
+  final int discountPaise;
+
+  /// Staff chose to bill the time played past the booked end.
+  final bool chargeOvertime;
 }
 
 @immutable

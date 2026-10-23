@@ -5,6 +5,7 @@ import { ArenaContext } from '../arena/arena-context';
 import { Session } from '../auth/session';
 import { FloorRead, FloorStore } from '../floor/floor-store';
 import { AccessoriesStore } from '../../features/accessories/data/accessories-store';
+import { AttendanceRequestsStore } from '../../features/attendance/data/attendance-requests';
 import { AttendanceStore } from '../../features/attendance/data/attendance-store';
 import { AttendanceRulesStore } from '../../features/settings/data/attendance-rules';
 import { WorkHoursStore } from '../../features/settings/data/work-hours';
@@ -186,6 +187,7 @@ export class RealtimeSync {
   private readonly accessories = inject(AccessoriesStore);
   private readonly users = inject(UsersStore);
   private readonly attendance = inject(AttendanceStore);
+  private readonly attendanceRequests = inject(AttendanceRequestsStore);
   private readonly attendanceRules = inject(AttendanceRulesStore);
   private readonly workHours = inject(WorkHoursStore);
   private readonly shifts = inject(ShiftsStore);
@@ -439,6 +441,7 @@ export class RealtimeSync {
     if (targets.has('attendance')) {
       if (on('staff')) jobs.push(this.attendance.refresh());
       else this.attendance.stale();
+      jobs.push(this.attendanceRequests.refresh());
     }
     if (targets.has('settings')) {
       // Working hours (settings key work_hours) show on Settings and shape the calendar.

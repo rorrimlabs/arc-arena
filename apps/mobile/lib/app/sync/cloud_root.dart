@@ -17,6 +17,7 @@ import 'package:arena_ops/app/providers/attendance_providers.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
 import 'package:arena_ops/app/providers/data_providers.dart';
 import 'package:arena_ops/app/providers/leave_providers.dart';
+import 'package:arena_ops/app/providers/my_bills_providers.dart';
 import 'package:arena_ops/app/providers/profile_providers.dart';
 import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/app/sync/staff_access.dart';
@@ -29,7 +30,9 @@ import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:arena_ops/data/local/database.dart';
 import 'package:arena_ops/data/local/db_safety.dart';
 import 'package:arena_ops/data/remote/supabase_attendance_repository.dart';
+import 'package:arena_ops/data/remote/supabase_attendance_request_repository.dart';
 import 'package:arena_ops/data/remote/supabase_leave_repository.dart';
+import 'package:arena_ops/data/remote/supabase_my_bills_repository.dart';
 import 'package:arena_ops/data/remote/supabase_profile_repository.dart';
 import 'package:arena_ops/data/sync/realtime_sync.dart';
 import 'package:arena_ops/data/sync/sync_engine.dart';
@@ -468,6 +471,17 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
                 realtime.broadcastSync(kinds: const ['attendance.punch'])),
           ),
         ),
+        attendanceRequestRepositoryProvider.overrideWithValue(
+          SupabaseAttendanceRequestRepository(
+            client: _client,
+            transport: SupabaseSyncTransport(_client),
+            arenaId: arena.arenaId,
+            userId: user.id,
+            deviceId: engine.deviceId,
+            onChanged: () => unawaited(
+                realtime.broadcastSync(kinds: const ['attendance.request'])),
+          ),
+        ),
         leaveRepositoryProvider.overrideWithValue(
           SupabaseLeaveRepository(
             client: _client,
@@ -477,6 +491,17 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
             deviceId: engine.deviceId,
             onChanged: (kind) =>
                 unawaited(realtime.broadcastSync(kinds: [kind])),
+          ),
+        ),
+        // Own closed bills and editing them (bill_edit): online only, like leave.
+        myBillsRepositoryProvider.overrideWithValue(
+          SupabaseMyBillsRepository(
+            client: _client,
+            transport: SupabaseSyncTransport(_client),
+            arenaId: arena.arenaId,
+            deviceId: engine.deviceId,
+            onChanged: () => unawaited(
+                realtime.broadcastSync(kinds: const ['bill.adjust'])),
           ),
         ),
         // Own details and the staff terms: online only, like leave.
@@ -655,7 +680,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       );
     }
     return MaterialApp(
-      title: 'arena_ops',
+      title: 'ARQ',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

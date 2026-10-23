@@ -2,6 +2,7 @@ import { AppError } from '../../../core/auth/auth-api';
 import { istDayStart } from '../../../shared/time/ist';
 import { OverviewData, withAverage } from '../../overview/data/overview.models';
 import {
+  BillEdit,
   MethodCorrection,
   OverviewQuery,
   PaymentEntry,
@@ -432,6 +433,33 @@ export class SampleSalesApi extends SalesApi {
             amount_paise: original.amountPaise,
           },
           after: { method: c.method, amount_paise: amount, refund_id: out.id, payment_id: into.id },
+        },
+      ],
+    });
+  }
+
+  async edit(_arenaId: string, bill: Bill, change: BillEdit): Promise<void> {
+    this.fail();
+    const b = this.find(bill.id);
+    const reason = change.reason.trim();
+    if (!reason) throw this.error('reason_required');
+    if (b.voided) throw this.error('voided');
+    if (b.paymentStatus === 'waived') throw this.error('waived');
+    const diff = change.billedPaise - b.paidPaise;
+    if (diff === 0 && change.billedPaise === b.billedPaise) throw this.error('same_total');
+    const rows = diff ? [this.entry(change.method, diff, diff < 0, false, reason, 'Bill edited')] : [];
+    const updated = this.addPayments({ ...b, billedPaise: change.billedPaise }, rows);
+    this.put({
+      ...updated,
+      history: [
+        ...updated.history,
+        {
+          at: this.now.toISOString(),
+          action: 'bill_adjust',
+          by: this.by,
+          reason,
+          before: { billed_paise: b.billedPaise, paid_paise: b.paidPaise },
+          after: { billed_paise: change.billedPaise, paid_paise: change.billedPaise },
         },
       ],
     });

@@ -66,6 +66,14 @@ begin
       raise exception 'forbidden' using errcode = '42501',
         hint = 'only an owner can grant or remove payroll permissions';
     end if;
+    -- Editing closed bills or adding missed ones records money: owners only hand out
+    -- bill_edit and bill_record.
+    if not private.app_is_owner(p_arena)
+       and (('bill_edit' = any(v_perms)) <> ('bill_edit' = any(v_old_perms))
+            or ('bill_record' = any(v_perms)) <> ('bill_record' = any(v_old_perms))) then
+      raise exception 'forbidden' using errcode = '42501',
+        hint = 'only an owner can grant or remove editing or adding bills';
+    end if;
   end if;
 
   update staff_profiles set name = coalesce(nullif(btrim(p->>'name'), ''), name),

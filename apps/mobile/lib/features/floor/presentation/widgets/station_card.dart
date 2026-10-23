@@ -117,6 +117,7 @@ class StationCard extends ConsumerWidget {
       onTap: onTap,
       borderColor: accent,
       background: overtime ? arena.stOvertimeBg : arena.surface,
+      pulse: overtime,
       children: [
         _headerRow(arena, badge, accent),
         const SizedBox(height: AppSpacing.md),
@@ -179,6 +180,7 @@ class StationCard extends ConsumerWidget {
       onTap: onTap,
       borderColor: accent,
       background: overtime ? arena.stOvertimeBg : arena.surface,
+      pulse: overtime,
       children: [
         _headerRow(arena, badge, accent),
         const SizedBox(height: AppSpacing.md),
@@ -226,7 +228,7 @@ class StationCard extends ConsumerWidget {
         // Quick actions are always available, not only when ending/overtime.
         Row(
           children: [
-            Expanded(child: _quietButton(arena, '+30', onExtend)),
+            Expanded(child: _quietButton(arena, 'Extend', onExtend)),
             const SizedBox(width: AppSpacing.sm),
             Expanded(child: _primaryButton(arena, 'Bill', onBill)),
             if (onMore != null) ...[
@@ -454,7 +456,30 @@ class StationCard extends ConsumerWidget {
     required Color background,
     VoidCallback? onTap,
     bool compact = false,
+    bool pulse = false,
   }) {
+    final content = Material(
+      type: MaterialType.transparency,
+      child: InkWell(
+        onTap: onTap,
+        child: Padding(
+          padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisSize: MainAxisSize.min,
+            children: children,
+          ),
+        ),
+      ),
+    );
+    if (pulse) {
+      return _OvertimePulse(
+        from: arena.surface,
+        to: background,
+        borderColor: borderColor,
+        child: content,
+      );
+    }
     // AnimatedContainer so the accent + tint glide between states (free →
     // playing → ending → over time) instead of snapping, like the prototype.
     return AnimatedContainer(
@@ -466,20 +491,7 @@ class StationCard extends ConsumerWidget {
         border: Border.all(color: borderColor, width: 1.5),
       ),
       clipBehavior: Clip.antiAlias,
-      child: Material(
-        type: MaterialType.transparency,
-        child: InkWell(
-          onTap: onTap,
-          child: Padding(
-            padding: EdgeInsets.all(compact ? AppSpacing.md : AppSpacing.lg),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: children,
-            ),
-          ),
-        ),
-      ),
+      child: content,
     );
   }
 
@@ -562,6 +574,74 @@ class StationCard extends ConsumerWidget {
           child: Icon(icon, size: 18, color: arena.text),
         ),
       ),
+    );
+  }
+}
+
+/// The over-time card's tint, pulsing between [from] and [to] for as long as
+/// the session stays over time, so it keeps catching the eye on a busy floor
+/// (a one-off glide is easy to miss). Holds [to] when the system asks for
+/// reduced motion.
+class _OvertimePulse extends StatefulWidget {
+  const _OvertimePulse({
+    required this.from,
+    required this.to,
+    required this.borderColor,
+    required this.child,
+  });
+
+  final Color from;
+  final Color to;
+  final Color borderColor;
+  final Widget child;
+
+  @override
+  State<_OvertimePulse> createState() => _OvertimePulseState();
+}
+
+class _OvertimePulseState extends State<_OvertimePulse>
+    with SingleTickerProviderStateMixin {
+  late final AnimationController _controller = AnimationController(
+    vsync: this,
+    duration: const Duration(milliseconds: 900),
+  );
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    if (MediaQuery.disableAnimationsOf(context)) {
+      _controller
+        ..stop()
+        ..value = 1;
+    } else if (!_controller.isAnimating) {
+      _controller.repeat(reverse: true);
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: _controller,
+      builder: (context, child) => Container(
+        decoration: BoxDecoration(
+          color: Color.lerp(
+            widget.from,
+            widget.to,
+            Curves.easeInOut.transform(_controller.value),
+          ),
+          borderRadius: BorderRadius.circular(AppRadii.md),
+          border: Border.all(color: widget.borderColor, width: 1.5),
+        ),
+        clipBehavior: Clip.antiAlias,
+        child: child,
+      ),
+      child: widget.child,
     );
   }
 }

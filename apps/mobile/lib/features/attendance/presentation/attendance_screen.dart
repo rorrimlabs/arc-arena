@@ -6,6 +6,7 @@
 /// the server never saw is refused and can be sent again with the same id.
 library;
 
+import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/controllers/attendance_actions.dart';
 import 'package:arena_ops/app/providers/attendance_providers.dart';
 import 'package:arena_ops/app/providers/core_providers.dart';
@@ -19,15 +20,19 @@ import 'package:arena_ops/core/widgets/arena_badge.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/core/widgets/confirm_dialog.dart';
 import 'package:arena_ops/domain/attendance/attendance_entry.dart';
+import 'package:arena_ops/domain/attendance/attendance_request.dart';
 import 'package:arena_ops/domain/attendance/attendance_rules.dart';
 import 'package:arena_ops/domain/attendance/location_reading.dart';
+import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/repositories/attendance_repository.dart';
 import 'package:arena_ops/features/attendance/presentation/attendance_history_screen.dart';
 import 'package:arena_ops/features/attendance/presentation/attendance_labels.dart';
+import 'package:arena_ops/features/attendance/presentation/missed_time_sheet.dart';
 import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
 import 'package:arena_ops/app/router/app_nav.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:intl/intl.dart';
 
 class AttendanceScreen extends ConsumerStatefulWidget {
   const AttendanceScreen({super.key});
@@ -53,6 +58,7 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
     ref.invalidate(myAttendanceProvider);
     ref.invalidate(myAttendanceDaysProvider);
     ref.invalidate(attendanceRulesProvider);
+    ref.invalidate(myAttendanceRequestsProvider);
     await ref.read(myAttendanceProvider.future);
   }
 
@@ -275,6 +281,58 @@ class _AttendanceScreenState extends ConsumerState<AttendanceScreen> {
               showWhere: rules?.checksLocation ?? true,
             ),
         ]),
+      // Asking for missed time is its own permission (time_request).
+      if (ref.watch(authControllerProvider)?.can(Permission.timeRequest) ??
+          false) ...[
+        const SizedBox(height: AppSpacing.xl),
+        OutlinedButton.icon(
+          onPressed: () => showMissedTimeSheet(context, entries: entries),
+          icon: const Icon(Icons.more_time_rounded),
+          label: const Text('Missed a punch? Add missed time'),
+        ),
+      ],
+      ..._requests(context),
+    ];
+  }
+
+  /// Your missed-punch requests and what the owner decided.
+  List<Widget> _requests(BuildContext context) {
+    final arena = context.arena;
+    final list =
+        ref.watch(myAttendanceRequestsProvider).value?.valueOrNull ?? const [];
+    if (list.isEmpty) return const [];
+    return [
+      const SizedBox(height: AppSpacing.lg),
+      Text('My requests', style: ArenaType.h3.copyWith(color: arena.text)),
+      const SizedBox(height: AppSpacing.sm),
+      ArenaRowGroup(children: [
+        for (final r in list)
+          ArenaListRow(
+            icon: Icons.more_time_rounded,
+            title: '${DateFormat('EEE d MMM').format(r.inAt.add(istOffset))} · '
+                '${IstTime.format12(r.inAt)} → ${IstTime.format12(r.outAt)}',
+            subtitle: [
+              r.kind.label,
+              r.reason,
+              if (r.decisionNote != null) 'Owner: ${r.decisionNote}',
+            ].join(' · '),
+            chevron: false,
+            trailing: switch (r.status) {
+              AttendanceRequestStatus.pending => ArenaTag(
+                  label: 'Waiting',
+                  foreground: arena.warning,
+                  background: arena.warningSoft),
+              AttendanceRequestStatus.approved => ArenaTag(
+                  label: 'Approved',
+                  foreground: arena.success,
+                  background: arena.successSoft),
+              AttendanceRequestStatus.rejected => ArenaTag(
+                  label: 'Not approved',
+                  foreground: arena.danger,
+                  background: arena.dangerSoft),
+            },
+          ),
+      ]),
     ];
   }
 

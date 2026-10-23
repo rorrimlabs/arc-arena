@@ -8,6 +8,8 @@
 --   op_payment_correct (action payment_correct, the required reason, before
 --     {payment_id, method, amount_paise}, after {method, amount_paise, refund_id,
 --     payment_id});
+--   op_bill_adjust (action bill_adjust, the required reason, before {billed_paise, paid_paise},
+--     after {billed_paise, paid_paise});
 --   op_customer_create (entity customer, action duplicate_phone_on_sync, when a
 --     phone already belongs to another customer and the new row is kept without it).
 -- Refunds are not repeated here: each is its own append-only payments row with a
@@ -38,7 +40,7 @@ comment on column public.audit_log.entity_type is 'Kind of row acted on, e.g. se
 
 comment on column public.audit_log.entity_id is 'Id of the row acted on (no FK; entity_type names its table).';
 
-comment on column public.audit_log.action is 'What happened: void, waive, payment_correct or duplicate_phone_on_sync.';
+comment on column public.audit_log.action is 'What happened: void, waive, payment_correct, bill_adjust or duplicate_phone_on_sync.';
 
 comment on column public.audit_log.reason is 'Human reason (the void or correction reason, the waive reason when given, or a system explanation).';
 

@@ -257,12 +257,12 @@ otp_expiry = 3600
 # NEW address being invited (the dashboard's signInWithOtp, redirect to /accept-invite). The
 # template tells them apart by the user metadata the owner sign-up sets (signup = "owner").
 [auth.email.template.confirmation]
-subject = "404 Arena: confirm your e-mail"
+subject = "ARQ: confirm your e-mail"
 content_path = "./supabase/templates/confirmation.html"
 
 # Sign-in link: only invitations use it (an address that already has a confirmed login).
 [auth.email.template.magic_link]
-subject = "You're invited to 404 Arena"
+subject = "You're invited to ARQ"
 content_path = "./supabase/templates/magic_link.html"
 
 # Uncomment to customize notification email template

@@ -1,9 +1,9 @@
 import 'package:arena_ops/app/controllers/group_session_actions.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
-import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/core/widgets/app_toast.dart';
 import 'package:arena_ops/domain/entities/group_session.dart';
+import 'package:arena_ops/features/floor/presentation/sheets/extend_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
@@ -73,28 +73,27 @@ class _GroupExtendSheetState extends ConsumerState<_GroupExtendSheet> {
         children: [
           Text('Extend group', style: theme.textTheme.titleLarge),
           const SizedBox(height: AppSpacing.lg),
-          Wrap(
-            spacing: AppSpacing.sm,
-            children: [
-              for (final m in [15, 30, 60])
-                ChoiceChip(
-                  label: Text('+$m min'),
-                  selected: _minutes == m,
-                  onSelected: (_) {
-                    setState(() => _minutes = m);
-                    _recompute();
-                  },
-                ),
-            ],
+          ExtendMinutesPicker(
+            minutes: _minutes,
+            onChanged: (m) => setState(() => _minutes = m),
+            onDone: (m) {
+              setState(() => _minutes = m);
+              _recompute();
+            },
           ),
           const SizedBox(height: AppSpacing.lg),
           if (_loading)
             const Text('Checking…')
           else if (plan != null)
-            Text(
-              'New end ${IstTime.format12(plan.newEnd)} · '
-              'adds ${plan.addedCost.display}',
-              style: AppTextStyles.mono(theme.textTheme.bodyMedium!),
+            ExtensionSummary(
+              oldEnd: plan.oldEnd,
+              newEnd: plan.newEnd,
+              addedMinutes: plan.addedMinutes,
+              current: ref
+                  .read(groupSessionActionsProvider)
+                  .endSummary(widget.group, at: plan.oldEnd)
+                  .total,
+              added: plan.addedCost,
             )
           else if (failure != null)
             Text(failure.display,

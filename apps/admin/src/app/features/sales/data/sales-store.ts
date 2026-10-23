@@ -2,7 +2,7 @@ import { Service, computed, inject, signal } from '@angular/core';
 import { ArenaContext } from '../../../core/arena/arena-context';
 import { toAppError } from '../../../core/auth/auth-api';
 import { LoginScope } from '../../../core/auth/login-scope';
-import { MethodCorrection, PaymentEntry, RefundEntry, SalesApi } from './sales-api';
+import { BillEdit, MethodCorrection, PaymentEntry, RefundEntry, SalesApi } from './sales-api';
 import { Bill, SalesPeriod, periodBounds } from './sale.models';
 
 /**
@@ -88,6 +88,10 @@ export class SalesStore {
 
   correct(bill: Bill, correction: MethodCorrection): Promise<void> {
     return this.write(() => this.api.correct(this.arena.current().id, bill, correction));
+  }
+
+  edit(bill: Bill, change: BillEdit): Promise<void> {
+    return this.write(() => this.api.edit(this.arena.current().id, bill, change));
   }
 
   /**

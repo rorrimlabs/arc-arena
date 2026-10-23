@@ -1,9 +1,11 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/providers/profile_providers.dart';
 import 'package:arena_ops/app/router/app_shell.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/features/auth/presentation/login_screen.dart';
+import 'package:arena_ops/features/bills/presentation/my_bills_screen.dart';
 import 'package:arena_ops/features/bookings/presentation/bookings_screen.dart';
 import 'package:arena_ops/features/floor/presentation/floor_screen.dart';
 import 'package:arena_ops/features/money/presentation/money_screen.dart';
@@ -26,7 +28,6 @@ import 'package:arena_ops/features/games/presentation/games_screen.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_detail_screen.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_session_screen.dart';
 import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
-import 'package:arena_ops/features/more/presentation/billing_rules_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/holidays_screen.dart';
 import 'package:arena_ops/features/more/presentation/hours_screen.dart';
@@ -44,10 +45,11 @@ import 'package:arena_ops/features/sync/presentation/sync_screen.dart';
 /// above the tab shell (hiding the bottom navigation bar).
 final rootNavigatorKey = GlobalKey<NavigatorState>(debugLabel: 'rootNav');
 
-/// Six bottom tabs: Today · Floor · Bookings · Money · Reports · More.
+/// Seven bottom tabs: Today · Floor · Bookings · Money · Reports · Bills · More.
 /// Which ones show depends on the signed-in user's role (owners see Money /
-/// Reports / Today; staff see Floor + Bookings + More). Customers ("Members")
-/// and the Games library live under More.
+/// Reports / Today; staff see Floor + Bookings + More, plus Bills with
+/// bill_edit when signed in online). Customers ("Members") and the Games
+/// library live under More.
 final goRouterProvider = Provider<GoRouter>((ref) {
   // Re-run redirect whenever the signed-in user changes (sign in / out).
   final refresh = ValueNotifier<int>(0);
@@ -62,6 +64,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
     refreshListenable: refresh,
     redirect: (context, state) {
       final user = ref.read(authControllerProvider);
+      final cloud = ref.read(cloudBindingProvider) != null;
       final loc = state.matchedLocation;
       final atLogin = loc == LoginScreen.path;
 
@@ -77,7 +80,7 @@ final goRouterProvider = Provider<GoRouter>((ref) {
 
       // Block tabs the user can't access (e.g. staff → /money).
       for (final tab in AppTab.all) {
-        if (tab.path == loc && !tab.visibleFor(user)) {
+        if (tab.path == loc && !tab.visibleFor(user, cloud: cloud)) {
           return defaultPathFor(user);
         }
       }
@@ -143,6 +146,12 @@ final goRouterProvider = Provider<GoRouter>((ref) {
               builder: (context, state) => const MoreScreen(),
             ),
           ]),
+          StatefulShellBranch(routes: [
+            GoRoute(
+              path: MyBillsScreen.path,
+              builder: (context, state) => const MyBillsScreen(),
+            ),
+          ]),
         ],
       ),
       // Full-screen secondary routes (covering the AppShell and bottom navigation):
@@ -202,11 +211,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         path: StationsScreen.path,
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => const StationsScreen(),
-      ),
-      GoRoute(
-        path: BillingRulesScreen.path,
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const BillingRulesScreen(),
       ),
       GoRoute(
         path: StaffScreen.path,
@@ -291,6 +295,8 @@ class AppTab {
     this.branchIndex, {
     this.requiresOwner = false,
     this.requires,
+    this.requiresAny,
+    this.staffOnline = false,
   });
 
   final String label;
@@ -305,9 +311,18 @@ class AppTab {
   /// A single permission that gates the tab, if any.
   final Permission? requires;
 
-  bool visibleFor(AppUser user) {
+  /// Any one of these permissions opens the tab, if set.
+  final List<Permission>? requiresAny;
+
+  /// Online-only staff tab (Bills): hidden in local mode, and for owner-level
+  /// users, whose bar is full (they reach it from More).
+  final bool staffOnline;
+
+  bool visibleFor(AppUser user, {bool cloud = true}) {
     if (requiresOwner && !user.isOwner) return false;
     if (requires != null && !user.can(requires!)) return false;
+    if (requiresAny != null && !requiresAny!.any(user.can)) return false;
+    if (staffOnline && (!cloud || user.isOwner)) return false;
     return true;
   }
 
@@ -322,6 +337,10 @@ class AppTab {
         requires: Permission.money),
     AppTab('Reports', Icons.leaderboard_outlined, Icons.leaderboard,
         ReportsScreen.path, 4, requires: Permission.reports),
+    AppTab('Bills', Icons.receipt_long_outlined, Icons.receipt_long,
+        MyBillsScreen.path, 6,
+        requiresAny: [Permission.billEdit, Permission.billRecord],
+        staffOnline: true),
     AppTab('More', Icons.more_horiz, Icons.more_horiz, MoreScreen.path, 5),
   ];
 }

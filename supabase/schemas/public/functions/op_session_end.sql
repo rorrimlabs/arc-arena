@@ -2,17 +2,23 @@
 --
 -- Permission: bill; plus discount when mark_waived.
 -- Payload: session_id, ended_at, billed_amount_paise, mark_waived?, waive_reason?,
+--   charge_overtime? (default false: time past the booked end is not billed),
+--   end_moved? ({from, reason}: staff set ended_at earlier than `from`, the time they ended it;
+--   the reason is required and the move is audited),
 --   expected_segment_ids[], expected_scheduled_end_at, charges[] (one row per priced piece),
 --   discount? ({id?, discount_id? | code? | manual: {value_kind, value}, reason?, amount_paise}:
 --   validated and recorded by _discount_apply; billed = cash-rounded subtotal − discount).
 -- Checks / errors: forbidden; time_in_future, time_too_old (_client_time: device time after now + 2 min or
---   over 24 h old); waive_reason_required; waive_over_limit (below owner level, a
+--   over 24 h old); end_reason_required, reason_too_long (end_moved without a reason, or over 500
+--   characters); invalid_time (end_moved.from missing or not after ended_at); waive_reason_required; waive_over_limit (below owner level, a
 --   write-off above discount_options.manual_max_percent of the bill); not_found; not_active; stale (segments or scheduled end differ
 --   from what the device saw); invalid_time; price_mismatch (total or charge rows differ from
 --   the server's re-pricing on the frozen snapshot, 0 paise tolerance).
 -- Writes: session_segments / controller_allocations (ended), session_charges, sessions
---   (completed, actual_ended_at, billed_amount_paise, payment_status), and on a waive an
---   audit_log row (action waive: billed, paid, written off, reason). Returns: {payment_status}.
+--   (completed, actual_ended_at, billed_amount_paise, payment_status), on a waive an
+--   audit_log row (action waive: billed, paid, written off, reason), and on end_moved one
+--   (action end_moved: before {ended_at, billed_paise as priced at `from`}, after {ended_at,
+--   billed_paise}, reason). Returns: {payment_status}.
 -- Server-only: not executable by anon/authenticated; reached through sync_push.
 create or replace function public.op_session_end (
   p_arena uuid,
@@ -31,6 +37,10 @@ declare
   v_billed bigint := (p->>'billed_amount_paise')::bigint;
   v_status text; v_end timestamptz; v_segs uuid[]; v_paid bigint; v_pay text; v_c jsonb;
   v_bill jsonb; v_keys text[]; v_disc bigint := 0; v_total bigint; pol jsonb;
+  v_moved boolean := jsonb_typeof(p->'end_moved') = 'object';
+  v_from timestamptz := (p->'end_moved'->>'from')::timestamptz;
+  v_end_reason text := nullif(btrim(coalesce(p->'end_moved'->>'reason', '')), '');
+  v_from_bill bigint;
 begin
   perform _need(p_arena, 'bill');
   perform _client_time(p_arena, v_ended, 'ended_at');
@@ -40,6 +50,19 @@ begin
       raise exception 'waive_reason_required';
     end if;
   end if;
+  -- An end set earlier than when staff ended it lowers the bill: it needs a reason and is audited.
+  if v_moved then
+    if v_end_reason is null then
+      raise exception 'end_reason_required' using hint = 'say why the end was moved earlier';
+    end if;
+    if length(v_end_reason) > 500 then
+      raise exception 'reason_too_long' using hint = 'at most 500 characters';
+    end if;
+    if v_from is null or v_from <= v_ended then
+      raise exception 'invalid_time' using hint = 'end_moved.from must be after ended_at';
+    end if;
+    perform _client_time(p_arena, v_from, 'end_moved.from');
+  end if;
   select status, scheduled_end_at into v_status, v_end
     from sessions where id = v_session and arena_id = p_arena for update;
   if not found then raise exception 'not_found' using hint = 'session'; end if;
@@ -48,6 +71,11 @@ begin
   if not _same_ids(v_segs, _jsonb_uuids(p->'expected_segment_ids'))
      or v_end is distinct from (p->>'expected_scheduled_end_at')::timestamptz then
     raise exception 'stale' using hint = 'the session was changed on another device';
+  end if;
+  -- What the bill would have been at the original end (segments are still open here).
+  if v_moved then
+    v_from_bill := (_pr_session_bill(v_session, v_from,
+      coalesce((p->>'charge_overtime')::boolean, false))->>'total')::bigint;
   end if;
 
   update session_segments set ended_at = v_ended where session_id = v_session and ended_at is null;
@@ -81,13 +109,21 @@ begin
         jsonb_build_object('written_off_paise', greatest(coalesce(v_billed, 0) - v_paid, 0)),
         auth.uid(), v_now);
   end if;
+  if v_moved then
+    insert into audit_log(arena_id, entity_type, entity_id, action, reason, before, after,
+        created_by, created_at)
+      values (p_arena, 'session', v_session, 'end_moved', v_end_reason,
+        jsonb_build_object('ended_at', v_from, 'billed_paise', v_from_bill),
+        jsonb_build_object('ended_at', v_ended, 'billed_paise', v_billed),
+        auth.uid(), v_now);
+  end if;
 
   -- Server-side pricing (0013): re-price the bill from the stored segments and
   -- refuse the op unless the total AND every charge row match exactly.
   if exists (select 1 from session_segments where session_id = v_session and ended_at < started_at) then
     raise exception 'invalid_time' using hint = 'the end is before the current segment started';
   end if;
-  v_bill := _pr_session_bill(v_session, v_ended);
+  v_bill := _pr_session_bill(v_session, v_ended, coalesce((p->>'charge_overtime')::boolean, false));
   v_total := (v_bill->>'total')::bigint;
   -- A discount (preset, coupon or manual) comes off the subtotal before cash rounding.
   if jsonb_typeof(p->'discount') = 'object' then

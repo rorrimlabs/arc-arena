@@ -595,6 +595,7 @@ class GroupSessionActions {
   // --- live bill -------------------------------------------------------------
 
   /// Live amount so far, billed across all assignments by the group's mode.
+  /// The price stops at the booked end (the clock runs on); extending moves it.
   GroupBill liveBill(ActiveGroupSession g, DateTime now) => billing.bill(
     snapshot: g.group.snapshot,
     assignments: g.assignments,
@@ -602,6 +603,7 @@ class GroupSessionActions {
     purchasedControllerCount: g.group.purchasedControllerCount,
     groupStart: g.group.startedAt,
     openEndAt: now,
+    billUntil: now.isAfter(g.group.scheduledEndAt) ? g.group.scheduledEndAt : null,
   );
 
   // --- candidate systems for switch / add (group feature §5–§6) --------------
@@ -1055,20 +1057,28 @@ class GroupSessionActions {
   }
 
   /// The final bill from all assignments, for the End screen (group feature §9).
-  GroupBill endSummary(ActiveGroupSession g, {DateTime? at}) => billing.bill(
-    snapshot: g.group.snapshot,
-    assignments: g.assignments,
-    mode: g.group.billingMode,
-    purchasedControllerCount: g.group.purchasedControllerCount,
-    groupStart: g.group.startedAt,
-    openEndAt: at ?? clock.now(),
-  );
+  /// Billed to the booked end unless [chargeOvertime] (staff's choice at End).
+  GroupBill endSummary(
+    ActiveGroupSession g, {
+    DateTime? at,
+    bool chargeOvertime = false,
+  }) =>
+      billing.bill(
+        snapshot: g.group.snapshot,
+        assignments: g.assignments,
+        mode: g.group.billingMode,
+        purchasedControllerCount: g.group.purchasedControllerCount,
+        groupStart: g.group.startedAt,
+        openEndAt: at ?? clock.now(),
+        billUntil: chargeOvertime ? null : g.group.scheduledEndAt,
+      );
 
   Future<Result<GroupSession>> end(
     ActiveGroupSession g, {
     bool markWaived = false,
     String? waiveReason,
     DateTime? at,
+    bool chargeOvertime = false,
   }) async {
     final denied =
         guard.check(Permission.bill) ??
@@ -1077,7 +1087,7 @@ class GroupSessionActions {
     final reason = waiveReason?.trim() ?? '';
     if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
     final actualEnd = at ?? clock.now();
-    final bill = endSummary(g, at: actualEnd);
+    final bill = endSummary(g, at: actualEnd, chargeOvertime: chargeOvertime);
     if (markWaived) {
       final over = waiveOverLimit(
         ownerLevel: guard.actor?.isOwner ?? false,
@@ -1105,6 +1115,7 @@ class GroupSessionActions {
         billedAmountPaise: bill.total.value,
         markWaived: markWaived,
         waiveReason: markWaived ? reason : null,
+        chargeOvertime: chargeOvertime,
       ),
     );
     if (res.isOk) {

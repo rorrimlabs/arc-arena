@@ -47,6 +47,14 @@ export interface MethodCorrection {
   readonly attempt?: Attempt;
 }
 
+/** Edit bill (bill.adjust): the new total; collected is set to match by `method`. */
+export interface BillEdit {
+  readonly billedPaise: number;
+  readonly method: PayMethod;
+  readonly reason: string;
+  readonly attempt?: Attempt;
+}
+
 /**
  * The arena's closed bills: read through arena_sales() / arena_sale() (owner level); every write
  * (void, late payment, refund, method correction) is an op through sync_push — the same path,
@@ -65,6 +73,7 @@ export abstract class SalesApi {
   abstract recordPayment(arenaId: string, bill: Bill, entry: PaymentEntry): Promise<void>;
   abstract refund(arenaId: string, bill: Bill, entry: RefundEntry): Promise<void>;
   abstract correct(arenaId: string, bill: Bill, correction: MethodCorrection): Promise<void>;
+  abstract edit(arenaId: string, bill: Bill, change: BillEdit): Promise<void>;
 }
 
 /** What the Overview asks arena_overview for. */
@@ -97,6 +106,11 @@ export const SALES_MESSAGES: Readonly<Record<string, string>> = {
   invalid_method: 'Pick a payment method',
   amount_zero: 'Enter an amount',
   duplicate: 'That was already recorded. Refresh',
+  invalid_total: 'Enter the bill amount in rupees',
+  not_ended: 'This bill is still running. End it first',
+  waived: 'This bill was waived: it owes nothing',
+  same_total: 'Nothing to change: the bill is already that amount and paid',
+  stale: 'This bill changed since you opened it. Close it and open it again',
 };
 
 type Row = Record<string, unknown>;
@@ -349,6 +363,23 @@ class SupabaseSalesApi extends SalesApi {
         reason: correction.reason,
         refund_id: correction.attempt?.id('refund') ?? crypto.randomUUID(),
         new_payment_id: correction.attempt?.id('payment') ?? crypto.randomUUID(),
+      },
+    });
+  }
+
+  edit(arenaId: string, bill: Bill, change: BillEdit): Promise<void> {
+    return this.push(arenaId, {
+      kind: 'bill.adjust',
+      opId: change.attempt?.id('op'),
+      payload: {
+        ...scopeOf(bill),
+        billed_amount_paise: change.billedPaise,
+        method: change.method,
+        reason: change.reason,
+        payment_id: change.attempt?.id('payment') ?? crypto.randomUUID(),
+        // What the owner saw: the server refuses the edit as stale if either moved.
+        expected_billed_paise: bill.billedPaise,
+        expected_paid_paise: bill.paidPaise,
       },
     });
   }

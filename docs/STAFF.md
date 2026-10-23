@@ -2,7 +2,7 @@
 
 ## Context
 
-ArenaOS has no staff time, leave or pay features yet. The More screen's "Shift" row is a placeholder, and there is no attendance, leave or payroll data anywhere. Owners want lightweight staff management on top of the existing stack:
+ARQ had no staff time, leave or pay features yet. The More screen's "Shift" row is a placeholder, and there is no attendance, leave or payroll data anywhere. Owners want lightweight staff management on top of the existing stack:
 
 - geo-tagged clock in/out
 - shifts
@@ -104,7 +104,7 @@ Each question has the default the design uses until you answer it. Confirmed ans
 | Forgot to clock out | After the scheduled shift end + `auto_out_after_min`, the entry counts as closed at the shift end. It is flagged `auto_out` and goes to review. Fallback order: arena closing time that day, then in + `max_open_hours`. Applied lazily, with no cron: on that person's next punch, when a reviewer opens the review list, when a salary draft is built, and in every read RPC. |
 | Split shifts | Any number of entries per day. Entries may not overlap (gist exclusion). A gap between entries at least as long as the shift break counts as the break, so no extra deduction. |
 | Crosses midnight | A shift counts from its start to its end on the day it starts (end ≤ start ends the next day). An entry belongs to the shift it falls in (`work_date` = that shift's start day, `_att_work_date`): a clock-in at 02:00 during a 22:00–06:00 shift counts on the night it started, and up to 2 hours early counts for the coming shift. With no shift around it, the IST date of the clock-in. |
-| Location denied or GPS off | Punch goes through as `unknown` with status `denied`, `gps_off`, `timeout` or `unavailable`, then the outside rule applies. Under block, staff see a fix such as "Allow location for ArenaOS in Settings" or "Turn on location". |
+| Location denied or GPS off | Punch goes through as `unknown` with status `denied`, `gps_off`, `timeout` or `unavailable`, then the outside rule applies. Under block, staff see a fix such as "Allow location for ARQ in Settings" or "Turn on location". |
 | Mock location | Android `isMocked` is reliable. iOS 15+ reports simulated locations where the OS exposes it, otherwise `null`, treated as not detected. The mock rule applies. |
 | Low accuracy | Accuracy above the minimum → `unknown` → outside rule. The app retries for up to 15 s to get a better fix before sending. |
 | Corrections | Need `attendance_review` and a reason. The original row becomes `superseded` (or `voided`). A new row points to it with `replaces_id`, and `audit_log` gets before/after. Reviewers can add a missing entry with a reason. Nothing is deleted. |

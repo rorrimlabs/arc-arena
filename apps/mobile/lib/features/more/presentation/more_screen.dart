@@ -14,6 +14,7 @@ import 'package:arena_ops/features/auth/presentation/change_password_dialog.dart
 import 'package:arena_ops/features/controllers/presentation/controller_board_screen.dart';
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
 import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
+import 'package:arena_ops/features/bills/presentation/my_bills_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
 import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
@@ -154,6 +155,18 @@ class MoreScreen extends ConsumerWidget {
                 subtitle: 'Every session, searchable',
                 onTap: () => _push(context, const SessionLogScreen()),
               ),
+              // Online only: the server lists and re-checks your own bills.
+              // Staff have it as the Bills tab; owner-level users here.
+              if (cloud != null &&
+                  ((user?.can(Permission.billEdit) ?? false) ||
+                      (user?.can(Permission.billRecord) ?? false)) &&
+                  (user?.isOwner ?? false))
+                ArenaListRow(
+                  icon: Icons.edit_note_rounded,
+                  title: 'My bills',
+                  subtitle: 'Bills you started; change the amount with a comment',
+                  onTap: () => _push(context, const MyBillsScreen()),
+                ),
             ]),
             _Group('You', [
               // This phone's own alerts: everyone's, staff included.
@@ -250,7 +263,7 @@ class MoreScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text('404 ARENA · OPS',
+                  Text('ARQ',
                       style: ArenaType.overline.copyWith(color: arena.textSubtle)),
                   const SizedBox(height: 2),
                   Text(

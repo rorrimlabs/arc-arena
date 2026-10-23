@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Centralized navigation helper for Arena Ops.
+/// Centralized navigation helper for ARQ.
 ///
 /// Ensures secondary and detail screens are pushed onto the root navigator,
 /// completely covering the shell's bottom navigation bar, while preserving

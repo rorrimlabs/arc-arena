@@ -10,7 +10,7 @@ class ArenaOpsApp extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final router = ref.watch(goRouterProvider);
     return MaterialApp.router(
-      title: 'arena_ops',
+      title: 'ARQ',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

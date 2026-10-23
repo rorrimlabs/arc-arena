@@ -77,8 +77,8 @@ client functions predates the current client API (it still names
    * **Authentication → Sign In / Providers → User Signups → Allow new users to sign up**: **ON** — new arena owners register on the admin dashboard. A sign-up belongs to no arena until it confirms its e-mail and creates one (`create_my_arena`, one per login).
    * **Allow new users to sign up** must stay ON for invitations too: inviting a new address creates its login.
    * **Confirm email**: **ON**. Two templates (**Authentication → Emails → Templates**), copied from the repo:
-     * **Confirm signup**: subject `404 Arena: confirm your e-mail`, body = `supabase/templates/confirmation.html`. It shows an owner signing up the confirmation link (it opens the dashboard's `/register`), and an invited new address the invitation link (it tells them apart by the `signup: "owner"` user metadata the sign-up sets).
-     * **Magic Link**: subject `You're invited to 404 Arena`, body = `supabase/templates/magic_link.html` (invitations to an address that already has a confirmed login).
+     * **Confirm signup**: subject `ARQ: confirm your e-mail`, body = `supabase/templates/confirmation.html`. It shows an owner signing up the confirmation link (it opens the dashboard's `/register`), and an invited new address the invitation link (it tells them apart by the `signup: "owner"` user metadata the sign-up sets).
+     * **Magic Link**: subject `You're invited to ARQ`, body = `supabase/templates/magic_link.html` (invitations to an address that already has a confirmed login).
      * **Project Settings → Authentication → SMTP**: set up your own SMTP sender. The built-in one delivers only to the project's team members, at a low rate, so real sign-ups would never get their link and invitations would never arrive.
    * **Attack protection → CAPTCHA (Turnstile)**: create a Turnstile widget in Cloudflare for the dashboard's domain; put its **site key** (public) in `apps/admin/src/environments/environment.production.ts` (`turnstileSiteKey`) and its **secret key** here (Provider: Turnstile). The dashboard then sends a token with sign-up, sign-in, password reset and invitations. **Do not turn CAPTCHA on until the floor app sends a token too**: Supabase then refuses every password sign-in without one, including staff signing in on the floor app. Keep the default sign-up rate limits.
    * **Secure password change**: ON. A person whose last sign-in is older than 24 h may be asked to sign out and back in before More → Change password succeeds.
@@ -159,9 +159,15 @@ Decided 2026-10-19: **production is a fresh project** on the current history
 * Money, audit and evidence rows are append-only in the database itself
   (`_append_only` triggers on payments, charges, bill discounts, `audit_log`,
   salary adjustments, punches and pad moves): deleting a session or an arena
-  that has them is refused. To really remove a test arena, take a backup first,
-  then in one SQL Editor transaction `set local session_replication_role =
-  replica;` before the delete.
+  that has them is refused. To really remove test data (a whole test arena, or a
+  kept arena's pre-release activity, plus test logins) use
+  `supabase/audit/prod_prerelease_reset.sql`, after an inventory
+  (`supabase/audit/prod_prerelease_inventory.sql`) and a backup proven to
+  restore; the runbook is in its header. It is a dry run until explicitly
+  confirmed, lifts only those triggers inside its own transaction and keeps
+  foreign keys enforced. Never delete under `set session_replication_role =
+  replica`: that also switches off every foreign-key cascade and check, so the
+  arena row goes and all of its rows stay behind as orphans.
 * Migrations are forward-only. A generated migration that drops a column
   (e.g. `20261016123826_game_play_modes` drops `games.player_mode`) must never
   reach a database holding real rows of it without a copy step first.

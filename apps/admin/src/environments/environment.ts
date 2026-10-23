@@ -3,11 +3,11 @@
  * Production builds use environment.production.ts (angular.json fileReplacements).
  */
 export const environment = {
-  /** Staging verification: points to arena-ops-staging Supabase project. */
+  /** Production builds must use https and a hosted project (checked in core/supabase). */
   production: false,
   supabaseUrl: 'http://127.0.0.1:54431',
-  /** Publishable key for arena-ops-staging */
+  /** Publishable key: safe in a browser — RLS and the client API decide what it can reach. */
   supabaseKey: 'sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH',
-  /** Cloudflare Turnstile site key (public). Empty = no CAPTCHA. */
+  /** Cloudflare Turnstile site key (public). Empty = no CAPTCHA (the local stack has none). */
   turnstileSiteKey: '',
 };

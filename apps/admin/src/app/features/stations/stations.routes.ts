@@ -5,7 +5,7 @@ export const STATIONS_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Stations · ArenaOS',
+    title: 'Stations · ARQ',
     loadComponent: () => import('./stations-page').then((m) => m.StationsPage),
   },
 ];

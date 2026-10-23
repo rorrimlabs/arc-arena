@@ -16,7 +16,10 @@ enum Permission {
   attendanceReview('attendance_review', 'Review attendance'),
   leaveApprove('leave_approve', 'Approve leave'),
   payroll('payroll', 'Payroll'),
-  payrollFinalise('payroll_finalise', 'Finalise salary');
+  payrollFinalise('payroll_finalise', 'Finalise salary'),
+  billEdit('bill_edit', 'Edit own bills'),
+  billRecord('bill_record', 'Add missed bills'),
+  timeRequest('time_request', 'Request missed time');
 
   const Permission(this.code, this.label);
 

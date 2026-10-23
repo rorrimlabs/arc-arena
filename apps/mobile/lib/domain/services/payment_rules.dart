@@ -12,6 +12,7 @@
 library;
 
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/money/rounding.dart';
 import 'package:arena_ops/core/result/result.dart';
 
 /// Normalises [amountPaise] for storage, or explains why it cannot be stored.
@@ -93,6 +94,14 @@ const waiveReasonRequired = Failure(
   code: 'waive_reason_required',
 );
 
+/// An end set earlier than when staff ended the session lowers the bill, so it
+/// always says why; the server audits it with the bill before and after.
+const endReasonRequired = Failure(
+  message: 'An earlier end needs a reason.',
+  fix: 'Say why the session ended earlier, then end it.',
+  code: 'end_reason_required',
+);
+
 /// Below owner level a waive may write off at most [maxPercent] of the bill —
 /// the manual-discount cap — exactly as the server checks it (_waive_check:
 /// written off × 100 > billed × cap). Null when allowed.
@@ -112,5 +121,25 @@ Failure? waiveOverLimit({
         : 'You may waive up to $maxPercent% of a bill. Take payment for the '
               'rest, or ask an owner.',
     code: 'waive_over_limit',
+  );
+}
+
+/// Without the settings permission a manual discount may take off at most
+/// [maxPercent] of the subtotal, exactly as the server checks it
+/// (_discount_apply: amount > _pr_div(subtotal × cap, 100)). Null when allowed.
+Failure? discountOverLimit({
+  required bool canSettings,
+  required int discountPaise,
+  required int subtotalPaise,
+  required int maxPercent,
+}) {
+  if (canSettings) return null;
+  if (discountPaise <= roundDivHalfUp(subtotalPaise * maxPercent, 100)) return null;
+  return Failure(
+    message: 'Only an owner can lower the bill this much.',
+    fix: maxPercent == 0
+        ? 'Ask an owner, or set a manual discount limit in Settings.'
+        : 'You may lower a bill by up to $maxPercent%. Ask an owner for more.',
+    code: 'discount_over_limit',
   );
 }

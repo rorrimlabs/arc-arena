@@ -291,7 +291,7 @@ describe('Owner auth flow', () => {
       await harness.navigateByUrl(target);
       await settled();
       expect(url()).toBe('/account');
-      expect(heading()).toBe('Use the 404 Arena staff app');
+      expect(heading()).toBe('Use the ARQ staff app');
       expect(status()).toContain('You are on the staff of 404 Arena Koramangala');
       expect(body().querySelector('nav[aria-label="Main"]')).toBeNull();
       expect(field('Arena name')).toBeUndefined();

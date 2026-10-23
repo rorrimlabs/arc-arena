@@ -5,7 +5,7 @@ export const SALES_ROUTES: Routes = [
   {
     path: '',
     providers: [MATERIAL_DEFAULTS],
-    title: 'Sales · ArenaOS',
+    title: 'Sales · ARQ',
     loadComponent: () => import('./sales-page').then((m) => m.SalesPage),
   },
 ];

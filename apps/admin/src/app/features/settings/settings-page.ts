@@ -11,7 +11,6 @@ import { GamesLibrary } from '../games/components/games-library';
 import { PricingStore } from '../pricing/data/pricing-store';
 import { AccessoryTypes } from './components/accessory-types';
 import { ArenaSettings } from './components/arena-settings';
-import { BillingRules } from './components/billing-rules';
 import { BillingSettings } from './components/billing-settings';
 import { SessionSettings } from './components/session-settings';
 import { StationTypes } from './components/station-types';
@@ -24,7 +23,6 @@ type Section =
   | 'accessories'
   | 'games'
   | 'billing'
-  | 'rules'
   | 'sessions'
   | 'owners'
   | 'staff';
@@ -61,7 +59,6 @@ const SECTIONS: readonly {
     requires: 'games',
   },
   { key: 'billing', icon: 'payments', title: 'Billing', sub: 'Payment methods, discount limits' },
-  { key: 'rules', icon: 'rule', title: 'Billing rules', sub: 'Rounding, grace, minimum charge' },
   { key: 'sessions', icon: 'timer', title: 'Sessions', sub: 'Time options and warnings' },
   {
     key: 'owners',
@@ -78,7 +75,7 @@ const SECTIONS: readonly {
 ];
 
 /** Sections that show part of the price list (hours, types, policy, discount limits). */
-const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules'];
+const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing'];
 
 /**
  * Settings: the arena, its station and accessory types, games, billing, billing rules, sessions,
@@ -94,7 +91,6 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
     ListRow,
     ArenaSettings,
     BillingSettings,
-    BillingRules,
     SessionSettings,
     StationTypes,
     AccessoryTypes,
@@ -143,9 +139,6 @@ const NEEDS_PRICING: readonly Section[] = ['arena', 'types', 'billing', 'rules']
           }
           @case ('billing') {
             <app-billing-settings (closed)="close()" />
-          }
-          @case ('rules') {
-            <app-billing-rules (closed)="close()" />
           }
           @case ('sessions') {
             <app-session-settings (closed)="close()" />

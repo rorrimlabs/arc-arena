@@ -28,7 +28,6 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
-  sentry_flutter: ^10.0.0
   flutter:
     sdk: flutter
 
@@ -68,7 +67,6 @@ dependencies:
   latlong2: ^0.10.1
 
 dev_dependencies:
-  sentry_dart_plugin: ^3.4.0
   flutter_test:
     sdk: flutter
 
@@ -85,6 +83,7 @@ dev_dependencies:
   # MockClient (package:http/testing.dart): drives the real Supabase auth client
   # through refresh failures in test/app/sync/stored_session_test.dart.
   http: ^1.6.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec
@@ -135,9 +134,3 @@ flutter:
           weight: 500
         - asset: assets/fonts/IBMPlexMono-SemiBold.ttf
           weight: 600
-
-sentry:
-  upload_debug_symbols: true
-  upload_source_maps: true
-  project: flutter
-  org: rorrim-t7

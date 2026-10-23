@@ -108,9 +108,11 @@ release) and shows a configuration error instead of starting when:
 * a prod build is a debug build;
 * a staging / prod build is not cloud mode, misses its URL or key, uses a
   development or non-https host, or a host not listed for its environment in
-  `AppConfig.hostedSupabaseHosts`. Both lists are empty until the projects
-  exist, so those flavors refuse to start until then — that list is what stops
-  a production build from ever pointing at staging;
+  `AppConfig.hostedSupabaseHosts` (staging: `sqznpjqktvsabjxvpzjh.supabase.co`;
+  production: `oilylxydibubupuqghbw.supabase.co`). The match is exact and the
+  two lists never share a host — that list is what stops a production build
+  from ever pointing at staging. An environment with an empty list refuses to
+  start;
 * the key is a secret (`sb_secret_…`) or `service_role` key, or a legacy anon
   key of a different project than the URL.
 
@@ -120,11 +122,10 @@ Debug builds without defines still run local mode (demo catalog and demo PINs
 `dart_define.prod.json` and `dart_define.staging.json` (git-ignored, like every
 `dart_define*.json`) hold `AO_BACKEND=supabase`, the project's https URL and
 its publishable key — never a secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md)
-§0) — plus `AO_ENVIRONMENT` (`production` / `staging`) and `AO_SENTRY_DSN`
-(crash reports; see `dart_define.example.json`). Outside production Sentry
-records every session (Session Replay) and traces everything; production
-records 10 %. Leaving `AO_SENTRY_DSN` empty is allowed but ships without crash
-reporting.
+§0) — plus `AO_ENVIRONMENT` (`production` / `staging`). Sentry is removed from
+the floor app for now, so builds ship without crash reporting and
+`AO_SENTRY_DSN` is ignored (restore `sentry_flutter` from git history to bring
+it back).
 
 ### Android
 

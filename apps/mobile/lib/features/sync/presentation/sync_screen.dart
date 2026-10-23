@@ -231,6 +231,7 @@ String reasonFor(String code) => switch (code) {
           'owner, who can record it from the dashboard',
       'activity_not_offered' => 'that station does not offer that type',
       'waive_reason_required' => 'a waive needs a reason',
+      'end_reason_required' => 'an earlier end needs a reason',
       'waive_over_limit' => 'only an owner can waive that much',
       'no_open_segment' => 'the session had already moved or ended on another device',
       'no_open_assignment' =>

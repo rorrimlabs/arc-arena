@@ -40,15 +40,24 @@ class _EndSheet extends ConsumerStatefulWidget {
 }
 
 class _EndSheetState extends ConsumerState<_EndSheet> {
-  late final DateTime _endAt;
-  late final SegmentBill _bill;
+  late DateTime _endAt;
+  late SegmentBill _bill;
 
-  /// Past the booked end: the booked time's price and every minute's, shown
-  /// beside the bill (which the overtime grace decides between).
-  SegmentBill? _booked;
-  SegmentBill? _whole;
+  /// Staff's choice when played past the booked end: bill the overtime too.
+  bool _chargeOvertime = false;
+
+  /// What the overtime would add (0 when not over the booked end).
+  int _overtimePaise = 0;
+
   final _amountCtrl = TextEditingController();
+
+  /// The bill amount, prefilled with the price; staff may lower it.
+  final _billCtrl = TextEditingController();
   final _waiveReasonCtrl = TextEditingController();
+
+  /// Staff set an earlier end with the picker; it needs a reason (audited).
+  bool _endPicked = false;
+  final _endReasonCtrl = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
 
   /// The pick, or the first method the arena offers when the pick is not (floor options).
@@ -63,14 +72,63 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   void initState() {
     super.initState();
     _endAt = ref.read(clockProvider).now();
+    _price();
+  }
+
+  /// Prices the session up to [_endAt] and puts that price in the bill box.
+  void _price() {
     final actions = ref.read(sessionActionsProvider);
-    _bill = actions.endSummary(_session, widget.active.segments, at: _endAt);
-    if (_endAt.isAfter(_session.scheduledEndAt)) {
-      _booked = actions.endSummary(_session, widget.active.segments,
-          at: _endAt, bookedOnly: true);
-      _whole = actions.endSummary(_session, widget.active.segments,
-          at: _endAt, wholeTime: true);
+    final booked =
+        actions.endSummary(_session, widget.active.segments, at: _endAt);
+    final whole = actions.endSummary(_session, widget.active.segments,
+        at: _endAt, chargeOvertime: true);
+    _overtimePaise = whole.total.value - booked.total.value;
+    _bill = _chargeOvertime ? whole : booked;
+    _billCtrl.text = paiseToRupeeInput(_bill.total.value);
+  }
+
+  /// The bill amount typed; null while it is not an amount.
+  int? get _typedBill => parseRupeesToPaise(_billCtrl.text);
+
+  bool get _billInvalid =>
+      _typedBill == null || _typedBill! > _bill.total.value;
+
+  /// The bill End records: the price, or the lowered amount as the server
+  /// rounds it.
+  int get _finalBill => ref
+      .read(sessionActionsProvider)
+      .loweredBill(_session, _bill, _billInvalid ? null : _typedBill)
+      .billedPaise;
+
+  /// The amount received follows the bill.
+  void _followBill() {
+    final due = _finalBill - _collected();
+    _amountCtrl.text = due > 0 ? paiseToRupeeInput(due) : '';
+  }
+
+  /// Staff set the real end (e.g. the timer ran on): between the current
+  /// segment's start and now (SessionActions.pickedEnd).
+  Future<void> _pickEnd() async {
+    final toast = AppToast.of(context);
+    final shown = IstTime.fromUtc(_endAt);
+    final t = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: shown.hour, minute: shown.minute),
+    );
+    if (t == null || !mounted) return;
+    final picked = ref
+        .read(sessionActionsProvider)
+        .pickedEnd(_session, widget.active.segments, t.hour, t.minute);
+    if (picked.isErr) {
+      toast.failure(picked.failureOrNull!);
+      return;
     }
+    setState(() {
+      _endAt = picked.valueOrNull!;
+      _endPicked = true;
+      _price();
+      _followBill();
+    });
   }
 
   /// Money already taken against this session while it ran (Take payment).
@@ -83,13 +141,19 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   @override
   void dispose() {
     _amountCtrl.dispose();
+    _billCtrl.dispose();
     _waiveReasonCtrl.dispose();
+    _endReasonCtrl.dispose();
     super.dispose();
   }
 
   /// A waive writes money off: it is never recorded without a reason.
   bool get _waiveReasonMissing =>
       _waived && _waiveReasonCtrl.text.trim().isEmpty;
+
+  /// An earlier end lowers the bill: it is never recorded without a reason.
+  bool get _endReasonMissing =>
+      _endPicked && _endReasonCtrl.text.trim().isEmpty;
 
   /// Exact paise for what is typed (never via a double); 0 when empty.
   int get _paidPaise => parseRupeesToPaise(_amountCtrl.text) ?? 0;
@@ -110,7 +174,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
         ref.watch(paymentsForSessionProvider(_session.id)).value;
     final collected =
         (payments ?? const []).fold<int>(0, (sum, p) => sum + p.amountPaise);
-    final billed = _bill.total.value - collected;
+    final billed = _finalBill - collected;
     if (!_prefilled && payments != null) {
       _prefilled = true;
       _amountCtrl.text = billed > 0 ? paiseToRupeeInput(billed) : '';
@@ -137,19 +201,41 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           const SizedBox(height: AppSpacing.xs),
           Text(customer?.displayName ?? '', style: theme.textTheme.bodyMedium),
           const SizedBox(height: AppSpacing.sm),
+          ListTile(
+            key: const ValueKey('end-time'),
+            contentPadding: EdgeInsets.zero,
+            leading: const Icon(Icons.schedule),
+            title: const Text('Ended at'),
+            subtitle: const Text('Tap to change if the timer ran on'),
+            trailing: Text(IstTime.format12(_endAt),
+                style: theme.textTheme.titleMedium),
+            onTap: _saving ? null : _pickEnd,
+          ),
+          if (_endPicked)
+            TextField(
+              key: const ValueKey('end-reason'),
+              controller: _endReasonCtrl,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Why did it end earlier?',
+                helperText: 'The owner sees it with the bill before and after',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
           _BillCard(bill: _bill, resources: resources, games: games),
-          if (_booked != null && _whole != null) ...[
+          if (_endAt.isAfter(_session.scheduledEndAt)) ...[
             const SizedBox(height: AppSpacing.sm),
-            _OvertimeCard(
+            OvertimeChoice(
               scheduledEnd: _session.scheduledEndAt,
               over: _endAt.difference(_session.scheduledEndAt),
-              graceMinutes: ref
-                  .read(sessionActionsProvider)
-                  .overtimeGraceFor(_session, widget.active.segments),
-              booked: _booked!,
-              whole: _whole!,
-              charged: _bill.total == _whole!.total &&
-                  _whole!.total != _booked!.total,
+              extraPaise: _overtimePaise,
+              charge: _chargeOvertime,
+              onChanged: (v) => setState(() {
+                _chargeOvertime = v;
+                _price();
+                _followBill();
+              }),
             ),
           ],
           if (_bill.isIncomplete) ...[
@@ -162,6 +248,27 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
             returning: _returning,
             onToggle: (id, on) => setState(
                 () => on ? _returning.add(id) : _returning.remove(id)),
+          ),
+          const SizedBox(height: AppSpacing.md),
+          TextField(
+            key: const ValueKey('bill-amount'),
+            controller: _billCtrl,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+            decoration: InputDecoration(
+              labelText: 'Bill amount (₹)',
+              helperText: !_billInvalid && _finalBill != _bill.total.value
+                  ? 'Charged ${Paise(_finalBill).display} instead of ${_bill.total.display}'
+                  : 'Lower it if the price is off',
+              border: const OutlineInputBorder(),
+              prefixText: '₹ ',
+              errorText: _billCtrl.text.trim().isNotEmpty && _typedBill == null
+                  ? rupeeInputError
+                  : _typedBill != null && _typedBill! > _bill.total.value
+                      ? 'Cannot be more than ${_bill.total.display}'
+                      : null,
+            ),
+            onChanged: (_) => setState(_followBill),
           ),
           const SizedBox(height: AppSpacing.md),
           Text('Payment', style: theme.textTheme.labelLarge),
@@ -218,7 +325,11 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           const SizedBox(height: AppSpacing.md),
           FilledButton.icon(
             onPressed:
-                _saving || _amountInvalid || _waiveReasonMissing ? null : _confirm,
+                _saving || _amountInvalid || _waiveReasonMissing ||
+                        _endReasonMissing ||
+                        (!_waived && _billInvalid)
+                    ? null
+                    : _confirm,
             icon: _saving
                 ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(strokeWidth: 2))
                 : const Icon(Icons.check),
@@ -240,7 +351,11 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     final end = await actions.end(_session, widget.active.segments,
         markWaived: _waived,
         waiveReason: _waived ? _waiveReasonCtrl.text : null,
-        at: _endAt);
+        billPaise: _waived ? null : _typedBill,
+        chargeOvertime: _chargeOvertime,
+        at: _endAt,
+        endPicked: _endPicked,
+        endReason: _endPicked ? _endReasonCtrl.text : null);
     if (end.isErr) {
       if (mounted) setState(() => _saving = false);
       toast.failure(end.failureOrNull!);
@@ -251,7 +366,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
         ? 0
         : _returning.length - await returnPadsHome(ref, _returning);
 
-    final billed = _bill.total.value - _collected();
+    final billed = _finalBill - _collected();
     String message = 'Session ended';
     if (!_waived && _paidPaise > 0 && billed > 0) {
       final record = _paidPaise >= billed ? billed : _paidPaise;
@@ -355,52 +470,33 @@ class _UnpricedWarning extends StatelessWidget {
   }
 }
 
-/// Played past the booked end: what the booked time costs, what the extra
-/// minutes would add, and whether they are on this bill (owner's overtime
-/// grace, Settings › Billing rules). The actual end is stored either way.
-class _OvertimeCard extends StatelessWidget {
-  const _OvertimeCard({
+/// Played past the booked end: how long, what it would add, and the staff's
+/// choice to bill it (off: the booked time only). Used by the single and group
+/// End sheets. The actual end is stored either way.
+class OvertimeChoice extends StatelessWidget {
+  const OvertimeChoice({
+    super.key,
     required this.scheduledEnd,
     required this.over,
-    required this.graceMinutes,
-    required this.booked,
-    required this.whole,
-    required this.charged,
+    required this.extraPaise,
+    required this.charge,
+    required this.onChanged,
   });
 
   final DateTime scheduledEnd;
   final Duration over;
-  final int graceMinutes;
-  final SegmentBill booked;
-  final SegmentBill whole;
-  final bool charged;
+  final int extraPaise;
+  final bool charge;
+  final ValueChanged<bool> onChanged;
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final arena = context.arena;
-    final extra = whole.total.value - booked.total.value;
-    final overLabel = formatMinutesLabel(over);
-    final note = graceMinutes <= 0
-        ? 'Overtime is billed.'
-        : charged
-            ? 'Over the $graceMinutes-min grace: the whole time is billed.'
-            : 'Within the $graceMinutes-min grace: not charged.';
-    Widget row(String label, String value, {TextStyle? style}) => Padding(
-          padding: const EdgeInsets.symmetric(vertical: 2),
-          child: Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
-            children: [
-              Text(label, style: style ?? theme.textTheme.bodyMedium),
-              Text(value,
-                  style: AppTextStyles.mono(
-                      (style ?? theme.textTheme.bodyMedium)!)),
-            ],
-          ),
-        );
     return Container(
       key: const ValueKey('end-overtime'),
-      padding: const EdgeInsets.all(AppSpacing.md),
+      padding: const EdgeInsets.fromLTRB(
+          AppSpacing.md, AppSpacing.md, AppSpacing.sm, AppSpacing.sm),
       decoration: BoxDecoration(
         border: Border.all(color: arena.warning),
         borderRadius: BorderRadius.circular(12),
@@ -408,17 +504,19 @@ class _OvertimeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Played $overLabel past the booked end '
+          Text('Played ${formatMinutesLabel(over)} past the booked end '
               '(${IstTime.format12(scheduledEnd)})',
               style: theme.textTheme.labelLarge),
-          const SizedBox(height: AppSpacing.xs),
-          row('Booked time', booked.total.display),
-          row('Overtime $overLabel', '+${Paise(extra).display}'),
-          row('With overtime', whole.total.display),
-          const SizedBox(height: AppSpacing.xs),
-          Text(note,
-              style: theme.textTheme.bodySmall?.copyWith(
-                  color: charged ? arena.warning : arena.textMuted)),
+          SwitchListTile(
+            key: const ValueKey('charge-overtime'),
+            contentPadding: EdgeInsets.zero,
+            title: Text('Charge overtime (+${Paise(extraPaise).display})'),
+            subtitle: Text(charge
+                ? 'The whole time played is billed'
+                : 'Only the booked time is billed'),
+            value: charge,
+            onChanged: onChanged,
+          ),
         ],
       ),
     );

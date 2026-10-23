@@ -14,6 +14,7 @@ import 'package:arena_ops/app/providers/notification_providers.dart';
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/core/clock/clock.dart';
 import 'package:arena_ops/core/money/paise.dart';
+import 'package:arena_ops/core/money/rounding.dart';
 import 'package:arena_ops/core/monitoring/app_telemetry.dart';
 import 'package:arena_ops/core/result/result.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
@@ -660,16 +661,14 @@ class SessionActions {
     return res;
   }
 
-  /// The final bill from all segments, for the End screen (spec §19). Under
-  /// the overtime grace it stops at the booked end (see [overtimeBillUntil]);
-  /// [bookedOnly] prices just the booked time and [wholeTime] every minute
-  /// played, to show beside it.
+  /// The final bill from all segments, for the End screen (spec §19). It stops
+  /// at the booked end (see [overtimeBillUntil]) unless [chargeOvertime]
+  /// (staff's choice at End).
   SegmentBill endSummary(
     Session session,
     List<SessionSegment> segments, {
     DateTime? at,
-    bool bookedOnly = false,
-    bool wholeTime = false,
+    bool chargeOvertime = false,
   }) {
     final end = at ?? clock.now();
     var last = end;
@@ -682,45 +681,122 @@ class SessionActions {
       segments: segments,
       openEndAt: end,
       sessionStart: session.startedAt,
-      billUntil: wholeTime
+      billUntil: chargeOvertime
           ? null
-          : bookedOnly
-          ? (last.isAfter(session.scheduledEndAt) ? session.scheduledEndAt : null)
-          : overtimeBillUntil(
-              lastEnd: last,
-              scheduledEnd: session.scheduledEndAt,
-              graceMinutes: overtimeGraceFor(session, segments),
-            ),
+          : overtimeBillUntil(lastEnd: last, scheduledEnd: session.scheduledEndAt),
     );
   }
 
-  /// The overtime grace of the type the session ends on (its latest segment),
-  /// from its frozen snapshot; 0 when none. `_pr_session_bill` reads the same.
-  int overtimeGraceFor(Session session, List<SessionSegment> segments) {
-    if (segments.isEmpty) return 0;
-    var last = segments.first;
-    for (final s in segments) {
-      if (!s.startedAt.isBefore(last.startedAt)) last = s;
+  /// The bill once staff lower it to [billPaise] (null, or not lower: as
+  /// priced): a manual flat discount off the subtotal, cash-rounded as the
+  /// server does (`_discount_apply`, then `_pr_money`).
+  ({int discountPaise, int billedPaise}) loweredBill(
+    Session session,
+    SegmentBill bill,
+    int? billPaise,
+  ) {
+    final total = bill.total.value;
+    if (billPaise == null || billPaise >= total) {
+      return (discountPaise: 0, billedPaise: total);
     }
-    return session.snapshot.activity(last.activityCode)?.overtimeGraceMinutes ??
-        0;
+    final sub = bill.subtotal.value;
+    final target = billPaise < 0 ? 0 : billPaise;
+    final discount = sub - target > sub ? sub : sub - target;
+    if (discount <= 0) return (discountPaise: 0, billedPaise: total);
+    final policy = session.snapshot.policy;
+    return (
+      discountPaise: discount,
+      billedPaise: applyMoneyRounding(
+          sub - discount, policy.moneyRoundingPaise, policy.moneyRoundingDir),
+    );
   }
 
+  /// The earliest end staff may set: after the current segment started.
+  DateTime _earliestEnd(Session session, List<SessionSegment> segments) {
+    var earliest = session.startedAt;
+    for (final s in segments) {
+      if (s.startedAt.isAfter(earliest)) earliest = s.startedAt;
+    }
+    return earliest;
+  }
+
+  /// The end staff pick on the End sheet ([hour]:[minute] IST): today, or
+  /// yesterday when that is still ahead of now; after the current segment
+  /// started.
+  Result<DateTime> pickedEnd(
+    Session session,
+    List<SessionSegment> segments,
+    int hour,
+    int minute,
+  ) {
+    final now = clock.now();
+    final today = IstTime.fromUtc(now);
+    var picked =
+        IstTime(today.year, today.month, today.day, hour, minute).toUtc();
+    if (picked.isAfter(now)) picked = picked.subtract(const Duration(days: 1));
+    final earliest = _earliestEnd(session, segments);
+    if (!picked.isAfter(earliest)) {
+      return Err(Failure(
+        message: 'The end must be after ${IstTime.format12(earliest)}.',
+        fix: 'Pick a later time, when the session actually ended.',
+        code: 'invalid_time',
+      ));
+    }
+    return Ok(picked);
+  }
+
+  /// Ends the session at [at] (staff may set an earlier end: [endPicked], with
+  /// [endReason], which the server audits). [billPaise] lowers the bill (see
+  /// [loweredBill]); it needs the discount permission.
   Future<Result<Session>> end(
     Session session,
     List<SessionSegment> segments, {
     bool markWaived = false,
     String? waiveReason,
     DateTime? at,
+    int? billPaise,
+    bool chargeOvertime = false,
+    bool endPicked = false,
+    String? endReason,
   }) async {
+    final actualEnd = at ?? clock.now();
+    // A picked end is earlier than now, when staff end it: it needs a reason.
+    final movedFrom = endPicked ? clock.now() : null;
+    final endWhy = endReason?.trim() ?? '';
+    if (movedFrom != null) {
+      if (!actualEnd.isBefore(movedFrom) ||
+          !actualEnd.isAfter(_earliestEnd(session, segments))) {
+        return Err(Failure(
+          message: 'The end must be after '
+              '${IstTime.format12(_earliestEnd(session, segments))} and before now.',
+          fix: 'Pick the time the session actually ended.',
+          code: 'invalid_time',
+        ));
+      }
+      if (endWhy.isEmpty) return const Err(endReasonRequired);
+    }
+    final bill = endSummary(session, segments,
+        at: actualEnd, chargeOvertime: chargeOvertime);
+    final lowered =
+        markWaived ? (discountPaise: 0, billedPaise: bill.total.value)
+            : loweredBill(session, bill, billPaise);
     final denied =
         guard.check(Permission.bill) ??
-        (markWaived ? guard.check(Permission.discount) : null);
+        (markWaived || lowered.discountPaise > 0
+            ? guard.check(Permission.discount)
+            : null);
     if (denied != null) return Err(denied);
     final reason = waiveReason?.trim() ?? '';
     if (markWaived && reason.isEmpty) return const Err(waiveReasonRequired);
-    final actualEnd = at ?? clock.now();
-    final bill = endSummary(session, segments, at: actualEnd);
+    if (lowered.discountPaise > 0) {
+      final over = discountOverLimit(
+        canSettings: guard.check(Permission.settings) == null,
+        discountPaise: lowered.discountPaise,
+        subtotalPaise: bill.subtotal.value,
+        maxPercent: await catalog.manualDiscountMaxPercent(),
+      );
+      if (over != null) return Err(over);
+    }
     if (markWaived) {
       final over = waiveOverLimit(
         ownerLevel: guard.actor?.isOwner ?? false,
@@ -745,9 +821,13 @@ class SessionActions {
         sessionId: session.id,
         actualEndedAt: actualEnd,
         charges: bill.charges,
-        billedAmountPaise: bill.total.value,
+        billedAmountPaise: lowered.billedPaise,
         markWaived: markWaived,
         waiveReason: markWaived ? reason : null,
+        discountPaise: lowered.discountPaise,
+        chargeOvertime: chargeOvertime,
+        endMovedFrom: movedFrom,
+        endReason: movedFrom == null ? null : endWhy,
       ),
     );
     if (res.isOk) {

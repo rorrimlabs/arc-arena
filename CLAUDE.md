@@ -20,7 +20,7 @@
 ## Environments
 
 - **Dev = local Supabase only** (`supabase start`; `supabase`/`docker` run outside the sandbox, Docker Desktop must run). Admin `npm run dev` (:4200); floor app `--flavor dev --dart-define-from-file=dart_define.local.json` (`…local-android.json` on an emulator).
-- Floor app flavors: `dev` (default; local stack / offline demo) · `staging` (`arena-ops-staging`, `dart_define.staging.json`) · `prod` (company project, `dart_define.prod.json`). `AO_ENVIRONMENT` must match; hosted hosts are pinned in `AppConfig.hostedSupabaseHosts` (empty until each project exists).
+- Floor app flavors: `dev` (default; local stack / offline demo) · `staging` (`arena-ops-staging`, `dart_define.staging.json`) · `prod` (company project, `dart_define.prod.json`). `AO_ENVIRONMENT` must match; hosted hosts are pinned in `AppConfig.hostedSupabaseHosts` (staging `sqznpjqktvsabjxvpzjh`, production `oilylxydibubupuqghbw`; exact host match, never shared).
 - Hosted projects: manual go-live only (`docs/DEPLOY_SUPABASE.md`). **Never push, deploy, or point a dev run at them** unless explicitly asked.
 - Release builds are **cloud-only** (`--flavor staging` / `prod`): Gradle and the iOS "Check Environment" phase refuse a dev release, a flavor/`AO_ENVIRONMENT` mismatch or missing `AO_BACKEND=supabase` (Gradle also a missing `android/key.properties`); `AppConfig.problemFor` checks every build mode (local mode, unpinned/non-https/dev URLs, secret/`service_role` keys, prod in debug). Only the publishable key ships.
 
@@ -58,7 +58,7 @@ Security rules (asserted by `supabase/tests/13_security_hardening_test.sql`):
 - 42501 on a client RPC = refusal or a call without a session: fix the client, never grant to `anon`.
 - Joining = invitation only (`invite_member` → Auth e-mail → `/accept-invite` → `accept_invite`); owners self-register via `create_my_arena`; non-magic-link logins choose a password first. No service-role key anywhere in the apps or repo. No Edge Functions.
 
-Permissions: `text[]` on `staff_profiles`, list in `_known_perms()` (start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise). `role='owner'` holds all. `money`/`reports` = owner level; only owner level grants money, reports, payroll, payroll_finalise. Nobody changes their own permissions.
+Permissions: `text[]` on `staff_profiles`, list in `_known_perms()` (start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise, bill_edit, bill_record, time_request). `role='owner'` holds all. `money`/`reports` = owner level; only owner level grants money, reports, payroll, payroll_finalise, bill_edit, bill_record. Nobody changes their own permissions.
 
 ## Mobile architecture (`apps/mobile/lib/`, dependencies point inward)
 

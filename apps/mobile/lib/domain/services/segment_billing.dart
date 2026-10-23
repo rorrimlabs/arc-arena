@@ -82,23 +82,16 @@ class SegmentBill {
       lines.fold(Duration.zero, (d, l) => d + Duration(seconds: l.quote.playedSeconds));
 }
 
-/// Where a single session's bill stops under the overtime grace
-/// ([BillingPolicy.overtimeGraceMinutes]); null = bill the whole actual time.
-///
-/// Ended past its booked end by no more than the grace: billed to the booked
-/// end only. Past the grace, with no grace, or ended on time or early: the
-/// whole actual time. [lastEnd] is the session's last moment (its actual end).
+/// Where a single session's bill stops: at its booked end. Overtime is never
+/// charged; staff extend the session to charge more time (the extension moves
+/// the booked end). Ended on time or early: the whole actual time (null).
+/// [lastEnd] is the session's last moment (its actual end).
 /// Port: `_pr_session_bill` computes the same on the server.
 DateTime? overtimeBillUntil({
   required DateTime lastEnd,
   required DateTime scheduledEnd,
-  required int graceMinutes,
-}) {
-  if (graceMinutes <= 0 || !lastEnd.isAfter(scheduledEnd)) return null;
-  return lastEnd.difference(scheduledEnd) <= Duration(minutes: graceMinutes)
-      ? scheduledEnd
-      : null;
-}
+}) =>
+    lastEnd.isAfter(scheduledEnd) ? scheduledEnd : null;
 
 class SegmentBilling {
   const SegmentBilling({this.pricing = const PricingService()});

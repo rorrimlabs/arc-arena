@@ -39,10 +39,12 @@ import { EntryDetail } from './components/entry-detail';
 import { EntryRow } from './components/entry-row';
 import { MonthGrid } from './components/month-grid';
 import { PersonMonth } from './components/person-month';
+import { AttendanceRequestsStore } from './data/attendance-requests';
 import { AttendanceStore } from './data/attendance-store';
 import { LogRow, StaffMember, isOwnRecord } from './data/attendance.models';
 import { DayRow, dayCounts, dayRows } from './data/today.models';
 import { MarkDialog, MarkDialogData, MarkDialogResult, MarkKind } from './dialogs/mark-dialog';
+import { RequestsDialog } from './dialogs/requests-dialog';
 
 /** The permission this screen needs (the owner holds every permission). */
 export const ATTENDANCE_PERM = 'attendance_review';
@@ -182,7 +184,7 @@ const REVIEW_DAYS = 7;
               <button mat-stroked-button type="button" (click)="refresh()">Try again</button>
             </div>
           } @else if (calendar.days() && attendance.log()) {
-            @if (pending().length || openLeave()) {
+            @if (pending().length || openLeave() || openRequests()) {
               <ul class="flex flex-col gap-0.5" aria-label="Waiting for you">
                 @if (pending().length) {
                   <li>
@@ -196,6 +198,31 @@ const REVIEW_DAYS = 7;
                     >
                       <app-status-pill tone="warning">{{ pending().length }}</app-status-pill>
                     </app-list-row>
+                  </li>
+                }
+                @if (openRequests(); as n) {
+                  <li>
+                    <!-- Opens a dialog, not a page: a button styled like app-list-row. -->
+                    <button
+                      type="button"
+                      class="flex min-h-16 w-full items-center gap-3 rounded-card px-3 py-2.5 text-left text-fg hover:bg-info-soft"
+                      (click)="openRequestsDialog()"
+                    >
+                      <span
+                        class="icon grid size-10 flex-none place-items-center rounded-card bg-surface text-[22px] text-muted"
+                        aria-hidden="true"
+                        >more_time</span
+                      >
+                      <span class="flex min-w-0 flex-1 flex-col gap-1">
+                        <span class="truncate text-sm leading-[1.25] font-semibold"
+                          >Missed time requests</span
+                        >
+                        <span class="truncate text-[12.5px] leading-[1.3] text-muted"
+                          >Staff asking to add or fix a punch</span
+                        >
+                      </span>
+                      <app-status-pill tone="warning">{{ n }}</app-status-pill>
+                    </button>
                   </li>
                 }
                 @if (openLeave(); as n) {
@@ -351,6 +378,7 @@ export class AttendanceHomePage {
   protected readonly rules = inject(AttendanceRulesStore);
   private readonly layout = inject(Layout);
   private readonly leave = inject(LeaveStore);
+  private readonly requests = inject(AttendanceRequestsStore);
   private readonly shifts = inject(ShiftsStore);
   private readonly arena = inject(ArenaContext);
   private readonly session = inject(Session);
@@ -462,6 +490,9 @@ export class AttendanceHomePage {
     this.view() === 'calendar' ? `In ${this.monthTitle()}` : `In the last ${REVIEW_DAYS} days`,
   );
   protected readonly openLeave = computed(() => (this.canLeave() ? this.leave.openCount() : 0));
+  protected readonly openRequests = computed(() =>
+    this.canAttendance() ? this.requests.pending().length : 0,
+  );
   /** The loaded entries inside the period shown (for the export). */
   protected readonly periodRows = computed(() => {
     const first = this.view() === 'calendar' ? this.period().first : this.today();
@@ -499,6 +530,7 @@ export class AttendanceHomePage {
       void this.rules.load();
       void this.shifts.load();
       if (this.canLeave()) void this.leave.load();
+      if (this.canAttendance()) void this.requests.load();
     });
     // The permission taken away live (or another arena picked without it): leave.
     effect(() => {
@@ -535,6 +567,17 @@ export class AttendanceHomePage {
     void this.calendar.refresh();
     void this.attendance.refresh();
     if (this.canLeave()) void this.leave.refresh();
+    if (this.canAttendance()) void this.requests.load();
+  }
+
+  protected openRequestsDialog(): void {
+    this.dialog
+      .open<RequestsDialog, void, boolean>(RequestsDialog, {
+        width: '560px',
+        maxWidth: 'calc(100vw - 32px)',
+      })
+      .afterClosed()
+      .subscribe(() => void this.attendance.refresh());
   }
 
   protected hours(min: number): string {

@@ -1,5 +1,6 @@
 import 'package:arena_ops/app/auth/auth_controller.dart';
 import 'package:arena_ops/app/router/app_router.dart';
+import 'package:arena_ops/app/sync/cloud_binding.dart';
 import 'package:arena_ops/core/theme/app_theme.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -17,9 +18,13 @@ class AppShell extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final arena = context.arena;
     final user = ref.watch(authControllerProvider);
+    final cloud = ref.watch(cloudBindingProvider) != null;
     final tabs = user == null
         ? AppTab.all
-        : [for (final t in AppTab.all) if (t.visibleFor(user)) t];
+        : [
+            for (final t in AppTab.all)
+              if (t.visibleFor(user, cloud: cloud)) t,
+          ];
 
     final currentBranch = navigationShell.currentIndex;
     var selected = tabs.indexWhere((t) => t.branchIndex == currentBranch);

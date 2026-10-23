@@ -25,31 +25,31 @@ const APP_ROUTES: Routes = [
   {
     // Opened from the invitation e-mail, signed in or not: the page signs the person in itself.
     path: 'accept-invite',
-    title: 'Accept invitation · ArenaOS',
+    title: 'Accept invitation · ARQ',
     loadComponent: () => import('./features/auth/accept-invite').then((m) => m.AcceptInvite),
   },
   {
     // Opened from the password-reset e-mail, signed in or not: the link signs the person in.
     path: 'reset-password',
-    title: 'Choose a new password · ArenaOS',
+    title: 'Choose a new password · ARQ',
     loadComponent: () => import('./features/auth/reset-password').then((m) => m.ResetPassword),
   },
   {
     path: 'sign-in',
-    title: 'Sign in · ArenaOS',
+    title: 'Sign in · ARQ',
     canMatch: [signedOutGuard],
     loadComponent: () => import('./features/auth/sign-in').then((m) => m.SignIn),
   },
   {
     path: 'register',
-    title: 'Create account · ArenaOS',
+    title: 'Create account · ARQ',
     canMatch: [signedOutGuard],
     loadComponent: () => import('./features/auth/register').then((m) => m.Register),
   },
   {
     // Only a login with no membership at all (a new owner); everyone else is sent where they belong.
     path: 'create-arena',
-    title: 'Create your arena · ArenaOS',
+    title: 'Create your arena · ARQ',
     canMatch: [signedInGuard, noArenaGuard],
     loadComponent: () => import('./features/auth/create-arena').then((m) => m.CreateArena),
   },
@@ -57,7 +57,7 @@ const APP_ROUTES: Routes = [
     // A signed-in login the dashboard is not for (floor staff, access turned off), or whose access
     // could not be read: says which, and what to do.
     path: 'account',
-    title: 'Your access · ArenaOS',
+    title: 'Your access · ARQ',
     canMatch: [signedInGuard],
     loadComponent: () => import('./features/auth/account-access').then((m) => m.AccountAccess),
   },
@@ -70,7 +70,7 @@ const APP_ROUTES: Routes = [
       // Self-service setup for a new venue (create-arena lands here); not in the nav.
       {
         path: 'setup',
-        title: 'Set up your venue · ArenaOS',
+        title: 'Set up your venue · ARQ',
         providers: [MATERIAL_DEFAULTS],
         loadComponent: () => import('./features/setup/setup-page').then((m) => m.SetupPage),
       },
@@ -100,7 +100,7 @@ const APP_ROUTES: Routes = [
           : {
               path: item.path,
               canMatch: item.perm ? [permGuard(item.perm)] : [],
-              title: `${item.label} · ArenaOS`,
+              title: `${item.label} · ARQ`,
               // Overview is a plain page; every other screen is a list/detail frame.
               data: { heading: item.label, kind: item.path === 'overview' ? 'page' : 'list' },
               loadComponent: () =>
@@ -117,7 +117,7 @@ const APP_ROUTES: Routes = [
 const CONFIG_ERROR_ROUTES: Routes = [
   {
     path: '**',
-    title: 'Setup needed · ArenaOS',
+    title: 'Setup needed · ARQ',
     loadComponent: () => import('./features/auth/config-error').then((m) => m.ConfigError),
   },
 ];

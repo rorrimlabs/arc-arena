@@ -275,6 +275,19 @@ All refusal codes are listed. `forbidden` = missing permission; `not_found` (hin
 - **`attendance.review`**: `{entry_id, note?}`. Changes `pending` to `accepted`.
   - Refusals: `not_found`, `own_record`, `not_pending`.
 
+### Missed-punch requests (`attendance_requests`)
+- **`attendance.request`** (needs `time_request`, own profile only): `{id, kind, reason, …}` with
+  kind `add` `{in_at, out_at}` (a stretch never punched) or `fix_out` `{entry_id, out_at}` (the
+  clock-out of your entry). Stored pending; nothing counts until approved.
+  - Refusals: `forbidden`, `not_found` (staff / entry), `reason_required`, `reason_too_long`,
+    `invalid_payload`, `not_active`, `invalid_times`, `overlap` (add), `period_finalised`,
+    `duplicate`.
+- **`attendance.request_decide`** (needs `attendance_review`): `{id, approve, note?}`. Approve
+  applies it through `attendance.correct` (add / edit with the request's reason; its refusals
+  apply) and stores `result_entry_id`; reject keeps the note. Audited (entity
+  `attendance_request`). Returns `{status, entry_id?}`.
+  - Refusals: `not_found`, `own_record`, `invalid_state` (not pending), `note_too_long`.
+
 ### Leave
 - **`leave.request`**: `{id, kind, from_date, to_date, half_day, reason}`. For the caller only.
   Returns `{days}`.

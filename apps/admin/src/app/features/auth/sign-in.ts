@@ -125,7 +125,7 @@ type Step = 'sign-in' | 'forgot' | 'sent';
             <a routerLink="/sign-in" [queryParams]="{ step: 'forgot' }">Forgot your password?</a>
           </p>
           <p class="text-sm text-muted">
-            New to ArenaOS? <a routerLink="/register">Create an account</a>
+            New to ARQ? <a routerLink="/register">Create an account</a>
           </p>
         </app-auth-card>
       }

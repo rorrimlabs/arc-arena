@@ -1,0 +1,15 @@
+# App icons from the ARQ brand logo: `dart run flutter_launcher_icons` (from apps/mobile).
+# The web icons are also copied into apps/admin/public/icons for the admin PWA.
+flutter_launcher_icons:
+  image_path: "../../assets/logo.png"
+  android: true
+  min_sdk_android: 26
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "../../assets/logo.png"
+  ios: true
+  remove_alpha_ios: true
+  background_color_ios: "#000000"
+  web:
+    generate: true
+    background_color: "#000000"
+    theme_color: "#000000"
