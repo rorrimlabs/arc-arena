@@ -1,36 +1,21 @@
-import 'dart:async';
-
-import 'package:sentry_flutter/sentry_flutter.dart';
+import 'package:flutter/foundation.dart';
 
 /// Centralized, privacy-safe instrumentation and telemetry for Arena Ops.
 ///
-/// Encapsulates Sentry breadcrumbs, timer anomaly diagnostics, and unexpected
-/// exception reporting. Never logs customer names, phone numbers, staff PINs,
-/// auth tokens, or payment credentials.
+/// Crash reporting (Sentry) is removed for now: breadcrumbs are dropped and
+/// timer anomalies and unexpected exceptions only go to the debug log. The
+/// call sites stay so a reporter can be plugged back in here. Never logs
+/// customer names, phone numbers, staff PINs, auth tokens, or payment
+/// credentials.
 class AppTelemetry {
   const AppTelemetry._();
 
-  /// Adds a sanitized breadcrumb to the current Sentry scope.
+  /// Adds a sanitized breadcrumb (no-op while no reporter is wired in).
   static void addBreadcrumb({
     required String category,
     required String message,
     Map<String, dynamic>? data,
-    SentryLevel level = SentryLevel.info,
-  }) {
-    try {
-      Sentry.addBreadcrumb(
-        Breadcrumb(
-          category: category,
-          message: message,
-          data: data,
-          level: level,
-          timestamp: DateTime.now().toUtc(),
-        ),
-      );
-    } catch (_) {
-      // Telemetry must never crash the app.
-    }
-  }
+  }) {}
 
   /// Records the start of a session timer (single or group).
   static void timerStarted({
@@ -132,7 +117,6 @@ class AppTelemetry {
       category: 'auth',
       message: 'staff_$operation',
       data: {'userId': userId, 'success': success},
-      level: success ? SentryLevel.info : SentryLevel.warning,
     );
   }
 
@@ -163,42 +147,26 @@ class AppTelemetry {
     DateTime? scheduledEndAt,
     DateTime? actualEndedAt,
   }) {
-    try {
-      Sentry.captureMessage(
-        'Session timer anomaly: $anomaly',
-        level: SentryLevel.warning,
-        withScope: (scope) {
-          scope.setTag('component', 'timer');
-          scope.setContexts('timer_state', {
-            'sessionId': sessionId,
-            'resourceId': resourceId,
-            'startedAt': startedAt.toIso8601String(),
-            'scheduledEndAt': ?scheduledEndAt?.toIso8601String(),
-            'actualEndedAt': ?actualEndedAt?.toIso8601String(),
-          });
-        },
-      );
-    } catch (_) {}
+    debugPrint(
+      'Session timer anomaly: $anomaly '
+      '(session $sessionId, resource $resourceId, '
+      'started ${startedAt.toIso8601String()}, '
+      'scheduled end ${scheduledEndAt?.toIso8601String()}, '
+      'ended ${actualEndedAt?.toIso8601String()})',
+    );
   }
 
-  /// Captures unexpected application exceptions to Sentry with sanitized context.
+  /// Logs an unexpected application exception with sanitized context.
   static Future<void> captureException(
     dynamic throwable, {
     dynamic stackTrace,
     String? operation,
     Map<String, dynamic>? extra,
   }) async {
-    try {
-      await Sentry.captureException(
-        throwable,
-        stackTrace: stackTrace,
-        withScope: (scope) {
-          if (operation != null) scope.setTag('operation', operation);
-          if (extra != null && extra.isNotEmpty) {
-            scope.setContexts('context', extra);
-          }
-        },
-      );
-    } catch (_) {}
+    debugPrint(
+      'Unexpected error${operation == null ? '' : ' in $operation'}: '
+      '$throwable${extra == null || extra.isEmpty ? '' : ' $extra'}\n'
+      '${stackTrace ?? ''}',
+    );
   }
 }

@@ -1,9 +1,8 @@
-import 'dart:async';
-
 import 'package:flutter/widgets.dart';
-import 'package:sentry_flutter/sentry_flutter.dart';
 
-/// Stops Sentry Session Replay from recording while [child] is on screen.
+/// Marks a screen where Session Replay must not record while [child] is on
+/// screen. Sentry (and so Session Replay) is removed for now: the zones are
+/// still counted, but there is no recording to pause.
 ///
 /// Masking hides text and images, but a replay still shows WHERE someone
 /// tapped: on the staff PIN keypad (a fixed in-app layout) those taps would give
@@ -12,9 +11,7 @@ import 'package:sentry_flutter/sentry_flutter.dart';
 /// it when they close. Nested zones are counted, so the replay resumes only
 /// when the last one closes.
 ///
-/// A no-op where Session Replay is off or unsupported (no DSN, replay disabled
-/// by configuration, sampled out, tests, desktop): [SentryFlutter.replay] then
-/// has nothing to control.
+/// When a replay SDK comes back, pause it on 0 → 1 and resume it on 1 → 0.
 class ReplayPause extends StatefulWidget {
   const ReplayPause({required this.child, super.key});
 
@@ -33,21 +30,13 @@ class _ReplayPauseState extends State<ReplayPause> {
   @override
   void initState() {
     super.initState();
-    if (ReplayPause._active++ == 0) _control(SentryFlutter.replay.pause);
+    ReplayPause._active++;
   }
 
   @override
   void dispose() {
-    if (--ReplayPause._active == 0) _control(SentryFlutter.replay.resume);
+    ReplayPause._active--;
     super.dispose();
-  }
-
-  void _control(Future<void> Function() action) {
-    unawaited(
-      action().catchError((Object _) {
-        // Replay control must never affect the screen it protects.
-      }),
-    );
   }
 
   @override

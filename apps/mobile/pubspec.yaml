@@ -28,7 +28,6 @@ environment:
 # the latest version available on pub.dev. To see which dependencies have newer
 # versions available, run `flutter pub outdated`.
 dependencies:
-  sentry_flutter: ^10.0.0
   flutter:
     sdk: flutter
 
@@ -68,7 +67,6 @@ dependencies:
   latlong2: ^0.10.1
 
 dev_dependencies:
-  sentry_dart_plugin: ^3.4.0
   flutter_test:
     sdk: flutter
 
@@ -135,9 +133,3 @@ flutter:
           weight: 500
         - asset: assets/fonts/IBMPlexMono-SemiBold.ttf
           weight: 600
-
-sentry:
-  upload_debug_symbols: true
-  upload_source_maps: true
-  project: flutter
-  org: rorrim-t7

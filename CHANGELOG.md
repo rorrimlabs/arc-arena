@@ -10,6 +10,12 @@ together.
 
 ## [Unreleased]
 
+### Removed
+- Sentry removed from the floor app for now (crash reports, breadcrumbs, Session Replay):
+  `sentry_flutter` and `sentry_dart_plugin` dropped, `AO_SENTRY_*` defines are ignored. Timer
+  anomalies and unexpected errors go to the debug log only. iOS builds no longer fetch
+  `sentry-cocoa` from GitHub.
+
 ## [0.0.1-alpha.0] - 2026-10-21
 
 First alpha release. For internal testing on the staging project; not for real

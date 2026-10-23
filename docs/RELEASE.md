@@ -122,11 +122,10 @@ Debug builds without defines still run local mode (demo catalog and demo PINs
 `dart_define.prod.json` and `dart_define.staging.json` (git-ignored, like every
 `dart_define*.json`) hold `AO_BACKEND=supabase`, the project's https URL and
 its publishable key — never a secret key ([DEPLOY_SUPABASE.md](DEPLOY_SUPABASE.md)
-§0) — plus `AO_ENVIRONMENT` (`production` / `staging`) and `AO_SENTRY_DSN`
-(crash reports; see `dart_define.example.json`). Outside production Sentry
-records every session (Session Replay) and traces everything; production
-records 10 %. Leaving `AO_SENTRY_DSN` empty is allowed but ships without crash
-reporting.
+§0) — plus `AO_ENVIRONMENT` (`production` / `staging`). Sentry is removed from
+the floor app for now, so builds ship without crash reporting and
+`AO_SENTRY_DSN` is ignored (restore `sentry_flutter` from git history to bring
+it back).
 
 ### Android
 
