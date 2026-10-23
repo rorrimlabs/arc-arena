@@ -94,6 +94,14 @@ const waiveReasonRequired = Failure(
   code: 'waive_reason_required',
 );
 
+/// An end set earlier than when staff ended the session lowers the bill, so it
+/// always says why; the server audits it with the bill before and after.
+const endReasonRequired = Failure(
+  message: 'An earlier end needs a reason.',
+  fix: 'Say why the session ended earlier, then end it.',
+  code: 'end_reason_required',
+);
+
 /// Below owner level a waive may write off at most [maxPercent] of the bill —
 /// the manual-discount cap — exactly as the server checks it (_waive_check:
 /// written off × 100 > billed × cap). Null when allowed.

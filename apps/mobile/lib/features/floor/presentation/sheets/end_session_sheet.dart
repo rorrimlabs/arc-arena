@@ -54,6 +54,10 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   /// The bill amount, prefilled with the price; staff may lower it.
   final _billCtrl = TextEditingController();
   final _waiveReasonCtrl = TextEditingController();
+
+  /// Staff set an earlier end with the picker; it needs a reason (audited).
+  bool _endPicked = false;
+  final _endReasonCtrl = TextEditingController();
   PaymentMethod _method = PaymentMethod.cash;
 
   /// The pick, or the first method the arena offers when the pick is not (floor options).
@@ -103,31 +107,25 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
   }
 
   /// Staff set the real end (e.g. the timer ran on): between the current
-  /// segment's start and now, today (IST).
+  /// segment's start and now (SessionActions.pickedEnd).
   Future<void> _pickEnd() async {
     final toast = AppToast.of(context);
-    final now = ref.read(clockProvider).now();
     final shown = IstTime.fromUtc(_endAt);
     final t = await showTimePicker(
       context: context,
       initialTime: TimeOfDay(hour: shown.hour, minute: shown.minute),
     );
     if (t == null || !mounted) return;
-    final today = IstTime.fromUtc(now);
-    var picked =
-        IstTime(today.year, today.month, today.day, t.hour, t.minute).toUtc();
-    if (picked.isAfter(now)) picked = picked.subtract(const Duration(days: 1));
-    var earliest = _session.startedAt;
-    for (final s in widget.active.segments) {
-      if (s.startedAt.isAfter(earliest)) earliest = s.startedAt;
-    }
-    if (!picked.isAfter(earliest)) {
-      toast.show('The end must be after ${IstTime.format12(earliest)}.',
-          kind: ToastKind.error);
+    final picked = ref
+        .read(sessionActionsProvider)
+        .pickedEnd(_session, widget.active.segments, t.hour, t.minute);
+    if (picked.isErr) {
+      toast.failure(picked.failureOrNull!);
       return;
     }
     setState(() {
-      _endAt = picked;
+      _endAt = picked.valueOrNull!;
+      _endPicked = true;
       _price();
       _followBill();
     });
@@ -145,12 +143,17 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
     _amountCtrl.dispose();
     _billCtrl.dispose();
     _waiveReasonCtrl.dispose();
+    _endReasonCtrl.dispose();
     super.dispose();
   }
 
   /// A waive writes money off: it is never recorded without a reason.
   bool get _waiveReasonMissing =>
       _waived && _waiveReasonCtrl.text.trim().isEmpty;
+
+  /// An earlier end lowers the bill: it is never recorded without a reason.
+  bool get _endReasonMissing =>
+      _endPicked && _endReasonCtrl.text.trim().isEmpty;
 
   /// Exact paise for what is typed (never via a double); 0 when empty.
   int get _paidPaise => parseRupeesToPaise(_amountCtrl.text) ?? 0;
@@ -208,6 +211,18 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
                 style: theme.textTheme.titleMedium),
             onTap: _saving ? null : _pickEnd,
           ),
+          if (_endPicked)
+            TextField(
+              key: const ValueKey('end-reason'),
+              controller: _endReasonCtrl,
+              maxLength: 200,
+              decoration: const InputDecoration(
+                labelText: 'Why did it end earlier?',
+                helperText: 'The owner sees it with the bill before and after',
+                border: OutlineInputBorder(),
+              ),
+              onChanged: (_) => setState(() {}),
+            ),
           _BillCard(bill: _bill, resources: resources, games: games),
           if (_endAt.isAfter(_session.scheduledEndAt)) ...[
             const SizedBox(height: AppSpacing.sm),
@@ -311,6 +326,7 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
           FilledButton.icon(
             onPressed:
                 _saving || _amountInvalid || _waiveReasonMissing ||
+                        _endReasonMissing ||
                         (!_waived && _billInvalid)
                     ? null
                     : _confirm,
@@ -337,7 +353,9 @@ class _EndSheetState extends ConsumerState<_EndSheet> {
         waiveReason: _waived ? _waiveReasonCtrl.text : null,
         billPaise: _waived ? null : _typedBill,
         chargeOvertime: _chargeOvertime,
-        at: _endAt);
+        at: _endAt,
+        endPicked: _endPicked,
+        endReason: _endPicked ? _endReasonCtrl.text : null);
     if (end.isErr) {
       if (mounted) setState(() => _saving = false);
       toast.failure(end.failureOrNull!);

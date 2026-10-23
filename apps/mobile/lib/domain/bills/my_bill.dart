@@ -152,6 +152,9 @@ class BillAdjustCommand {
     'reason': reason.trim(),
     'payment_id': id,
     if (method != null) 'method': method!.code,
+    // What staff saw: the server refuses the edit as stale if either moved.
+    'expected_billed_paise': bill.billedPaise,
+    'expected_paid_paise': bill.paidPaise,
   };
 }
 

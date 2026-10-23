@@ -299,7 +299,7 @@ select is(pg_temp.push('session.end', pg_temp.end_op('a8000000-0000-0000-0000-00
 select ok(not has_function_privilege('authenticated', f, 'execute'), f || ' is not client-callable')
   from unnest(array['_pr_quote(jsonb,text,int,timestamptz,timestamptz,timestamptz)',
     '_pr_rule(jsonb,text,timestamptz)','_pr_rule_price(bigint,int,jsonb)',
-    '_pr_session_bill(uuid,timestamptz)','_pr_group_bill(uuid,timestamptz)',
+    '_pr_session_bill(uuid,timestamptz,boolean)','_pr_group_bill(uuid,timestamptz,timestamptz)',
     '_pricing_snapshot(uuid)','_assert_snapshot(uuid,jsonb)','op_session_end(uuid,jsonb)','op_group_end(uuid,jsonb)',
     'op_session_start(uuid,jsonb)','op_group_create(uuid,jsonb)','op_session_extend(uuid,jsonb)',
     'op_group_extend(uuid,jsonb)','_sync_apply(uuid,text,jsonb)']) f;

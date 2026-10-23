@@ -110,6 +110,7 @@ export const SALES_MESSAGES: Readonly<Record<string, string>> = {
   not_ended: 'This bill is still running. End it first',
   waived: 'This bill was waived: it owes nothing',
   same_total: 'Nothing to change: the bill is already that amount and paid',
+  stale: 'This bill changed since you opened it. Close it and open it again',
 };
 
 type Row = Record<string, unknown>;
@@ -376,6 +377,9 @@ class SupabaseSalesApi extends SalesApi {
         method: change.method,
         reason: change.reason,
         payment_id: change.attempt?.id('payment') ?? crypto.randomUUID(),
+        // What the owner saw: the server refuses the edit as stale if either moved.
+        expected_billed_paise: bill.billedPaise,
+        expected_paid_paise: bill.paidPaise,
       },
     });
   }

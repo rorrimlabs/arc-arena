@@ -31,10 +31,11 @@ export interface EditBillDialogData {
 }
 
 /**
- * Edit bill: the bill's start, end and price at a glance. The times and the amount are edited
- * separately: changing a time never changes the amount (a corrected time is noted in History). Saving sets the bill to the amount and collected to match it,
- * the difference recorded as paid or given back by the method picked (bill.adjust; Money
- * permission, checked by the server). The priced lines stay as recorded; History keeps the change.
+ * Edit bill: the bill's times and price at a glance (times are not edited here). Saving sets the
+ * bill to the amount and collected to match it, the difference recorded as paid or given back by
+ * the method picked (bill.adjust; Money permission, checked by the server, which refuses it as
+ * stale if the bill changed since it was loaded). The priced lines stay as recorded; History
+ * keeps the change.
  */
 @Component({
   selector: 'app-edit-bill-dialog',
@@ -56,29 +57,8 @@ export interface EditBillDialogData {
     <form novalidate (submit)="save($event)">
       <mat-dialog-content>
         <div class="flex flex-col gap-5 pt-1">
-          <div class="grid grid-cols-2 gap-x-4">
-            <mat-form-field>
-              <mat-label>Start</mat-label>
-              <input
-                matInput
-                type="time"
-                [readonly]="!single"
-                [value]="start()"
-                (change)="setStart($any($event.target).value)"
-              />
-            </mat-form-field>
-            <mat-form-field>
-              <mat-label>End</mat-label>
-              <input
-                matInput
-                type="time"
-                [readonly]="!single"
-                [value]="end()"
-                (change)="setEnd($any($event.target).value)"
-              />
-            </mat-form-field>
-          </div>
-          <p class="-mt-3 text-sm leading-[1.4]">
+          <p class="text-sm leading-[1.4]">
+            Played <span class="font-medium tabular-nums">{{ start }}–{{ end || '…' }}</span> ·
             Price: <span class="font-medium tabular-nums">{{ rupees(was) }}</span>
           </p>
           <mat-form-field>
@@ -88,14 +68,14 @@ export interface EditBillDialogData {
               inputmode="decimal"
               autocomplete="off"
               [value]="amount()"
-              (input)="amount.set($any($event.target).value)"
+              (input)="amount.set($any($event.target).value); changed()"
             />
             <mat-hint>Collected so far: {{ rupees(data.bill.paidPaise) }}</mat-hint>
           </mat-form-field>
           @if (diff() !== 0) {
             <mat-form-field>
               <mat-label>{{ diff() > 0 ? 'Extra paid by' : 'Given back by' }}</mat-label>
-              <mat-select [value]="method()" (selectionChange)="method.set($event.value)">
+              <mat-select [value]="method()" (selectionChange)="method.set($event.value); changed()">
                 @for (m of methods; track m) {
                   <mat-option [value]="m">{{ methodName(m) }}</mat-option>
                 }
@@ -110,7 +90,7 @@ export interface EditBillDialogData {
               autocomplete="off"
               maxlength="200"
               [value]="reason()"
-              (input)="reason.set($any($event.target).value)"
+              (input)="reason.set($any($event.target).value); changed()"
             />
           </mat-form-field>
           @if (error()) {
@@ -133,11 +113,8 @@ export class EditBillDialog {
   protected readonly rupees = formatRupees;
   protected readonly methodName = methodName;
   protected readonly methods = PAY_METHODS;
-  /** Time can be fixed on a single session (a group's players end separately). */
-  protected readonly single = this.data.bill.kind === 'single' && !!this.data.bill.endedAt;
-
-  protected readonly start = signal(formatHm(this.data.bill.startedAt));
-  protected readonly end = signal(this.data.bill.endedAt ? formatHm(this.data.bill.endedAt) : '');
+  protected readonly start = formatHm(this.data.bill.startedAt);
+  protected readonly end = this.data.bill.endedAt ? formatHm(this.data.bill.endedAt) : '';
   protected readonly was = this.data.bill.billedPaise ?? 0;
   protected readonly amount = signal(rupeesText(this.data.bill.billedPaise ?? 0));
   protected readonly method = signal<PayMethod>(paidMethods(this.data.bill)[0] ?? 'cash');
@@ -155,16 +132,15 @@ export class EditBillDialog {
     return p == null ? 0 : p - this.data.bill.paidPaise;
   });
 
-  protected setStart(hm: string): void {
-    this.start.set(hm);
-  }
+  /**
+   * One Save's ids: a resend after a lost answer replays instead of recording twice. Changing
+   * the amount, method or reason makes the next Save a new edit, never a replay of the old one.
+   */
+  private attempt = new Attempt();
 
-  protected setEnd(hm: string): void {
-    this.end.set(hm);
+  protected changed(): void {
+    this.attempt = new Attempt();
   }
-
-  /** One Save's ids: a resend after a lost answer replays instead of recording twice. */
-  private readonly attempt = new Attempt();
 
   protected async save(event: Event): Promise<void> {
     event.preventDefault();
@@ -173,12 +149,7 @@ export class EditBillDialog {
       this.error.set('Enter the bill amount in rupees, like 120 or 120.50');
       return;
     }
-    // History says why; a changed time is noted with it.
-    const b = this.data.bill;
-    const timesChanged =
-      this.start() !== formatHm(b.startedAt) || (!!b.endedAt && this.end() !== formatHm(b.endedAt));
-    const timeNote = timesChanged ? ` (${this.start()}–${this.end()})` : '';
-    const reason = (this.reason().trim() || 'Bill edited') + timeNote;
+    const reason = this.reason().trim() || 'Bill edited';
     this.busy.set(true);
     this.error.set('');
     try {

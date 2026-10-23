@@ -630,6 +630,12 @@ class LocalSessionRepository implements SessionRepository {
           if (cmd.chargeOvertime) 'charge_overtime': true,
           if (cmd.markWaived && cmd.waiveReason != null)
             'waive_reason': cmd.waiveReason,
+          // An earlier end: the server requires the reason and audits it.
+          if (cmd.endMovedFrom != null)
+            'end_moved': {
+              'from': Wire.at(cmd.endMovedFrom),
+              'reason': cmd.endReason,
+            },
           // A lowered bill: the server re-checks it as a manual discount.
           if (cmd.discountPaise > 0)
             'discount': {

@@ -120,10 +120,17 @@ class EndSessionCommand {
     this.waiveReason,
     this.discountPaise = 0,
     this.chargeOvertime = false,
+    this.endMovedFrom,
+    this.endReason,
   });
 
   final String sessionId;
   final DateTime actualEndedAt;
+
+  /// Staff set [actualEndedAt] earlier than this, the time they ended it; the
+  /// server requires [endReason] and audits the move with both bills.
+  final DateTime? endMovedFrom;
+  final String? endReason;
 
   /// Immutable final segments (built from all session segments at end).
   final List<SessionCharge> charges;

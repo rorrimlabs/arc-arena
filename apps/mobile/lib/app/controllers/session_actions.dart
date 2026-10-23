@@ -711,8 +711,43 @@ class SessionActions {
     );
   }
 
-  /// Ends the session at [at] (staff may set an earlier end). [billPaise]
-  /// lowers the bill (see [loweredBill]); it needs the discount permission.
+  /// The earliest end staff may set: after the current segment started.
+  DateTime _earliestEnd(Session session, List<SessionSegment> segments) {
+    var earliest = session.startedAt;
+    for (final s in segments) {
+      if (s.startedAt.isAfter(earliest)) earliest = s.startedAt;
+    }
+    return earliest;
+  }
+
+  /// The end staff pick on the End sheet ([hour]:[minute] IST): today, or
+  /// yesterday when that is still ahead of now; after the current segment
+  /// started.
+  Result<DateTime> pickedEnd(
+    Session session,
+    List<SessionSegment> segments,
+    int hour,
+    int minute,
+  ) {
+    final now = clock.now();
+    final today = IstTime.fromUtc(now);
+    var picked =
+        IstTime(today.year, today.month, today.day, hour, minute).toUtc();
+    if (picked.isAfter(now)) picked = picked.subtract(const Duration(days: 1));
+    final earliest = _earliestEnd(session, segments);
+    if (!picked.isAfter(earliest)) {
+      return Err(Failure(
+        message: 'The end must be after ${IstTime.format12(earliest)}.',
+        fix: 'Pick a later time, when the session actually ended.',
+        code: 'invalid_time',
+      ));
+    }
+    return Ok(picked);
+  }
+
+  /// Ends the session at [at] (staff may set an earlier end: [endPicked], with
+  /// [endReason], which the server audits). [billPaise] lowers the bill (see
+  /// [loweredBill]); it needs the discount permission.
   Future<Result<Session>> end(
     Session session,
     List<SessionSegment> segments, {
@@ -721,8 +756,25 @@ class SessionActions {
     DateTime? at,
     int? billPaise,
     bool chargeOvertime = false,
+    bool endPicked = false,
+    String? endReason,
   }) async {
     final actualEnd = at ?? clock.now();
+    // A picked end is earlier than now, when staff end it: it needs a reason.
+    final movedFrom = endPicked ? clock.now() : null;
+    final endWhy = endReason?.trim() ?? '';
+    if (movedFrom != null) {
+      if (!actualEnd.isBefore(movedFrom) ||
+          !actualEnd.isAfter(_earliestEnd(session, segments))) {
+        return Err(Failure(
+          message: 'The end must be after '
+              '${IstTime.format12(_earliestEnd(session, segments))} and before now.',
+          fix: 'Pick the time the session actually ended.',
+          code: 'invalid_time',
+        ));
+      }
+      if (endWhy.isEmpty) return const Err(endReasonRequired);
+    }
     final bill = endSummary(session, segments,
         at: actualEnd, chargeOvertime: chargeOvertime);
     final lowered =
@@ -774,6 +826,8 @@ class SessionActions {
         waiveReason: markWaived ? reason : null,
         discountPaise: lowered.discountPaise,
         chargeOvertime: chargeOvertime,
+        endMovedFrom: movedFrom,
+        endReason: movedFrom == null ? null : endWhy,
       ),
     );
     if (res.isOk) {

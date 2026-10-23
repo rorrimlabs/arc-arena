@@ -141,6 +141,12 @@ class _EditBillSheetState extends ConsumerState<EditBillSheet> {
         ref.invalidate(myBillsForDayProvider(widget.day));
         Navigator.of(context).pop();
         showToast(context, 'Bill changed to ${Paise(total).display}.');
+      // The bill changed since it was loaded: reopen it on the current amounts.
+      case Err(failure: final f) when f.code == 'stale':
+        ref.invalidate(myBillsForDayProvider(widget.day));
+        final toast = AppToast.of(context);
+        Navigator.of(context).pop();
+        toast.failure(f);
       case Err(failure: final f):
         setState(() {
           _busy = false;

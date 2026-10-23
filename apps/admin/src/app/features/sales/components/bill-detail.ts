@@ -549,6 +549,8 @@ export class BillDetail {
         return 'money_off';
       case 'bill_adjust':
         return 'edit';
+      case 'end_moved':
+        return 'schedule';
       case 'payment_correct':
         return 'swap_horiz';
       case 'record':
@@ -569,6 +571,10 @@ export class BillDetail {
         return `Bill edited · ${paise(h.before?.['billed_paise'])} → ${paise(h.after?.['billed_paise'])}`;
       case 'record':
         return `Added later · ${paise(h.after?.['billed_paise'])}`;
+      case 'end_moved':
+        return `End moved earlier · ${formatTime(String(h.before?.['ended_at']))} → ${formatTime(
+          String(h.after?.['ended_at']),
+        )} · ${paise(h.before?.['billed_paise'])} → ${paise(h.after?.['billed_paise'])}`;
       case 'payment_correct':
         return `Payment moved · ${paise(h.after?.['amount_paise'])} ${methodName(
           String(h.before?.['method'] ?? ''),

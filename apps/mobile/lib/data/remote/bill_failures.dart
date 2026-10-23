@@ -63,6 +63,11 @@ abstract final class BillFailures {
       fix: 'A waived bill owes nothing and cannot be edited.',
       code: 'waived',
     ),
+    'stale' => const Failure(
+      message: 'This bill changed since you opened it.',
+      fix: 'Open it again to see the new amounts, then make the change.',
+      code: 'stale',
+    ),
     'not_ended' => const Failure(
       message: 'This session is still running.',
       fix: 'End it on the floor first.',

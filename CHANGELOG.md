@@ -10,6 +10,19 @@ together.
 
 ## [Unreleased]
 
+### Fixed
+- Floor app End: setting "Ended at" earlier than now (which lowers the bill) now needs a reason.
+  The server requires it (`end_reason_required`) and audits the move with the end and bill before
+  and after; the dashboard bill shows it in History with an "End moved" tag (`session.end`
+  `end_moved`, migration `20261023202840_bill_edit_stale_end_moved`).
+- Bill edits (My bills and dashboard Edit bill) no longer settle against a payment or edit that
+  landed after the bill was loaded: `bill.adjust` sends the total and collected the user saw and is
+  refused as `stale` if either changed, instead of recording a refund nobody gave or refusing a
+  real payment.
+- Dashboard Edit bill: changing the amount, method or reason after a failed Save makes a new edit
+  instead of replaying the first one. The Start/End fields, which never changed the session's
+  times, are removed; the times show as text.
+
 ### Changed
 - Rebrand to ARQ: app name (Android, iOS, web titles, admin page titles and sign-in), app icons
   on Android (adaptive), iOS and web, and the in-app logo, all generated from `assets/logo.png`

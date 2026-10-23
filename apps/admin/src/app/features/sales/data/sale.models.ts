@@ -313,7 +313,7 @@ export interface BillFlag {
 
 /**
  * What happened to a bill beyond its state, for tags in the list and the detail: added later as
- * a missed bill, total edited, discounted, money refunded. `history` (the full bill) also catches
+ * a missed bill, total edited, end set earlier by staff, discounted, money refunded. `history` (the full bill) also catches
  * an edit that moved no money.
  */
 export function billFlags(bill: Bill, history: readonly BillHistoryEntry[] = []): BillFlag[] {
@@ -323,6 +323,7 @@ export function billFlags(bill: Bill, history: readonly BillHistoryEntry[] = [])
   if (notes.has(BILL_EDITED_NOTE) || history.some((h) => h.action === 'bill_adjust')) {
     out.push({ label: 'Edited', tone: 'warning' });
   }
+  if (history.some((h) => h.action === 'end_moved')) out.push({ label: 'End moved', tone: 'warning' });
   if (bill.discountPaise > 0) out.push({ label: 'Discount', tone: 'success' });
   if (bill.refundedPaise > 0) out.push({ label: 'Refunded', tone: 'danger' });
   return out;

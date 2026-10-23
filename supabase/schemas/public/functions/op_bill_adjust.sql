@@ -7,10 +7,13 @@
 --   billed_amount_paise (the new total: whole paise, 0 or more), reason (required: 1–500
 --   characters after trimming), method (cash | upi | card | other: how the difference was paid
 --   or given back; needed when collected differs from the new total), payment_id? (id of that
---   row; generated when absent).
+--   row; generated when absent), expected_billed_paise and expected_paid_paise (the total and
+--   net collected the caller saw: the difference is only recorded against those).
 -- Checks / errors: forbidden (incl. 'not your bill'); reason_required; reason_too_long; invalid_total (missing or
 --   negative); invalid_method; not_found (hint session / group); not_ended (still running);
---   voided; waived (a waived bill owes nothing); same_total (that total, already collected).
+--   voided; waived (a waived bill owes nothing); stale (the bill's total or collected differs
+--   from expected_*, e.g. a payment landed meanwhile; missing expected_* is stale too);
+--   same_total (that total, already collected).
 -- Writes, in one transaction: billed_amount_paise; when collected ≠ the new total, one ledger row
 --   for the difference (a payment, or a refund carrying the reason; note 'Bill edited'); payment
 --   status 'paid'; an audit_log row (action bill_adjust, before {billed_paise, paid_paise}, after
@@ -69,6 +72,12 @@ begin
     raise exception 'not_ended' using hint = 'end the session first';
   end if;
   if v_pay = 'waived' then raise exception 'waived' using hint = 'a waived bill owes nothing'; end if;
+  -- The difference is settled against what the caller saw, never against a payment or edit
+  -- that landed since (it would turn into a refund nobody gave, or refuse real money).
+  if v_old is distinct from (p->>'expected_billed_paise')::bigint
+     or v_paid is distinct from (p->>'expected_paid_paise')::bigint then
+    raise exception 'stale' using hint = 'the bill changed since it was loaded: reload it';
+  end if;
   if v_new = v_old and v_paid = v_new then
     raise exception 'same_total' using hint = 'the bill is already that amount and paid';
   end if;
