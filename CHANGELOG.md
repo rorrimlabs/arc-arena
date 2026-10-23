@@ -10,6 +10,8 @@ together.
 
 ## [Unreleased]
 
+## [0.0.1-alpha.1] - 2026-10-24
+
 ### Fixed
 - Floor app End: setting "Ended at" earlier than now (which lowers the bill) now needs a reason.
   The server requires it (`end_reason_required`) and audits the move with the end and bill before
@@ -161,5 +163,6 @@ takings yet.
 - Admin initial bundle exceeds its 500 kB budget.
 - Not built yet: push notifications, who's-in board, shared clock-in tablet.
 
-[Unreleased]: https://github.com/rorrimlabs/arc-arena/compare/v0.0.1-alpha.0...HEAD
+[Unreleased]: https://github.com/rorrimlabs/arc-arena/compare/v0.0.1-alpha.1...HEAD
+[0.0.1-alpha.1]: https://github.com/rorrimlabs/arc-arena/compare/v0.0.1-alpha.0...v0.0.1-alpha.1
 [0.0.1-alpha.0]: https://github.com/rorrimlabs/arc-arena/releases/tag/v0.0.1-alpha.0
