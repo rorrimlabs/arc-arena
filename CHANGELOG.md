@@ -25,6 +25,28 @@ together.
   `20261023154904_overtime_choice`).
 
 ### Added
+- Missed bills: staff with "Add missed bills" (Bills tab › Add missed bill) and owners (dashboard
+  Sales › Missed bill) can add a single session that was never started in the app: customer (or
+  walk-in), station, type, game, controllers, date and times, how it was paid, and a required
+  reason. The server prices it on the current price list (shown first), adds it ended and paid in
+  full, refuses times that overlap play already recorded on that station, and audits it. Server:
+  op `session.record`, client RPC `session_quote` (migrations `20261023185829_missed_entries`,
+  `20261023191248_staff_entry_perms`).
+- Two new staff permissions in admin Users: "Add missed bills" (`bill_record`, owner-granted) and
+  "Request missed time" (`time_request`). Neither is on for new invites. The Bills tab shows for
+  "Edit own bills" or "Add missed bills"; each button needs its own permission.
+- Missed punches: staff with "Request missed time" can ask to add a missed clock-in/out or fix a
+  clock-out from Attendance › Add missed time, and see the decision there. Reviewers approve or
+  reject on the dashboard (Attendance › Missed time requests); approval applies it as an
+  attendance correction, so it counts only then. Owners can still add a missing entry directly. Server: table
+  `attendance_requests`, ops `attendance.request` / `attendance.request_decide`.
+- Floor app: a Bills tab in the bottom bar (staff with "Edit own bills" or "Add missed bills",
+  online only; owner-level users find My bills under More) lists the closed bills the signed-in
+  staff member started, today first, with a date picker and day arrows. Tapping a bill changes
+  its total with a required comment and, when collected money changes, how it was paid or given
+  back. New permission "Edit own bills" (`bill_edit`), granted only by an owner in admin Users.
+  Server: `op_bill_adjust` accepts `bill_edit` for bills the caller started (`forbidden`, 'not
+  your bill' otherwise); new client RPC `my_bills` (migration `20261023183101_bill_edit_perm`).
 - Floor app End session: "Ended at" can be changed (e.g. the timer ran on) and the price
   recalculates; the "Bill amount" can be lowered (sent as a manual discount; the manual-discount
   limit applies below owner level).

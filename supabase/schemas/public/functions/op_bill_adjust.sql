@@ -1,13 +1,14 @@
 -- op_bill_adjust — sync op 'bill.adjust': set a closed bill's total and make what was collected
 --   match it, audited.
 --
--- Permission: money (an owner passes). Floor staff cannot change a closed bill.
+-- Permission: money (an owner passes), or bill_edit for a bill the caller started (the
+--   session's / group's created_by); anyone else is refused (forbidden, hint 'not your bill').
 -- Payload: scope ('single' default | 'group'), parent_id (session or group id),
 --   billed_amount_paise (the new total: whole paise, 0 or more), reason (required: 1–500
 --   characters after trimming), method (cash | upi | card | other: how the difference was paid
 --   or given back; needed when collected differs from the new total), payment_id? (id of that
 --   row; generated when absent).
--- Checks / errors: forbidden; reason_required; reason_too_long; invalid_total (missing or
+-- Checks / errors: forbidden (incl. 'not your bill'); reason_required; reason_too_long; invalid_total (missing or
 --   negative); invalid_method; not_found (hint session / group); not_ended (still running);
 --   voided; waived (a waived bill owes nothing); same_total (that total, already collected).
 -- Writes, in one transaction: billed_amount_paise; when collected ≠ the new total, one ledger row
@@ -36,8 +37,10 @@ declare
   v_entity text := case when coalesce(p->>'scope', 'single') = 'group' then 'group_session'
                         else 'session' end;
   v_status text; v_pay text; v_old bigint; v_paid bigint; v_diff bigint;
+  v_by     uuid;
+  v_money  boolean := private.app_has_perm(p_arena, 'money');
 begin
-  perform _need(p_arena, 'money');
+  if not v_money then perform _need(p_arena, 'bill_edit'); end if;
   if v_reason is null then
     raise exception 'reason_required' using hint = 'say why the bill changes';
   end if;
@@ -48,15 +51,18 @@ begin
 
   -- Lock the bill (as op_payment does), so payments on it queue behind the change.
   if v_group then
-    select status, payment_status, billed_amount_paise into v_status, v_pay, v_old
+    select status, payment_status, billed_amount_paise, created_by into v_status, v_pay, v_old, v_by
       from group_sessions where id = v_parent and arena_id = p_arena for update;
     if not found then raise exception 'not_found' using hint = 'group'; end if;
     select coalesce(sum(amount_paise), 0) into v_paid from group_payments where group_id = v_parent;
   else
-    select status, payment_status, billed_amount_paise into v_status, v_pay, v_old
+    select status, payment_status, billed_amount_paise, created_by into v_status, v_pay, v_old, v_by
       from sessions where id = v_parent and arena_id = p_arena for update;
     if not found then raise exception 'not_found' using hint = 'session'; end if;
     select coalesce(sum(amount_paise), 0) into v_paid from payments where session_id = v_parent;
+  end if;
+  if not v_money and v_by is distinct from auth.uid() then
+    raise exception 'forbidden' using errcode = '42501', hint = 'not your bill';
   end if;
   if v_status = 'voided' then raise exception 'voided' using hint = 'a voided bill has no total'; end if;
   if v_status <> 'completed' or v_old is null then
@@ -103,7 +109,7 @@ end;
 $function$;
 
 comment on function public.op_bill_adjust(uuid, jsonb) is
-  'Sync op bill.adjust: sets a closed bill''s total (money permission, reason required) and records the difference as a payment or refund so collected matches it; audited; charges untouched.';
+  'Sync op bill.adjust: sets a closed bill''s total (money permission, or bill_edit on a bill the caller started; reason required) and records the difference as a payment or refund so collected matches it; audited; charges untouched.';
 
 grant execute on function "public"."op_bill_adjust"(uuid, jsonb) to "postgres", "service_role";
 

@@ -58,7 +58,7 @@ Security rules (asserted by `supabase/tests/13_security_hardening_test.sql`):
 - 42501 on a client RPC = refusal or a call without a session: fix the client, never grant to `anon`.
 - Joining = invitation only (`invite_member` → Auth e-mail → `/accept-invite` → `accept_invite`); owners self-register via `create_my_arena`; non-magic-link logins choose a password first. No service-role key anywhere in the apps or repo. No Edge Functions.
 
-Permissions: `text[]` on `staff_profiles`, list in `_known_perms()` (start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise). `role='owner'` holds all. `money`/`reports` = owner level; only owner level grants money, reports, payroll, payroll_finalise. Nobody changes their own permissions.
+Permissions: `text[]` on `staff_profiles`, list in `_known_perms()` (start, bill, discount, members, stations, money, reports, settings, attendance_review, leave_approve, payroll, payroll_finalise, bill_edit, bill_record, time_request). `role='owner'` holds all. `money`/`reports` = owner level; only owner level grants money, reports, payroll, payroll_finalise, bill_edit, bill_record. Nobody changes their own permissions.
 
 ## Mobile architecture (`apps/mobile/lib/`, dependencies point inward)
 

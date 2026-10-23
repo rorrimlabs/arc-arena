@@ -97,7 +97,11 @@ export interface BillDiscount {
 export function discountLabel(d: BillDiscount): string {
   const value = d.valueKind === 'percent' ? `${d.value}%` : `${formatRupees(d.value)} off`;
   const what =
-    d.source === 'coupon' ? `Coupon ${d.code ?? d.name}` : d.source === 'manual' ? 'Manual' : d.name;
+    d.source === 'coupon'
+      ? `Coupon ${d.code ?? d.name}`
+      : d.source === 'manual'
+        ? 'Manual'
+        : d.name;
   return `${what} · ${value}`;
 }
 
@@ -296,6 +300,32 @@ export function billState(bill: Bill): { label: string; tone: PillTone | null } 
   if (bill.paymentStatus === 'partial') return { label: 'Part paid', tone: 'warning' };
   const methods = paidMethods(bill);
   return { label: methods.length === 1 ? methodName(methods[0]) : 'Split', tone: null };
+}
+
+/** Payment-ledger notes the server writes for these changes (op_session_record, op_bill_adjust). */
+export const ADDED_LATER_NOTE = 'Added later';
+export const BILL_EDITED_NOTE = 'Bill edited';
+
+export interface BillFlag {
+  readonly label: string;
+  readonly tone: PillTone;
+}
+
+/**
+ * What happened to a bill beyond its state, for tags in the list and the detail: added later as
+ * a missed bill, total edited, discounted, money refunded. `history` (the full bill) also catches
+ * an edit that moved no money.
+ */
+export function billFlags(bill: Bill, history: readonly BillHistoryEntry[] = []): BillFlag[] {
+  const notes = new Set(bill.payments.map((p) => p.note));
+  const out: BillFlag[] = [];
+  if (notes.has(ADDED_LATER_NOTE)) out.push({ label: 'Added later', tone: 'info' });
+  if (notes.has(BILL_EDITED_NOTE) || history.some((h) => h.action === 'bill_adjust')) {
+    out.push({ label: 'Edited', tone: 'warning' });
+  }
+  if (bill.discountPaise > 0) out.push({ label: 'Discount', tone: 'success' });
+  if (bill.refundedPaise > 0) out.push({ label: 'Refunded', tone: 'danger' });
+  return out;
 }
 
 export interface SalesSummary {

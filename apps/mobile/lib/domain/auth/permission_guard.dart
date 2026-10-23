@@ -97,5 +97,8 @@ class PermissionGuard {
         Permission.leaveApprove => 'approve leave',
         Permission.payroll => 'prepare salaries',
         Permission.payrollFinalise => 'finalise salaries',
+        Permission.billEdit => 'edit your bills',
+        Permission.billRecord => 'add missed bills',
+        Permission.timeRequest => 'request missed time',
       };
 }
