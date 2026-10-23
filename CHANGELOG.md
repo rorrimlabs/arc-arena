@@ -11,6 +11,11 @@ together.
 ## [Unreleased]
 
 ### Changed
+- Admin Sales bill detail: tags next to the status (Added later, Edited, Discount, Refunded), four
+  tiles (time played, players, collected, due / paid by), a compact details grid, Amount and
+  Payments side by side on wide screens, payments and history as a timeline with the reason
+  quoted, and a note when a bill was added later (who, when, why). The Sales list shows the first
+  tag next to each bill's state.
 - Floor app: a station card that is over time (single or group) now keeps pulsing red until the
   session is ended or extended, instead of turning red once (steady red with reduced motion on).
 - Floor app Extend (single and group): pick any number of minutes (− / + in 5-min steps, a
