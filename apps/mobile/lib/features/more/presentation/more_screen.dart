@@ -263,7 +263,7 @@ class MoreScreen extends ConsumerWidget {
                     ),
                   ),
                   const SizedBox(height: AppSpacing.sm),
-                  Text('404 ARENA · OPS',
+                  Text('ARQ',
                       style: ArenaType.overline.copyWith(color: arena.textSubtle)),
                   const SizedBox(height: 2),
                   Text(

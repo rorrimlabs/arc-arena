@@ -1,6 +1,6 @@
 import 'package:flutter/foundation.dart';
 
-/// Centralized, privacy-safe instrumentation and telemetry for Arena Ops.
+/// Centralized, privacy-safe instrumentation and telemetry for ARQ.
 ///
 /// Crash reporting (Sentry) is removed for now: breadcrumbs are dropped and
 /// timer anomalies and unexpected exceptions only go to the debug log. The

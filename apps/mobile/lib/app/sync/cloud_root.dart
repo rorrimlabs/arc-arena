@@ -680,7 +680,7 @@ class _CloudRootState extends State<CloudRoot> with WidgetsBindingObserver {
       );
     }
     return MaterialApp(
-      title: 'arena_ops',
+      title: 'ARQ',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.light(),
       darkTheme: AppTheme.dark(),

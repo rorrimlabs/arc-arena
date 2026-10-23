@@ -11,6 +11,10 @@ together.
 ## [Unreleased]
 
 ### Changed
+- Rebrand to ARQ: app name (Android, iOS, web titles, admin page titles and sign-in), app icons
+  on Android (adaptive), iOS and web, and the in-app logo, all generated from `assets/logo.png`
+  with `flutter_launcher_icons` (`apps/mobile/flutter_launcher_icons.yaml`). The admin sidebar
+  shows the ARQ logo instead of "404".
 - Admin Sales bill detail: tags next to the status (Added later, Edited, Discount, Refunded), four
   tiles (time played, players, collected, due / paid by), a compact details grid, Amount and
   Payments side by side on wide screens, payments and history as a timeline with the reason
@@ -30,6 +34,9 @@ together.
   `20261023154904_overtime_choice`).
 
 ### Added
+- Admin dashboard is an installable PWA (web manifest + Angular service worker). The service
+  worker caches only the app shell (pages always load fresh when online), never Supabase data;
+  the CSP `connect-src` now also lists the font, map-tile and Turnstile origins it re-fetches.
 - Missed bills: staff with "Add missed bills" (Bills tab › Add missed bill) and owners (dashboard
   Sales › Missed bill) can add a single session that was never started in the app: customer (or
   walk-in), station, type, game, controllers, date and times, how it was paid, and a required

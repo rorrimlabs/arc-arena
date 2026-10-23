@@ -80,9 +80,9 @@ class _NotificationSettingsScreenState
   }
 
   String get _whereToAllow => _iPhone
-      ? 'Or open Settings → Arena Ops → Notifications and switch on Allow '
+      ? 'Or open Settings → ARQ → Notifications and switch on Allow '
             'Notifications.'
-      : "Or open the phone's Settings → Apps → arena_ops → Notifications and "
+      : "Or open the phone's Settings → Apps → ARQ → Notifications and "
             'switch them on.';
 
   @override

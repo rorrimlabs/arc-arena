@@ -126,7 +126,7 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        '404 ARENA',
+                        'ARQ',
                         style: ArenaType.overline.copyWith(
                           color: arena.primary,
                         ),

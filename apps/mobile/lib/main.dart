@@ -142,7 +142,7 @@ class ConfigProblemApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => MaterialApp(
-    title: 'arena_ops',
+    title: 'ARQ',
     debugShowCheckedModeBanner: false,
     theme: AppTheme.dark(),
     darkTheme: AppTheme.dark(),

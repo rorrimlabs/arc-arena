@@ -83,6 +83,7 @@ dev_dependencies:
   # MockClient (package:http/testing.dart): drives the real Supabase auth client
   # through refresh failures in test/app/sync/stored_session_test.dart.
   http: ^1.6.0
+  flutter_launcher_icons: ^0.14.4
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

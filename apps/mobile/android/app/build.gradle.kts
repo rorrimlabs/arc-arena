@@ -56,16 +56,16 @@ android {
         create("dev") {
             dimension = "env"
             applicationIdSuffix = ".dev"
-            manifestPlaceholders["appName"] = "Arena Ops DEV"
+            manifestPlaceholders["appName"] = "ARQ DEV"
         }
         create("staging") {
             dimension = "env"
             applicationIdSuffix = ".staging"
-            manifestPlaceholders["appName"] = "Arena Ops QA"
+            manifestPlaceholders["appName"] = "ARQ QA"
         }
         create("prod") {
             dimension = "env"
-            manifestPlaceholders["appName"] = "Arena Ops"
+            manifestPlaceholders["appName"] = "ARQ"
         }
     }
 
