@@ -11,6 +11,8 @@ together.
 ## [Unreleased]
 
 ### Changed
+- Floor app: a station card that is over time (single or group) now keeps pulsing red until the
+  session is ended or extended, instead of turning red once (steady red with reduced motion on).
 - Floor app Extend (single and group): pick any number of minutes (− / + in 5-min steps, a
   slider up to 4 h, or tap to type) instead of fixed +15/+30/+60. The confirmation shows the
   bill so far, the extension's price and the new total, for staff to tell the customer. The
