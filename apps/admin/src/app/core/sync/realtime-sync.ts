@@ -54,11 +54,6 @@ export const TABLE_TARGETS: Readonly<Record<string, readonly RefreshTarget[]>> =
   session_charges: ['sales', 'overview', 'floor_charges'],
   session_extensions: ['sales', 'overview', 'floor_plays'],
   payments: ['sales', 'overview', 'floor_plays'],
-  group_sessions: BILLS,
-  group_assignments: BILLS,
-  group_charges: [...BILLS, 'floor_charges'],
-  group_payments: BILLS,
-  group_extensions: BILLS,
   resources: ['stations'],
   resource_activities: ['stations', 'pricing'],
   activities: ['pricing', 'stations'],
@@ -101,7 +96,6 @@ const ALL_TARGETS: readonly RefreshTarget[] = [
 /** What a committed op kind (`session.start`, `game.set_compat`…) refreshes, by its prefix. */
 const KIND_TARGETS: readonly (readonly [string, readonly RefreshTarget[]])[] = [
   ['session.', BILLS],
-  ['group.', BILLS],
   ['payment.', ['sales', 'overview', 'floor_plays']],
   ['game.set_compat', ['game_resources']],
   // A deleted game takes its station statuses with it.

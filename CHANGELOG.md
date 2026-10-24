@@ -10,7 +10,20 @@ together.
 
 ## [Unreleased]
 
+### Added
+- Admin Overview: a "Day" period shows any past day (yesterday by default, picked with a date
+  field; `?period=day&day=YYYY-MM-DD`) with takings by hour, compared with the day before.
+
 ### Removed
+- Group sessions, everywhere, to be rebuilt from scratch: the floor app's group screens and
+  sheets (new group, assign, switch, extend, end, payment, "Open groups"), group billing and the
+  "group billing mode" rule, group bills in Sales, Overview, reports, CSV (the bills report loses
+  its Type column) and My bills, and the `group.*` sync ops (now refused as `unknown_op`).
+  **Destructive:** migration `20261024131855_remove_group_sessions` drops `group_sessions`,
+  `group_assignments`, `group_extensions`, `group_charges` and `group_payments` with their data,
+  plus `billing_policies.group_billing_mode`, `bill_discounts.group_id` (`session_id` becomes
+  required) and the group columns of `controller_allocations`. The floor app's database (v19)
+  drops its group tables after the usual backup; an unsynced group bill on a device is lost.
 - Floor app owner screens: Today, Money, Reports (and its Excel export) and Settings (pricing,
   hours, holidays, stations, staff and PINs, game library and game editing). Owners land on the
   Floor like staff and do that work on the admin web; the bottom bar is Floor · Bookings · Bills ·
