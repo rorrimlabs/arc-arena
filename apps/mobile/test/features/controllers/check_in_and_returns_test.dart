@@ -1,6 +1,5 @@
-/// Widget-level: booking check-in with physical pads (including a borrow), the
-/// group change-controllers sheet catching the game's local-player limit
-/// before Apply, and returning a borrowed pad from the end sheet.
+/// Widget-level: booking check-in with physical pads (including a borrow) and
+/// returning a borrowed pad from the end sheet.
 library;
 
 import 'package:arena_ops/app/controllers/booking_actions.dart';
@@ -10,17 +9,14 @@ import 'package:arena_ops/data/local/local_booking_repository.dart';
 import 'package:arena_ops/data/local/local_catalog_repository.dart';
 import 'package:arena_ops/data/local/local_controller_allocation_repository.dart';
 import 'package:arena_ops/data/local/local_customer_repository.dart';
-import 'package:arena_ops/data/local/local_group_session_repository.dart';
 import 'package:arena_ops/data/local/local_session_repository.dart';
 import 'package:arena_ops/domain/auth/app_user.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
 import 'package:arena_ops/domain/auth/permission_guard.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
-import 'package:arena_ops/domain/repositories/group_commands.dart';
 import 'package:arena_ops/domain/value/enums.dart';
 import 'package:arena_ops/features/bookings/presentation/check_in_sheet.dart';
 import 'package:arena_ops/features/floor/presentation/sheets/end_session_sheet.dart';
-import 'package:arena_ops/features/group_sessions/presentation/sheets/group_assign_sheet.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -132,61 +128,6 @@ void main() {
         {'ctl_void_1', 'ctl_void_2', 'ctl_hex_1', 'ctl_hex_2'});
     final b = await LocalBookingRepository(db).getById(booking.id);
     expect(b!.status, BookingStatus.checkedIn);
-    await disposeApp(tester);
-  });
-
-  testWidgets('group change-controllers: a third Tekken controller on a '
-      'shared station is shown and Apply stays disabled', (tester) async {
-    phone(tester);
-    final who = await LocalCustomerRepository(db).create(name: 'Rahul');
-    final groups = LocalGroupSessionRepository(db);
-    final created = await groups.create(CreateGroupCommand(
-      primaryCustomerId: who.id,
-      playerCount: 2,
-      purchasedControllerCount: 2,
-      startedAt: now,
-      scheduledEndAt: now.add(const Duration(hours: 1)),
-      snapshot: await LocalCatalogRepository(db).currentSnapshot(),
-      billingMode: GroupBillingMode.perSystem,
-      assignments: const [
-        GroupAssignmentDraft(
-            playerNumber: 1,
-            resourceId: 'hex',
-            resourceName: 'HEX',
-            activityCode: 'PS5',
-            gameId: 'g_tekken8',
-            controllerIds: ['ctl_hex_1']),
-        GroupAssignmentDraft(
-            playerNumber: 2,
-            resourceId: 'hex',
-            resourceName: 'HEX',
-            activityCode: 'PS5',
-            gameId: 'g_tekken8',
-            controllerIds: ['ctl_hex_2']),
-      ],
-    ));
-    expect(created.isOk, isTrue, reason: created.failureOrNull?.display);
-    final g = (await groups.activeGroups()).single;
-
-    await tester.pumpWidget(opener((c) => showGroupChangeControllersSheet(c,
-        group: g, current: g.currentForPlayer(1)!)));
-    await tester.tap(find.text('open'));
-    await settle(tester);
-
-    // HEX-2 is Player 2's; ask for 2 and borrow one from VOID.
-    await tester.tap(find.byKey(const ValueKey('ctl-count-2')));
-    await settle(tester);
-    await tester.tap(find.byKey(const ValueKey('pad-ctl_void_1')));
-    await settle(tester);
-
-    expect(
-        tester.widget<Text>(find.byKey(const ValueKey('assign-problem'))).data,
-        contains('Tekken 8 supports 2 local players — 3 controllers on HEX.'));
-    expect(
-        tester.widget<FilledButton>(find.widgetWithText(FilledButton, 'Apply'))
-            .onPressed,
-        isNull);
-    expect(await held(), {'ctl_hex_1', 'ctl_hex_2'}, reason: 'nothing saved');
     await disposeApp(tester);
   });
 

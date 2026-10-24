@@ -25,7 +25,6 @@ import 'package:arena_ops/domain/entities/session.dart';
 import 'package:arena_ops/domain/repositories/booking_repository.dart';
 import 'package:arena_ops/domain/repositories/catalog_repository.dart';
 import 'package:arena_ops/domain/repositories/commands.dart';
-import 'package:arena_ops/domain/repositories/group_session_repository.dart';
 import 'package:arena_ops/domain/repositories/session_repository.dart';
 import 'package:arena_ops/domain/services/availability_service.dart';
 import 'package:arena_ops/domain/services/booking_availability_service.dart';
@@ -104,7 +103,6 @@ class BookingActions {
     this.reminders,
     this.sessionReminders,
     this.availability = const BookingAvailabilityService(),
-    this.groups,
     this.boards,
     this.padSelection = const PadSelection(),
   });
@@ -127,9 +125,6 @@ class BookingActions {
   final SessionReminders? sessionReminders;
   final BookingAvailabilityService availability;
 
-  /// Open group assignments hold stations too; optional for older callers.
-  final GroupSessionRepository? groups;
-
   /// The controller inventory as one station sees it. With it, check-in
   /// validates (and can borrow) specific pads exactly like New Session;
   /// without it, check-in is count-only (the repository still refuses more
@@ -145,7 +140,6 @@ class BookingActions {
   }) async {
     final active = await sessions.active();
     final booked = await bookings.overlapping(window.start, window.end);
-    final groupActive = await groups?.activeGroups() ?? const [];
     return [
       for (final a in active)
         Occupancy(
@@ -153,15 +147,6 @@ class BookingActions {
           interval: UtcInterval(a.current.startedAt, a.session.scheduledEndAt),
           isBooking: false,
         ),
-      // A station a group is playing on is just as busy (group feature §7).
-      for (final g in groupActive)
-        for (final a in g.openAssignments)
-          Occupancy(
-            resourceId: a.resourceId,
-            interval: UtcInterval(a.startedAt, g.group.scheduledEndAt),
-            isBooking: false,
-            label: 'group',
-          ),
       for (final b in booked)
         if (b.resourceId != null && b.id != excludeBookingId)
           Occupancy(
@@ -534,11 +519,9 @@ final bookingActionsProvider = Provider<BookingActions>(
     guard: PermissionGuard(ref.watch(authControllerProvider)),
     reminders: ref.watch(bookingRemindersProvider),
     sessionReminders: ref.watch(sessionRemindersProvider),
-    groups: ref.watch(groupSessionRepositoryProvider),
     boards: PadBoardLoader(
       catalog: ref.watch(catalogRepositoryProvider),
       sessions: ref.watch(sessionRepositoryProvider),
-      groups: ref.watch(groupSessionRepositoryProvider),
       pads: ref.watch(controllerAllocationRepositoryProvider),
     ),
   ),

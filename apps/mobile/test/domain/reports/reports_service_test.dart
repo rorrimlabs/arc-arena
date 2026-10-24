@@ -8,7 +8,6 @@ library;
 import 'package:arena_ops/core/time/business_calendar.dart';
 import 'package:arena_ops/core/time/ist.dart';
 import 'package:arena_ops/domain/entities/customer.dart';
-import 'package:arena_ops/domain/entities/group_session.dart';
 import 'package:arena_ops/domain/entities/payment.dart';
 import 'package:arena_ops/domain/entities/resource.dart';
 import 'package:arena_ops/domain/entities/session.dart';
@@ -116,10 +115,6 @@ void main() {
     List<SessionSegment> segments = const [],
     List<SessionCharge> charges = const [],
     List<Payment> payments = const [],
-    List<GroupSession> groups = const [],
-    List<GroupAssignment> groupAssignments = const [],
-    List<GroupCharge> groupCharges = const [],
-    List<GroupPayment> groupPayments = const [],
     List<Customer> customers = const [],
   }) =>
       ReportInput(
@@ -128,10 +123,6 @@ void main() {
         segments: segments,
         charges: charges,
         payments: payments,
-        groups: groups,
-        groupAssignments: groupAssignments,
-        groupCharges: groupCharges,
-        groupPayments: groupPayments,
         customers: customers,
         resources: const [
           Resource(id: 'hex', name: 'HEX', kind: ResourceKind.station),
@@ -377,10 +368,6 @@ void main() {
         ],
         charges: const [],
         payments: const [],
-        groups: const [],
-        groupAssignments: const [],
-        groupCharges: const [],
-        groupPayments: const [],
         customers: const [],
         resources: const [
           Resource(id: 'hex', name: 'HEX', kind: ResourceKind.station),

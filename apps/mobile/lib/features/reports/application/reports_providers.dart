@@ -22,7 +22,6 @@ final reportForRangeProvider =
   ref.watch(syncRevisionProvider);
 
   final sessionRepo = ref.watch(sessionRepositoryProvider);
-  final groupRepo = ref.watch(groupSessionRepositoryProvider);
   final catalog = ref.watch(catalogRepositoryProvider);
   final customerRepo = ref.watch(customerRepositoryProvider);
 
@@ -34,10 +33,6 @@ final reportForRangeProvider =
   final segments = sessionRepo.segmentsInRange(from, to);
   final charges = sessionRepo.chargesInRange(from, to);
   final payments = sessionRepo.paymentsInRange(from, to);
-  final groups = groupRepo.inRange(from, to);
-  final assignments = groupRepo.assignmentsInRange(from, to);
-  final groupCharges = groupRepo.chargesInRange(from, to);
-  final groupPayments = groupRepo.paymentsInRange(from, to);
   final customers = customerRepo.all();
   final resources = catalog.resources();
   final games = catalog.games();
@@ -50,10 +45,6 @@ final reportForRangeProvider =
     segments: await segments,
     charges: await charges,
     payments: await payments,
-    groups: await groups,
-    groupAssignments: await assignments,
-    groupCharges: await groupCharges,
-    groupPayments: await groupPayments,
     customers: await customers,
     resources: await resources,
     gameNames: {for (final g in await games) g.id: g.name},

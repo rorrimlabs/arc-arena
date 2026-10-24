@@ -110,11 +110,6 @@ void main() {
       await tester.tap(find.byType(FloatingActionButton));
       await settle(tester);
 
-      // On bottom sheet, tap "Single session"
-      expect(find.text('Single session'), findsOneWidget);
-      await tester.tap(find.text('Single session'));
-      await settle(tester);
-
       // NewSessionScreen is full-screen outside AppShell.
       expectFullScreen(tester, NewSessionScreen);
 

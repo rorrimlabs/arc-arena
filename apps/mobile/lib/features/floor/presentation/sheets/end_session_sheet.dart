@@ -471,8 +471,8 @@ class _UnpricedWarning extends StatelessWidget {
 }
 
 /// Played past the booked end: how long, what it would add, and the staff's
-/// choice to bill it (off: the booked time only). Used by the single and group
-/// End sheets. The actual end is stored either way.
+/// choice to bill it (off: the booked time only). Used by the End sheet. The
+/// actual end is stored either way.
 class OvertimeChoice extends StatelessWidget {
   const OvertimeChoice({
     super.key,

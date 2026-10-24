@@ -4,8 +4,8 @@
 ///
 /// Flow (spec §15):
 ///   1. Validate the interval.
-///   2. Find the pricing rule judged at the rule instant (the session's or
-///      group's start; see `rule_engine.dart`).
+///   2. Find the pricing rule judged at the rule instant (the session's
+///      start; see `rule_engine.dart`).
 ///   3. Apply grace (free if under grace) and minimum-charge (extend interval).
 ///   4. Resolve the standard rate and adjust its unit price by the rule.
 ///   5. Apply the billing policy to get billed time/units.
@@ -40,8 +40,8 @@ class PricingService {
 
   /// Prices `[start, end]` of [activityCode] at [controllerCount].
   ///
-  /// [ruleAt] is the instant the pricing rule is judged at: the session's (or
-  /// group's) start, so every segment and extension of one session gets the
+  /// [ruleAt] is the instant the pricing rule is judged at: the session's
+  /// start, so every segment and extension of one session gets the
   /// same rule. Defaults to [start] (`_pr_quote`'s `coalesce(p_rule_at,
   /// p_start)`).
   Result<PricingQuote> quote({
