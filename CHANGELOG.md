@@ -11,6 +11,11 @@ together.
 ## [Unreleased]
 
 ### Removed
+- Floor app owner screens: Today, Money, Reports (and its Excel export) and Settings (pricing,
+  hours, holidays, stations, staff and PINs, game library and game editing). Owners land on the
+  Floor like staff and do that work on the admin web; the bottom bar is Floor · Bookings · Bills ·
+  More, and Bills now shows for owners too. Game pickers and the system's games list are
+  read-only and point to the dashboard. Dependencies `excel` and `share_plus` removed.
 - The staff-time module, to be rebuilt when there is a real need (code kept at the git tag
   `staff-module-archive`): attendance (clock-in / clock-out, corrections, review, missed-time
   requests), GPS / geofence clock-in, shifts and staff holidays, leave, HR profile, pay setup and

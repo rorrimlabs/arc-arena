@@ -79,7 +79,7 @@ void main() {
       await settle(tester);
 
       expect(find.byType(NavigationBar), findsOneWidget);
-      expect(find.text('Today'), findsOneWidget);
+      expect(find.byType(FloorScreen), findsOneWidget);
 
       await tester.tap(find.text('Floor'));
       await settle(tester);
@@ -87,14 +87,6 @@ void main() {
       expect(find.byType(FloorScreen), findsOneWidget);
 
       await tester.tap(find.text('Bookings'));
-      await settle(tester);
-      expect(find.byType(NavigationBar), findsOneWidget);
-
-      await tester.tap(find.text('Money'));
-      await settle(tester);
-      expect(find.byType(NavigationBar), findsOneWidget);
-
-      await tester.tap(find.text('Reports'));
       await settle(tester);
       expect(find.byType(NavigationBar), findsOneWidget);
 
