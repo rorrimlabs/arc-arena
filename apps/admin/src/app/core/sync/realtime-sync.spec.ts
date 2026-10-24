@@ -186,11 +186,6 @@ describe('RealtimeSync', () => {
         'game_controls',
         'game_resources',
         'games',
-        'group_assignments',
-        'group_charges',
-        'group_extensions',
-        'group_payments',
-        'group_sessions',
         'holidays',
         'payments',
         'rate_bands',
@@ -314,19 +309,7 @@ describe('RealtimeSync', () => {
     expect(mockArenaContext.load).toHaveBeenCalledWith(true);
     expect(mockSales.refresh).not.toHaveBeenCalled();
 
-    for (const table of [
-      'group_sessions',
-      'group_assignments',
-      'group_payments',
-      'group_extensions',
-    ]) {
-      fire(table, '/overview');
-      expect(mockFloor.refresh).toHaveBeenCalledWith(['live', 'stationFigures', 'gameFigures']);
-      expect(mockOverview.refresh).toHaveBeenCalledTimes(1);
-      expect(mockSales.stale).toHaveBeenCalledTimes(1);
-    }
-
-    for (const table of ['session_charges', 'group_charges', 'bill_discounts']) {
+    for (const table of ['session_charges', 'bill_discounts']) {
       fire(table, '/sales');
       expect(mockSales.refresh).toHaveBeenCalledTimes(1);
       expect(mockOverview.stale).toHaveBeenCalledTimes(1);

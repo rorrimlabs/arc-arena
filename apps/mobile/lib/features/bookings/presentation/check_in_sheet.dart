@@ -135,8 +135,6 @@ class _CheckInSheetState extends ConsumerState<_CheckInSheet> {
     final busy = <String>{
       for (final s in ref.watch(openSegmentsProvider).value ?? const [])
         s.resourceId,
-      for (final a in ref.watch(openGroupAssignmentsProvider).value ?? const [])
-        a.resourceId,
     };
     final gameId = widget.booking.gameId;
     final playable = <String>{

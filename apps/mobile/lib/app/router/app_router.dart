@@ -19,8 +19,6 @@ import 'package:arena_ops/features/controllers/presentation/controller_board_scr
 import 'package:arena_ops/features/customers/presentation/customer_profile_screen.dart';
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
 import 'package:arena_ops/features/floor/presentation/station_detail_screen.dart';
-import 'package:arena_ops/features/group_sessions/presentation/group_detail_screen.dart';
-import 'package:arena_ops/features/group_sessions/presentation/group_session_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/new_session/presentation/new_session_screen.dart';
 import 'package:arena_ops/features/notifications/presentation/notification_settings_screen.dart';
@@ -173,22 +171,10 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         builder: (context, state) => const NewSessionScreen(),
       ),
       GoRoute(
-        path: '/groups/new',
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const GroupSessionScreen(),
-      ),
-      GoRoute(
         path: '/sessions/:id',
         parentNavigatorKey: rootNavigatorKey,
         builder: (context, state) => StationDetailScreen(
           sessionId: state.pathParameters['id']!,
-        ),
-      ),
-      GoRoute(
-        path: '/groups/:id',
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => GroupDetailScreen(
-          groupId: state.pathParameters['id']!,
         ),
       ),
     ],

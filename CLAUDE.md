@@ -25,7 +25,7 @@
 
 ## Scope (SLC)
 
-- Flutter app = **staff only** (floor: sessions, payments, groups, bookings, controllers, members, own profile and bills — per permission). Owner screens (Today, Money, Reports, Settings, device game editing) were removed 2026-10-24: everyone lands on the Floor; never build owner features there.
+- Flutter app = **staff only** (floor: sessions, payments, bookings, controllers, members, own profile and bills — per permission). Owner screens (Today, Money, Reports, Settings, device game editing) were removed 2026-10-24: everyone lands on the Floor; never build owner features there.
 - **All owner features live on the admin web** (`apps/admin/`): sales, reports, voids, stations, games, pricing, users, settings, staff (team, access, terms).
 - UI direction = the screens already built (reuse their layout and shared components). No design export to follow.
 
