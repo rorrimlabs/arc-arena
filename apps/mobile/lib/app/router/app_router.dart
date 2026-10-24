@@ -17,8 +17,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 
-import 'package:arena_ops/features/attendance/presentation/attendance_history_screen.dart';
-import 'package:arena_ops/features/attendance/presentation/attendance_screen.dart';
 import 'package:arena_ops/features/bookings/presentation/booking_screen.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_board_screen.dart';
 import 'package:arena_ops/features/customers/presentation/customer_profile_screen.dart';
@@ -27,7 +25,6 @@ import 'package:arena_ops/features/floor/presentation/station_detail_screen.dart
 import 'package:arena_ops/features/games/presentation/games_screen.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_detail_screen.dart';
 import 'package:arena_ops/features/group_sessions/presentation/group_session_screen.dart';
-import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/holidays_screen.dart';
 import 'package:arena_ops/features/more/presentation/hours_screen.dart';
@@ -155,21 +152,6 @@ final goRouterProvider = Provider<GoRouter>((ref) {
         ],
       ),
       // Full-screen secondary routes (covering the AppShell and bottom navigation):
-      GoRoute(
-        path: AttendanceScreen.path,
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AttendanceScreen(),
-      ),
-      GoRoute(
-        path: AttendanceHistoryScreen.path,
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const AttendanceHistoryScreen(),
-      ),
-      GoRoute(
-        path: LeaveScreen.path,
-        parentNavigatorKey: rootNavigatorKey,
-        builder: (context, state) => const LeaveScreen(),
-      ),
       GoRoute(
         path: SessionLogScreen.path,
         parentNavigatorKey: rootNavigatorKey,

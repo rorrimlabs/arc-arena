@@ -10,6 +10,20 @@ together.
 
 ## [Unreleased]
 
+### Removed
+- The staff-time module, to be rebuilt when there is a real need (code kept at the git tag
+  `staff-module-archive`): attendance (clock-in / clock-out, corrections, review, missed-time
+  requests), GPS / geofence clock-in, shifts and staff holidays, leave, HR profile, pay setup and
+  payroll. Floor app: the attendance chip, Attendance and Leave screens, and the location
+  permission (`geolocator`, `flutter_map`, `latlong2`). Dashboard: Attendance and Payroll, the
+  Team tabs Attendance / Leave / Salary / Schedule, Settings › Staff's schedule, clock-in,
+  attendance, leave and payroll tabs, "Works here as staff", and the Leaflet map. Server: its
+  15 tables, ops, `attendance_days` / `leave_balances`, the `attendance` / `work_hours` /
+  `leave_rules` settings and the permissions `attendance_review`, `leave_approve`, `payroll`,
+  `payroll_finalise` and `time_request` (migration `20261024090442_remove_staff_module`, which
+  drops those tables and their data). Staff accounts, invitations, permissions, Team, staff terms
+  and personal details stay.
+
 ## [0.0.1-alpha.1] - 2026-10-24
 
 ### Fixed

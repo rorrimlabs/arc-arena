@@ -56,9 +56,14 @@ Legend: 🟡 = pending owner confirmation · ✅ = fixed rule the spec already s
 
 > **#24 note (group feature §9).** When a group spreads across several PS5s, the price depends entirely on this rule, so it is **owner-confirmation-required**. The default `perSystem` is the conservative reading of the spec's warning ("do not automatically assume a three-controller price permits three separate PS5 systems at the same price"): co-located players on one system are combined onto that system's controller rate, while separate systems each bill their own controllers. `sharedControllerPool` is the alternative where the party pays once for the controllers they bought, however many systems they use. The mode is stored on each `GroupSession` (via its snapshot) so historical groups re-price identically; changing the policy only affects new groups.
 
-## Staff module: attendance, leave and salary
+## Staff module: attendance, leave and salary (removed 2026-10-24)
 
-The design is in `docs/STAFF.md`. Decided 2026-10-15: staff clock in on their own phone or on a
+**Removed 2026-10-24:** the whole staff-time module (attendance, GPS clock-in, shifts, leave, pay
+setup, payroll) was dropped before any release and can be rebuilt from the git tag
+`staff-module-archive` (which also holds `docs/STAFF.md` and `docs/STAFF_API.md`). The rows below
+are kept as the decisions to start from if it is rebuilt; none of them is in force.
+
+Originally decided 2026-10-15: staff clock in on their own phone or on a
 registered arena tablet; clock in/out needs a connection and the server stamps the time; who's in,
 leave approvals and flagged review are floor screens gated by permission; leave notifications use
 real push (FCM). Rows marked 🟡 are still open, and the design runs on their default until they

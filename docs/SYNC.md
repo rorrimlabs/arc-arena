@@ -488,7 +488,7 @@ Known limits (by design or not yet built):
   `bill`, `money` or `reports`; customers `start`, `members`, `money` or
   `reports`; `audit_log` owner level; `staff_invites` none), and the device
   feed narrows the same way (`_sync_hidden`; coupons also need `discount` or
-  `settings`), so an attendance-only login receives no customers or money.
+  `settings`), so a login without those permissions receives no customers or money.
   Rows a device already holds when a permission is taken away stay in its
   file until it is reinstalled or the person signs out.
 

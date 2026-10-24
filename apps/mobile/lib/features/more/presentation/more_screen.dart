@@ -9,11 +9,9 @@ import 'package:arena_ops/core/widgets/arena_header.dart';
 import 'package:arena_ops/core/widgets/arena_list.dart';
 import 'package:arena_ops/core/widgets/arena_placeholder_page.dart';
 import 'package:arena_ops/domain/auth/permission.dart';
-import 'package:arena_ops/features/attendance/presentation/attendance_screen.dart';
 import 'package:arena_ops/features/auth/presentation/change_password_dialog.dart';
 import 'package:arena_ops/features/controllers/presentation/controller_board_screen.dart';
 import 'package:arena_ops/features/customers/presentation/customers_screen.dart';
-import 'package:arena_ops/features/leave/presentation/leave_screen.dart';
 import 'package:arena_ops/features/bills/presentation/my_bills_screen.dart';
 import 'package:arena_ops/features/more/presentation/help_screen.dart';
 import 'package:arena_ops/features/more/presentation/settings_screen.dart';
@@ -95,19 +93,7 @@ class MoreScreen extends ConsumerWidget {
           children: [
             const ArenaScreenHeader(title: 'More'),
             if (user != null) _AccountCard(name: user.name, role: user.roleLabel),
-            _Group('Shift', [
-              ArenaListRow(
-                icon: Icons.fingerprint_rounded,
-                title: 'Attendance',
-                subtitle: 'Clock in and out, my hours',
-                onTap: () => _push(context, const AttendanceScreen()),
-              ),
-              ArenaListRow(
-                icon: Icons.event_busy_rounded,
-                title: 'Leave',
-                subtitle: 'My balance, apply and track requests',
-                onTap: () => _push(context, const LeaveScreen()),
-              ),
+            _Group('Me', [
               ArenaListRow(
                 icon: Icons.badge_outlined,
                 title: 'My profile',
