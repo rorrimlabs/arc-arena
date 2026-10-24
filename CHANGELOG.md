@@ -42,6 +42,12 @@ together.
   drops those tables and their data). Staff accounts, invitations, permissions, Team, staff terms
   and personal details stay.
 
+### Fixed
+- Admin sign-in, create account, create arena, accept invite and reset password pages show the
+  ARQ logo instead of the old "404" badge (#24).
+- Admin Pricing › rule "When": the From and To time fields are the same size; the "00:00 is
+  midnight" hint no longer wraps or stretches the From field (#25).
+
 ## [0.0.1-alpha.1] - 2026-10-24
 
 ### Fixed
