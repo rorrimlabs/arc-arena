@@ -16,7 +16,7 @@ describe('Settings', () => {
       ['Billing rules', 'Rounding, grace, minimum charge'],
       ['Sessions', 'Time options and warnings'],
       ['Owners & access', 'Who owns the venue, inviting an owner'],
-      ['Staff', 'Schedule, clock-in, attendance, leave, payroll rules'],
+      ['Staff', 'Staff terms'],
     ]);
     const arena = t.doc().querySelector('app-arena-settings') as HTMLElement;
     expect(t.text(arena.querySelector('h2'))).toBe('Arena');

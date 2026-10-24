@@ -10,6 +10,25 @@ together.
 
 ## [Unreleased]
 
+### Removed
+- Floor app owner screens: Today, Money, Reports (and its Excel export) and Settings (pricing,
+  hours, holidays, stations, staff and PINs, game library and game editing). Owners land on the
+  Floor like staff and do that work on the admin web; the bottom bar is Floor · Bookings · Bills ·
+  More, and Bills now shows for owners too. Game pickers and the system's games list are
+  read-only and point to the dashboard. Dependencies `excel` and `share_plus` removed.
+- The staff-time module, to be rebuilt when there is a real need (code kept at the git tag
+  `staff-module-archive`): attendance (clock-in / clock-out, corrections, review, missed-time
+  requests), GPS / geofence clock-in, shifts and staff holidays, leave, HR profile, pay setup and
+  payroll. Floor app: the attendance chip, Attendance and Leave screens, and the location
+  permission (`geolocator`, `flutter_map`, `latlong2`). Dashboard: Attendance and Payroll, the
+  Team tabs Attendance / Leave / Salary / Schedule, Settings › Staff's schedule, clock-in,
+  attendance, leave and payroll tabs, "Works here as staff", and the Leaflet map. Server: its
+  15 tables, ops, `attendance_days` / `leave_balances`, the `attendance` / `work_hours` /
+  `leave_rules` settings and the permissions `attendance_review`, `leave_approve`, `payroll`,
+  `payroll_finalise` and `time_request` (migration `20261024090442_remove_staff_module`, which
+  drops those tables and their data). Staff accounts, invitations, permissions, Team, staff terms
+  and personal details stay.
+
 ## [0.0.1-alpha.1] - 2026-10-24
 
 ### Fixed

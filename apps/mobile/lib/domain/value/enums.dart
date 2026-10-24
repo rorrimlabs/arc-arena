@@ -234,6 +234,13 @@ enum PaymentMethod {
   other;
 
   String get code => name;
+
+  String get label => switch (this) {
+        PaymentMethod.upi => 'UPI',
+        PaymentMethod.cash => 'Cash',
+        PaymentMethod.card => 'Card',
+        PaymentMethod.other => 'Other',
+      };
   static PaymentMethod fromCode(String c) =>
       PaymentMethod.values.firstWhere((m) => m.code == c);
 }
